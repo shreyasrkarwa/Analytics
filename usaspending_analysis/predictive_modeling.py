@@ -3,12 +3,11 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import classification_report, accuracy_score
 import os
 
 sns.set_theme(style="whitegrid")
 
-print("Loading data for Machine Learning pipeline...")
+print("Loading data for dynamic Multi-Threshold Machine Learning pipeline...")
 df = pd.read_csv('data/longitudinal_it_contracts_fy18_fy24.csv')
 
 # --- Feature Engineering ---
@@ -17,11 +16,9 @@ df['End Date'] = pd.to_datetime(df['End Date'], errors='coerce')
 df['Duration (Days)'] = (df['End Date'] - df['Start Date']).dt.days
 df['Award Amount'] = pd.to_numeric(df['Award Amount'], errors='coerce')
 
-# Clean base DataFrame
 df = df.dropna(subset=['Duration (Days)', 'Award Amount'])
 df = df[df['Duration (Days)'] >= 0]
 
-# Classifications based on previous EDA
 top_vendors = df.groupby('Recipient Name')['Award Amount'].sum().nlargest(10).index.tolist()
 df['Is_Mega_Vendor'] = df['Recipient Name'].apply(lambda x: 1 if x in top_vendors else 0)
 
@@ -31,47 +28,55 @@ def is_dod(agency_str):
 
 df['Is_DoD'] = df['Awarding Agency'].apply(is_dod)
 
-# Define Target Variable: Long-Term Contract (>= 5 Years / 1825 Days)
-# Does the contract beat the standard 5-year federal ceiling?
-df['Long_Term_Contract'] = (df['Duration (Days)'] >= 1825).astype(int)
-
-print(f"Target Distribution: {df['Long_Term_Contract'].sum()} Long-Term vs {len(df) - df['Long_Term_Contract'].sum()} Standard/Short-Term")
-
-# --- Model Setup ---
-# Using Award Amount, Vendor Status, and Agency Classification as features
 features = ['Award Amount', 'Is_Mega_Vendor', 'Is_DoD']
 X = df[features]
-y = df['Long_Term_Contract']
 
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.25, random_state=42)
+# --- Dynamic Threshold Logic ---
+# Testing survival across transactional, standard, ceiling, and IDIQ boundaries
+thresholds = {
+    '1-Year Threshold': 365,
+    '3-Year Threshold': 1095,
+    '5-Year Federal Ceiling': 1825,
+    '10-Year Mega-Contract': 3650
+}
 
-# Instantiate Random Forest with balanced class weights to handle any target skew
-clf = RandomForestClassifier(n_estimators=100, random_state=42, class_weight='balanced', max_depth=5)
-clf.fit(X_train, y_train)
+results = []
+print("\n--- RANDOM FOREST: DYNAMIC THRESHOLD IMPORTANCE ---")
+for label, days in thresholds.items():
+    y = (df['Duration (Days)'] >= days).astype(int)
+    
+    # Filter out scenarios where data is too sparse
+    if y.sum() < 10 or y.sum() == len(y):
+        print(f"Skipping {label} due to zero variance or extreme class imbalance.")
+        continue
+        
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.25, random_state=42)
+    clf = RandomForestClassifier(n_estimators=100, random_state=42, class_weight='balanced', max_depth=5)
+    clf.fit(X_train, y_train)
+    
+    importances = clf.feature_importances_
+    print(f"[{label}] -> Scope: {importances[0]:.3f} | Mega-Vendor: {importances[1]:.3f} | DoD: {importances[2]:.3f}")
+    
+    results.append({
+        'Threshold': label,
+        'Award Amount Impact': importances[0],
+        'Mega-Vendor Impact': importances[1],
+        'DoD Impact': importances[2]
+    })
 
-y_pred = clf.predict(X_test)
-acc = accuracy_score(y_test, y_pred)
-report = classification_report(y_test, y_pred)
+results_df = pd.DataFrame(results)
 
-print(f"\n--- RANDOM FOREST RESULTS ---")
-print(f"Accuracy predicting 5+ Year Contracts: {acc * 100:.1f}%")
-print("Classification Report:\n", report)
-
-# --- Feature Importance Visualization ---
-importances = clf.feature_importances_
-feature_names = ['Total Award Amount ($)', 'Mega-Vendor Status (Top 10)', 'DoD vs Civilian Agency']
-feat_df = pd.DataFrame({'Feature': feature_names, 'Importance': importances}).sort_values(by='Importance', ascending=False)
-
-print("\n--- FEATURE IMPORTANCES ---")
-print(feat_df)
-
+# --- Visualization ---
 artifact_dir = "/Users/shreyasrkarwa/.gemini/antigravity/brain/3818d78f-de3f-4c7f-94be-f43792dd0b66/"
-plt.figure(figsize=(10, 4))
-sns.barplot(x='Importance', y='Feature', data=feat_df, palette='magma')
-plt.title('Random Forest Decision Drivers: Predicting 5+ Year IT Contracts', pad=15)
-plt.xlabel('Relative Importance (Gini Importance)')
-plt.ylabel('Algorithmic Feature')
-plt.savefig(os.path.join(artifact_dir, 'feature_importance.png'), bbox_inches='tight')
+results_melted = results_df.melt(id_vars='Threshold', var_name='Feature', value_name='Relative Importance')
+
+plt.figure(figsize=(12, 6))
+sns.barplot(data=results_melted, x='Threshold', y='Relative Importance', hue='Feature', palette='magma')
+plt.title('The Shift in Statistical Power: How ML Feature Importance Evolves Over Time')
+plt.xlabel('Contract Survival Threshold (Time)')
+plt.ylabel('Predictive Power (Gini Importance)')
+plt.legend(title='Algorithmic Feature', bbox_to_anchor=(1.05, 1), loc='upper left')
+plt.savefig(os.path.join(artifact_dir, 'multi_threshold_importance.png'), bbox_inches='tight')
 plt.close()
 
-print("\nML pipeline complete and feature importance plotted.")
+print("\nSUCCESS: Multi-threshold model output exported.")
