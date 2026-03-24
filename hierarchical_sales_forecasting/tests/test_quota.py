@@ -1,6 +1,6 @@
 import pandas as pd
-from core.hierarchy import SalesHierarchy
-from core.quota_cascader import QuotaCascader
+from b2b_revenue_forecasting.hierarchy import SalesHierarchy
+from b2b_revenue_forecasting.quota_cascader import QuotaCascader
 
 def main():
     # 1. Load the synthetic B2B dataset
