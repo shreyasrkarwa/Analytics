@@ -1,0 +1,143 @@
+
+Solving the Hierarchy Problem: A New Approach to Enterprise Sales Target Cascading
+Why generic algorithms fail in bottom-up B2B sales forecasting, and how to mathematically cascade targets top-down using Python and NetworkX
+Photo by Mert Kahveci on Unsplash
+If you have ever attempted to apply standard open-source forecasting libraries (like Meta’s Prophet or standard Scikit-Learn regressors) to an Enterprise B2B Sales environment, you likely encountered a structural brick wall rapidly.
+These powerful statistical aggregators are fundamentally designed for B2C traffic, warehouse inventory, and macroscopic retail movement. They rely on bottom-up historical aggregates to plot a probabilistic forecast.
+But Enterprise B2B sales forecasting is fundamentally different. It isn’t just about probability — it is an inherently hierarchical, top-down, and human-biased process.
+In this article, we aim to illustrate a programmatic method capable of:
+	•	Cascading top-down revenue targets mathematically across an organization’s nodes.
+	•	Reconciling the flawed human “commits” naturally generated in a complex hierarchy.
+Let’s break down exactly how Enterprise Revenue Operations (RevOps) target-setting works, mathematically illustrate why standard regression libraries struggle, and explore a graph-theory approach to finally solve it.
+The Reality of B2B Enterprise Target Setting
+Standard time-series models assume growth numbers rise purely organically from the bottom-up. But in enterprise environments (like SaaS, Consulting, or Manufacturing), the exact opposite occurs.
+An overall macro-target (e.g., $100M) is established at the highest level — often derived from separate, high-level financial forecasting and budgeting processes at the Board of Directors, CEO, CRO (Chief Revenue Officer), or Head of Sales level. That target must then be logically cascaded down the organizational Directed Acyclic Graph (DAG): Global ➔ Region ➔ VP ➔ Director ➔ Manager ➔ Individual Contributor.
+Crucially, at every vertical layer of management, leaders enforce a mathematical Safety Hedge. If a Regional VP is explicitly handed a $10M target, they will not divide exactly $10M among their Directors. To protect their own bonus structure against unforeseen churn or underperformance, that VP might mathematically inflate the quota downwards by 5% — officially distributing $10.5M to the layer below them.
+Figure 1: Visualizing the top-down flow of a CEO macro-target, forced downwards through a Directed Acyclic Graph (DAG) with a sequential 5% Managerial Hedge injected at the subset layers. (Image by Author)
+This happens recursively at every nodal division. As a string of constraints, it looks like this:
+	•	Node(Global) = Target(X)
+	•	Sum(SubNodes) = Target(X) * Manager_Hedge_Multiplier
+	•	ChildNode(N1) > ChildNode(N2) based on historical capacity.
+To properly set enterprise sales targets, the algorithm must cleanly divide a macro target downwards while respecting the historical weight-capacity of the individual leaves (the Sales Reps) and injecting a structural hedge at each layer.
+Experimenting with Traditional Forecasting Libraries
+To better understand these structural limitations, let’s take a hands-on example and test the capabilities of some popular existing libraries.
+Consider a bare-minimum corporate hierarchy spanning three years of historical attainment.
+1. Generating Dummy Corporate Data
+Let’s synthesize an organization mapping Global -> Region -> Rep performance over 36 periods.
+import pandas as pd
+import numpy as np
+
+# A basic B2B Sales Hierarchy: Global -> 2 Regions -> 4 Reps
+dates = pd.date_range(start='2021-01-01', periods=36, freq='M')
+data = []
+
+reps = {'Rep_A': 'AMER', 'Rep_B': 'AMER', 'Rep_C': 'EMEA', 'Rep_D': 'EMEA'}
+base_capacities = {'Rep_A': 10000, 'Rep_B': 5000, 'Rep_C': 7500, 'Rep_D': 6000}
+
+for date in dates:
+   # Adding a 5% monthly organic trend and random noise
+   trend_multiplier = 1 + (date.year - 2021) * 0.05
+   for rep, region in reps.items():
+       attainment = base_capacities[rep] * trend_multiplier * np.random.normal(1, 0.1)
+       data.append({
+           'ds': date,
+           'Global': 'Global_Corp',
+           'Region': region,
+           'Rep': rep,
+           'y': round(attainment, 2)
+       })
+
+df = pd.DataFrame(data)
+When executed, this generates a clean time-series dataset conceptually representing historical closures. A sample of the resulting output looks like this:
+Table 1: A snippet of the synthetic time-series DataFrame representing historical closed revenue.
+Let’s assume our global target for next year is firmly set at $1.5M. Let’s try cascading rep-level targets using standard available regressors.
+2. Experimenting with Meta’s Prophet (Bottom-Up Chaos)
+Prophet models univariate time series extraordinarily well. But if we try to extract child-node forecasts to logically cascade a hierarchy, the mathematics instantly detach.
+from prophet import Prophet
+
+# 1. Forecast the Global node
+df_global = df.groupby('ds')['y'].sum().reset_index()
+m_global = Prophet().fit(df_global)
+global_forecast = m_global.predict(m_global.make_future_dataframe(periods=12, freq='M'))
+predicted_global_sum = global_forecast['yhat'][-12:].sum()
+
+# 2. Forecast an individual Rep node
+df_rep_a = df[df['Rep'] == 'Rep_A'][['ds', 'y']]
+m_rep_a = Prophet().fit(df_rep_a)
+rep_a_forecast = m_rep_a.predict(m_rep_a.make_future_dataframe(periods=12, freq='M'))
+predicted_rep_a_sum = rep_a_forecast['yhat'][-12:].sum()
+
+print(f"Prophet Predicted Global Total: ${predicted_global_sum:,.2f}")
+print(f"Prophet Predicted Rep A Total: ${predicted_rep_a_sum:,.2f}")
+If we evaluate the specific output of these independent Prophet models against our desired $1.5M constraint, we observe the mathematical fracture clearly:
+Table 2: The mathematical breakdown proving the disjointed predictions of independent Prophet regressors against the top-down constraint.
+The Breakdown: Prophet natively predicts strictly independent arrays. As seen above, nothing stops the independent mathematical sum of Rep_A... Rep_D from aggregating to a wildly different, fractured number ($1.3M) while the independent Global model concurrently over-predicts $1.6M. Furthermore, time-series libraries possess absolutely zero capability to inject a "5% Management Hedge" explicitly halfway down the hierarchy, or force the independent child nodes to perfectly sum up to equal the explicit $1.5M top-line constraint.
+3. Experimenting with Scikit-Learn Random Forests (Structural Blindness)
+If we bypass time-series expectations and use a standard RandomForestRegressor with One-Hot Encoded categorical variables for Region and Rep, the model suffers from structural blindness.
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.preprocessing import OneHotEncoder
+
+X = pd.get_dummies(df[['Region', 'Rep', 'ds']])
+y = df['y']
+
+rf = RandomForestRegressor()
+rf.fit(X, y)
+If we inspect the raw predictions of the Random Forest regressor on future dates, we observe the consequence of flat data structuring:
+Table 3: The final algorithm output cleanly cascading the Global Target downwards while systematically factoring in the 5% managerial hedge.
+The Breakdown: A Random Forest maps independent generic features (0 or 1 for one-hot encoded regions). It does not natively comprehend the topography of the business—specifically, that Rep_A is structurally nested inside AMER, which is nested inside Global_Corp. If AMER drastically misses a quarter, a Random Forest has no mathematical mechanism to absorb that shock and "re-cascade" the lacking quota laterally over to EMEA reps to structurally save the Global Target. It treats every row as a statistically isolated event, rather than an interconnected organ.
+The Solution: A NetworkX Quota Cascader
+To natively integrate top-down organization hierarchies, we must physically structure our CRM arrays into dynamic graph objects. I’ve engineered these structures into the open-source b2b-revenue-forecasting package.
+Instead of relying on crude aggregations, we ingest the organization into a native NetworkX Directed Acyclic Graph (DAG).
+Here is our dummy hierarchy expressed clearly:
+Table 3: The dummy hierarchy expressed clearly.
+The cascading algorithm ingests this exact graph and recursively pushes a macro-target downwards. Crucially, it calculates the edge weights between nodes based on past rolling attainment, ensuring Rep_A takes on proportionally heavier quotas automatically.
+from b2b_revenue_forecasting.hierarchy import SalesHierarchy
+from b2b_revenue_forecasting.quota_cascader import QuotaCascader
+
+# 1. Map the CRM data into a strict DAG hierarchy
+hierarchy = SalesHierarchy()
+hierarchy.from_dataframe(
+   df,
+   path_cols=['Global', 'Region', 'Rep'],
+   metrics_cols=['y'] # Historical attainment dictates future capacity weighting
+)
+
+# 2. Cascade a strict $1.5M Global Target dynamically
+# A 1.05 multiplier applies a 5% managerial hedge at each edge traversal!
+cascader = QuotaCascader(hierarchy)
+quotas = cascader.cascade_quota('Global_Corp', 1_500_000.0, hedge_multiplier=1.05)
+The Output Mathematics
+When we execute the cascader, we immediately witness the power of graph-traversal logic applied to corporate finance.
+The final algorithm output cleanly cascading the Global Target downwards while systematically factoring in the 5% managerial hedge.
+(Note: Target sum of L2 Reps = ~$1,650,000, mathematically shielding the precise Global L0 target of $1.5M against a ~10% compound failure rate via recursive 5% Node hedging).
+By traversing the nodes mathematically, Data Scientists can instantly model the exact financial strain placed on the bottom-most leaves to meet top-line constraints.
+Reconciling the Human Commit
+Cascading targets is only half the battle. Before writing further algorithms, we must understand what a “Commit” is in RevOps. Throughout the quarter, all reps and managers are routinely asked by leadership for their “Commit” — a manual, qualitative pledge regarding exactly how much pipeline revenue they guarantee will successfully close by the end of the financial boundary.
+If a target is structurally set at $580k for Rep_A, but their immediate Manager consistently submits an official "Commit" to the CRO of only $400k, the global math breaks.
+This human bias — often called Sandbagging (under-promising to over-deliver) or Happy Ears (over-promising and missing) — completely bypasses raw ML output.
+The CommitReconciler within our package resolves this by computing human bias as a mathematical index over a multi-quarter rolling window. By taking the simple ratio Actual_Closed / Historical_Commit = Bias_Index, we can systematically flag human behavior.
+from b2b_revenue_forecasting.commit_reconciler import CommitReconciler
+
+reconciler = CommitReconciler(historical_crm_dataframe)
+
+# Auto-correct current quarter manual forecasts dynamically
+adjusted_forecast = reconciler.reconcile_forecast(
+   manager_id='Manager_A_The_Sandbagger',
+   current_manual_commit=400_000,
+   machine_baseline_forecast=580_000
+)
+If Manager A consistently submits $400k but historically closes $500k, their Bias_Index of 1.25 is computationally fused with the ML baseline.
+What happens next? By capturing and isolating this Bias_Index algorithmically, executive leaders gain massive operational clarity. Instead of blindly trusting a $400k manual commit, a CRO can examine the Bias_Index and realize they actually possess $100k of hidden "upside" in Manager A's territory. Conversely, identifying a manager with a 0.70 "Happy Ears" index allows leadership to mathematically discount that manager's pipeline risk long before reporting fragile numbers explicitly to the Board. This systematically neutralizes subjective human reporting.
+A New Framework for Revenue Operations
+In this hands-on exploration, we highlighted several key findings regarding Enterprise Sales analytics:
+	•	Standard Libraries Fall Short in B2B Structure: Tools like Prophet and Scikit-Learn regressors are magnificent at unconstrained aggregations, but they fail to parse hard macro-constraints (e.g., a rigid global target) layered over nested hierarchies.
+	•	Graph Theory Models Reality: By mapping CRM data to native Directed Acyclic Graphs (using NetworkX), we can structurally distribute targets downward, mathematically respecting both historical capacities and intentional managerial buffers.
+	•	Algorithms Must Accommodate Human Bias: Data science in RevOps isn’t purely statistical; bridging the gap requires computationally tracking and fixing human “commit” subjectivity (isolating the Bias Index).
+Traditional libraries remain paramount for macroscopic forecasting, but Enterprise Sales requires a heavier, graph-integrated physical constraint logic.
+To explore the raw mathematical implementations or to test these models against your own CRM data, the complete underlying engine discussed in this article is available open-source on GitHub and PyPI. The library is deeply modular, allowing data engineering teams to plug in exactly the components they need using a dynamically structured SalesHierarchy object (powered by networkx).
+
+References
+	•	Taylor, S. J., & Letham, B. (2018). Forecasting at Scale (Prophet). The American Statistician, 72(1), 37–45. https://peerj.com/preprints/3190/
+	•	Herzen, J., et al. (2022). Darts: User-Friendly Modern Machine Learning for Time Series. Journal of Machine Learning Research. https://unit8co.github.io/darts/
+	•	Hagberg, A. A., Schult, D. A., & Swart, P. J. (2008). Exploring Network Structure, Dynamics, and Function using NetworkX. Proceedings of the 7th Python in Science Conference. https://networkx.org/
+
