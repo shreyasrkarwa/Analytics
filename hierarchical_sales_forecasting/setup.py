@@ -6,7 +6,7 @@ long_description = (here / 'README.md').read_text(encoding='utf-8')
 
 setup(
     name='b2b-revenue-forecasting',
-    version='0.2.0',
+    version='0.2.1',
     description='A Python framework for hierarchical B2B sales quota cascading and pipeline reconciliation.',
     long_description=long_description,
     long_description_content_type='text/markdown',
