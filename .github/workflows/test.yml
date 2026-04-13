@@ -1,0 +1,68 @@
+name: Tests
+
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+    branches: [ master, main ]
+
+jobs:
+  test-b2b-revenue-forecasting:
+    name: B2B Revenue Forecasting Tests
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.9', '3.10', '3.11', '3.12']
+
+    defaults:
+      run:
+        working-directory: hierarchical_sales_forecasting
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -e .
+
+      - name: Run tests
+        run: |
+          python -m pytest tests/ -v --tb=short
+
+  test-b2b-survival-analysis:
+    name: B2B Survival Analysis Tests
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.9', '3.10', '3.11', '3.12']
+
+    defaults:
+      run:
+        working-directory: b2b_survival_analysis
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Validate module imports
+        run: |
+          python -c "import baseline_models; print('baseline_models OK')"
+          python -c "import evaluation_metrics; print('evaluation_metrics OK')"
+          python -c "import data_generator; print('data_generator OK')"
+          python -c "import survival_models; print('survival_models OK')"
