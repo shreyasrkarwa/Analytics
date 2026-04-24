@@ -19,3 +19,14 @@ venv/
 
 # pytest
 .pytest_cache/
+
+# Research Artifacts & Submissions
+*.pdf
+*.docx
+*.gdoc
+hierarchical_sales_forecasting/ssrn_working_paper.md
+hierarchical_sales_forecasting/towards_ai_article.md
+hierarchical_sales_forecasting/hierarchy_dag.png
+hierarchical_sales_forecasting/generate_jrpm_paper.py
+hierarchical_sales_forecasting/generate_ssrn_pdf.py
+hierarchical_sales_forecasting/generate_hierarchy_diagram.py
