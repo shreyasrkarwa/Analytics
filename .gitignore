@@ -30,3 +30,11 @@ hierarchical_sales_forecasting/hierarchy_dag.png
 hierarchical_sales_forecasting/generate_jrpm_paper.py
 hierarchical_sales_forecasting/generate_ssrn_pdf.py
 hierarchical_sales_forecasting/generate_hierarchy_diagram.py
+
+# Untracked files
+hierarchical_sales_forecasting/Solving the Hierarchy Problem_ A New Approach to Enterprise Sales Target Cascading.docx
+hierarchical_sales_forecasting/Solving the Hierarchy Problem_ A New Approach to Enterprise Sales Target Cascading.pdf
+hierarchical_sales_forecasting/jrpm_submission.docx
+hierarchical_sales_forecasting/jrpm_submission_updated.docx
+hierarchical_sales_forecasting/ssrn_submission.pdf
+hierarchical_sales_forecasting/tds_submission_v2.md
