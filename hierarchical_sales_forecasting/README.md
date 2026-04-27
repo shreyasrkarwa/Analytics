@@ -192,6 +192,25 @@ python demo_full_pipeline.py
 
 ---
 
+## 📄 Publications
+
+This framework is the subject of peer-reviewed research and technical publications:
+
+| Publication | Venue | Status |
+|-------------|-------|--------|
+| [Hierarchical Sales Target Cascading using DAGs in Python](https://medium.com/towards-artificial-intelligence/hierarchical-sales-target-cascading-using-directed-acyclic-graphs-dags-in-python-1426c7980b87) | **Towards AI** | ✅ Published |
+| Graph-Theoretic Approaches to Hierarchical Revenue Target Allocation in B2B Enterprises | **SSRN** (Preprint) | ⏳ Under Review |
+| Graph-Theoretic Approaches to Hierarchical Revenue Target Allocation in B2B Enterprises | **Journal of Revenue and Pricing Management** (Springer) | ⏳ Under Review |
+
+If you use this package in your research, please cite:
+
+```
+Karwa, S. (2026). Graph-Theoretic Approaches to Hierarchical Revenue Target Allocation
+in B2B Enterprises: A Methodological Framework. SSRN Working Paper.
+```
+
+---
+
 ## 📋 Requirements
 
 - Python ≥ 3.8
