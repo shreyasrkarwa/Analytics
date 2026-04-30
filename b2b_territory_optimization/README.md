@@ -64,6 +64,9 @@ Unlike generic K-Means clustering, B2B territory carving requires **hard constra
 ### Greedy LPT Balancing
 The `TerritoryAllocator` uses an approach inspired by the Longest Processing Time (LPT) multiprocessor scheduling algorithm. It sorts accounts by the target metric descending, then iteratively places the largest unassigned account into the territory with the current lowest total sum. This consistently yields $< 0.1\%$ variance on B2B workloads.
 
+### Capacity-Driven Prediction
+Instead of hardcoding headcount numbers (e.g., "I want 3 territories in AMER"), the `TerritoryAllocator` supports predictive capacity modeling via `allocate_by_capacity()`. Provide a **Target Capacity** (e.g., "$1.5M TAM per territory") and the engine mathematically analyzes the Total TAM of every taxonomy bucket, predicts the exact headcount needed (using `math.ceil()`), and automatically carves it into that precise number of territories.
+
 ### Manager Override Suggestions
 When an Account Executive has a pre-existing relationship with a buyer, managers will often manually override the algorithmic territory design to keep them together. When an account is moved, `ReassignmentEngine` calculates the exact delta required to restore balance and evaluates `itertools.combinations` of smaller accounts to suggest the perfect trade.
 

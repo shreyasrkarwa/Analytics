@@ -1,0 +1,761 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>b2b_territory_optimization package &mdash; b2b-territory-optimization 0.1.3 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
+
+  
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=360bc84d"></script>
+      <script src="_static/doctools.js?v=9a2dae69"></script>
+      <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="prev" title="b2b_territory_optimization" href="modules.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            b2b-territory-optimization
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">API Reference:</span></p>
+<ul class="current">
+<li class="toctree-l1 current"><a class="reference internal" href="modules.html">b2b_territory_optimization</a><ul class="current">
+<li class="toctree-l2 current"><a class="current reference internal" href="#">b2b_territory_optimization package</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#submodules">Submodules</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#module-b2b_territory_optimization.allocator">b2b_territory_optimization.allocator module</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#b2b_territory_optimization.allocator.TerritoryAllocator"><code class="docutils literal notranslate"><span class="pre">TerritoryAllocator</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#module-b2b_territory_optimization.assignment">b2b_territory_optimization.assignment module</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#b2b_territory_optimization.assignment.SellerAssignmentMatrix"><code class="docutils literal notranslate"><span class="pre">SellerAssignmentMatrix</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#module-b2b_territory_optimization.intelligent_assignment">b2b_territory_optimization.intelligent_assignment module</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#b2b_territory_optimization.intelligent_assignment.IntelligentAssigner"><code class="docutils literal notranslate"><span class="pre">IntelligentAssigner</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#module-b2b_territory_optimization.reassignment">b2b_territory_optimization.reassignment module</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#b2b_territory_optimization.reassignment.ReassignmentEngine"><code class="docutils literal notranslate"><span class="pre">ReassignmentEngine</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#module-b2b_territory_optimization.taxonomy">b2b_territory_optimization.taxonomy module</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#b2b_territory_optimization.taxonomy.TaxonomySchema"><code class="docutils literal notranslate"><span class="pre">TaxonomySchema</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#module-b2b_territory_optimization">Module contents</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#b2b_territory_optimization.IntelligentAssigner"><code class="docutils literal notranslate"><span class="pre">IntelligentAssigner</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#b2b_territory_optimization.ReassignmentEngine"><code class="docutils literal notranslate"><span class="pre">ReassignmentEngine</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#b2b_territory_optimization.SellerAssignmentMatrix"><code class="docutils literal notranslate"><span class="pre">SellerAssignmentMatrix</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#b2b_territory_optimization.TaxonomySchema"><code class="docutils literal notranslate"><span class="pre">TaxonomySchema</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#b2b_territory_optimization.TerritoryAllocator"><code class="docutils literal notranslate"><span class="pre">TerritoryAllocator</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">b2b-territory-optimization</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="modules.html">b2b_territory_optimization</a></li>
+      <li class="breadcrumb-item active">b2b_territory_optimization package</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/b2b_territory_optimization.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="b2b-territory-optimization-package">
+<h1>b2b_territory_optimization package<a class="headerlink" href="#b2b-territory-optimization-package" title="Link to this heading"></a></h1>
+<section id="submodules">
+<h2>Submodules<a class="headerlink" href="#submodules" title="Link to this heading"></a></h2>
+</section>
+<section id="module-b2b_territory_optimization.allocator">
+<span id="b2b-territory-optimization-allocator-module"></span><h2>b2b_territory_optimization.allocator module<a class="headerlink" href="#module-b2b_territory_optimization.allocator" title="Link to this heading"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="b2b_territory_optimization.allocator.TerritoryAllocator">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">b2b_territory_optimization.allocator.</span></span><span class="sig-name descname"><span class="pre">TerritoryAllocator</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">target_metric</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'Estimated_TAM'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">territory_prefix</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'Territory'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/b2b_territory_optimization/allocator.html#TerritoryAllocator"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#b2b_territory_optimization.allocator.TerritoryAllocator" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>Allocates accounts into k balanced territories within a specific Taxonomy Bucket.
+It uses a Greedy heuristic (LPT-inspired) to balance continuous metrics (like TAM)
+while respecting hard locks.</p>
+<p class="rubric">Methods</p>
+<table class="autosummary longtable docutils align-default">
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="#b2b_territory_optimization.allocator.TerritoryAllocator.allocate_all_taxonomies" title="b2b_territory_optimization.allocator.TerritoryAllocator.allocate_all_taxonomies"><code class="xref py py-obj docutils literal notranslate"><span class="pre">allocate_all_taxonomies</span></code></a>(schema, ...[, ...])</p></td>
+<td><p>Applies allocation across all buckets in a TaxonomySchema.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#b2b_territory_optimization.allocator.TerritoryAllocator.allocate_bucket" title="b2b_territory_optimization.allocator.TerritoryAllocator.allocate_bucket"><code class="xref py py-obj docutils literal notranslate"><span class="pre">allocate_bucket</span></code></a>(df_bucket, num_territories, ...)</p></td>
+<td><p>Allocates a single bucket into <cite>num_territories</cite>.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#b2b_territory_optimization.allocator.TerritoryAllocator.allocate_by_capacity" title="b2b_territory_optimization.allocator.TerritoryAllocator.allocate_by_capacity"><code class="xref py py-obj docutils literal notranslate"><span class="pre">allocate_by_capacity</span></code></a>(schema, target_capacity)</p></td>
+<td><p>Dynamically predicts required headcount per bucket based on capacity and allocates territories automatically.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#b2b_territory_optimization.allocator.TerritoryAllocator.predict_territory_count" title="b2b_territory_optimization.allocator.TerritoryAllocator.predict_territory_count"><code class="xref py py-obj docutils literal notranslate"><span class="pre">predict_territory_count</span></code></a>(df_bucket, ...)</p></td>
+<td><p>Predicts the required number of territories (k) for a bucket based on a target capacity.</p></td>
+</tr>
+</tbody>
+</table>
+<dl class="py method">
+<dt class="sig sig-object py" id="b2b_territory_optimization.allocator.TerritoryAllocator.allocate_all_taxonomies">
+<span class="sig-name descname"><span class="pre">allocate_all_taxonomies</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">schema</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">num_territories_per_bucket</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Dict</span><span class="p"><span class="pre">[</span></span><span class="pre">Tuple</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">int</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">locked_assignments</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">DataFrame</span></span></span><a class="reference internal" href="_modules/b2b_territory_optimization/allocator.html#TerritoryAllocator.allocate_all_taxonomies"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#b2b_territory_optimization.allocator.TerritoryAllocator.allocate_all_taxonomies" title="Link to this definition"></a></dt>
+<dd><p>Applies allocation across all buckets in a TaxonomySchema.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>schema</strong> – An initialized TaxonomySchema object.</p></li>
+<li><p><strong>num_territories_per_bucket</strong> – Dict mapping Taxonomy Key -&gt; number of territories.</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="b2b_territory_optimization.allocator.TerritoryAllocator.allocate_bucket">
+<span class="sig-name descname"><span class="pre">allocate_bucket</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">df_bucket</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">num_territories</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">taxonomy_name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">locked_assignments</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">DataFrame</span></span></span><a class="reference internal" href="_modules/b2b_territory_optimization/allocator.html#TerritoryAllocator.allocate_bucket"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#b2b_territory_optimization.allocator.TerritoryAllocator.allocate_bucket" title="Link to this definition"></a></dt>
+<dd><p>Allocates a single bucket into <cite>num_territories</cite>.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>df_bucket</strong> – The accounts in this taxonomy bucket.</p></li>
+<li><p><strong>num_territories</strong> – How many territories to carve this bucket into.</p></li>
+<li><p><strong>taxonomy_name</strong> – String representation of the bucket (e.g., “AMER_Enterprise”).</p></li>
+<li><p><strong>locked_assignments</strong> – Dict mapping Account_ID -&gt; target Territory_ID.
+These accounts will NOT be moved.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>DataFrame with a new column ‘Territory_ID’.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="b2b_territory_optimization.allocator.TerritoryAllocator.allocate_by_capacity">
+<span class="sig-name descname"><span class="pre">allocate_by_capacity</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">schema</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">target_capacity</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">locked_assignments</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">DataFrame</span></span></span><a class="reference internal" href="_modules/b2b_territory_optimization/allocator.html#TerritoryAllocator.allocate_by_capacity"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#b2b_territory_optimization.allocator.TerritoryAllocator.allocate_by_capacity" title="Link to this definition"></a></dt>
+<dd><p>Dynamically predicts required headcount per bucket based on capacity
+and allocates territories automatically.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>schema</strong> – An initialized TaxonomySchema object.</p></li>
+<li><p><strong>target_capacity</strong> – The target capacity per territory (e.g., TAM quota per rep).</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="b2b_territory_optimization.allocator.TerritoryAllocator.predict_territory_count">
+<span class="sig-name descname"><span class="pre">predict_territory_count</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">df_bucket</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">target_capacity</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">int</span></span></span><a class="reference internal" href="_modules/b2b_territory_optimization/allocator.html#TerritoryAllocator.predict_territory_count"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#b2b_territory_optimization.allocator.TerritoryAllocator.predict_territory_count" title="Link to this definition"></a></dt>
+<dd><p>Predicts the required number of territories (k) for a bucket based on a target capacity.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>df_bucket</strong> – The accounts in this taxonomy bucket.</p></li>
+<li><p><strong>target_capacity</strong> – The target value for the target_metric (e.g., $1,000,000 TAM).</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>The predicted number of territories (minimum 1).</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>int</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+<section id="module-b2b_territory_optimization.assignment">
+<span id="b2b-territory-optimization-assignment-module"></span><h2>b2b_territory_optimization.assignment module<a class="headerlink" href="#module-b2b_territory_optimization.assignment" title="Link to this heading"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="b2b_territory_optimization.assignment.SellerAssignmentMatrix">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">b2b_territory_optimization.assignment.</span></span><span class="sig-name descname"><span class="pre">SellerAssignmentMatrix</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">territories</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/b2b_territory_optimization/assignment.html#SellerAssignmentMatrix"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#b2b_territory_optimization.assignment.SellerAssignmentMatrix" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>Handles mapping different types of sellers (AEs, SEs, SDRs) to optimized territories.
+Supports 1:1, 1:N, and N:1 coverage models.</p>
+<p class="rubric">Methods</p>
+<table class="autosummary longtable docutils align-default">
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="#b2b_territory_optimization.assignment.SellerAssignmentMatrix.add_role" title="b2b_territory_optimization.assignment.SellerAssignmentMatrix.add_role"><code class="xref py py-obj docutils literal notranslate"><span class="pre">add_role</span></code></a>(role_name, territories_per_seller)</p></td>
+<td><p>Registers a seller role and its coverage model.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#b2b_territory_optimization.assignment.SellerAssignmentMatrix.export_to_hierarchy" title="b2b_territory_optimization.assignment.SellerAssignmentMatrix.export_to_hierarchy"><code class="xref py py-obj docutils literal notranslate"><span class="pre">export_to_hierarchy</span></code></a>([hierarchy_columns_order])</p></td>
+<td><p>Exports the staffing roster into a flat hierarchy format designed explicitly to be ingested by <cite>b2b_revenue_forecasting.SalesHierarchy</cite>.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#b2b_territory_optimization.assignment.SellerAssignmentMatrix.generate_assignments" title="b2b_territory_optimization.assignment.SellerAssignmentMatrix.generate_assignments"><code class="xref py py-obj docutils literal notranslate"><span class="pre">generate_assignments</span></code></a>()</p></td>
+<td><p>Generates the staffing matrix assigning hypothetical reps to territories based on the defined rules.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#b2b_territory_optimization.assignment.SellerAssignmentMatrix.get_territory_roster" title="b2b_territory_optimization.assignment.SellerAssignmentMatrix.get_territory_roster"><code class="xref py py-obj docutils literal notranslate"><span class="pre">get_territory_roster</span></code></a>()</p></td>
+<td><p>Pivots the assignments so each row is a territory and columns are roles.</p></td>
+</tr>
+</tbody>
+</table>
+<dl class="py method">
+<dt class="sig sig-object py" id="b2b_territory_optimization.assignment.SellerAssignmentMatrix.add_role">
+<span class="sig-name descname"><span class="pre">add_role</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">role_name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">territories_per_seller</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/b2b_territory_optimization/assignment.html#SellerAssignmentMatrix.add_role"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#b2b_territory_optimization.assignment.SellerAssignmentMatrix.add_role" title="Link to this definition"></a></dt>
+<dd><p>Registers a seller role and its coverage model.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>role_name</strong> – e.g. “AE”, “SE”, “SDR”</p></li>
+<li><p><strong>territories_per_seller</strong> – <ul>
+<li><p>1.0 means 1:1 (One seller covers exactly one territory)</p></li>
+<li><p>3.0 means 1:3 (One seller covers three territories)</p></li>
+<li><p>0.5 means 2:1 (Two sellers cover one territory)</p></li>
+</ul>
+</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="b2b_territory_optimization.assignment.SellerAssignmentMatrix.export_to_hierarchy">
+<span class="sig-name descname"><span class="pre">export_to_hierarchy</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">hierarchy_columns_order</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">DataFrame</span></span></span><a class="reference internal" href="_modules/b2b_territory_optimization/assignment.html#SellerAssignmentMatrix.export_to_hierarchy"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#b2b_territory_optimization.assignment.SellerAssignmentMatrix.export_to_hierarchy" title="Link to this definition"></a></dt>
+<dd><p>Exports the staffing roster into a flat hierarchy format designed explicitly
+to be ingested by <cite>b2b_revenue_forecasting.SalesHierarchy</cite>.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>hierarchy_columns_order</strong> – The desired top-down order of roles
+(e.g., [‘Regional_VP’, ‘Sales_Manager’, ‘Account_Executive’]).
+If None, uses the roles as they were added.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>A clean DataFrame ready for <cite>SalesHierarchy.from_dataframe(df, path_cols=…)</cite></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="b2b_territory_optimization.assignment.SellerAssignmentMatrix.generate_assignments">
+<span class="sig-name descname"><span class="pre">generate_assignments</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">DataFrame</span></span></span><a class="reference internal" href="_modules/b2b_territory_optimization/assignment.html#SellerAssignmentMatrix.generate_assignments"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#b2b_territory_optimization.assignment.SellerAssignmentMatrix.generate_assignments" title="Link to this definition"></a></dt>
+<dd><p>Generates the staffing matrix assigning hypothetical reps to territories
+based on the defined rules.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="b2b_territory_optimization.assignment.SellerAssignmentMatrix.get_territory_roster">
+<span class="sig-name descname"><span class="pre">get_territory_roster</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">DataFrame</span></span></span><a class="reference internal" href="_modules/b2b_territory_optimization/assignment.html#SellerAssignmentMatrix.get_territory_roster"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#b2b_territory_optimization.assignment.SellerAssignmentMatrix.get_territory_roster" title="Link to this definition"></a></dt>
+<dd><p>Pivots the assignments so each row is a territory and columns are roles.
+If a territory has multiple sellers of the same role (N:1), their IDs are comma-separated.</p>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+<section id="module-b2b_territory_optimization.intelligent_assignment">
+<span id="b2b-territory-optimization-intelligent-assignment-module"></span><h2>b2b_territory_optimization.intelligent_assignment module<a class="headerlink" href="#module-b2b_territory_optimization.intelligent_assignment" title="Link to this heading"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="b2b_territory_optimization.intelligent_assignment.IntelligentAssigner">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">b2b_territory_optimization.intelligent_assignment.</span></span><span class="sig-name descname"><span class="pre">IntelligentAssigner</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">sellers_df</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">allocated_df</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">taxonomy_columns</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/b2b_territory_optimization/intelligent_assignment.html#IntelligentAssigner"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#b2b_territory_optimization.intelligent_assignment.IntelligentAssigner" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>Uses Bipartite Matching (the Hungarian Algorithm) to mathematically
+assign real human sellers to optimized territories based on fit criteria
+and strict dimension matching.</p>
+<p class="rubric">Methods</p>
+<table class="autosummary longtable docutils align-default">
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="#b2b_territory_optimization.intelligent_assignment.IntelligentAssigner.assign_sellers" title="b2b_territory_optimization.intelligent_assignment.IntelligentAssigner.assign_sellers"><code class="xref py py-obj docutils literal notranslate"><span class="pre">assign_sellers</span></code></a>()</p></td>
+<td><p>Runs the Bipartite Matching Algorithm to optimally assign sellers.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#b2b_territory_optimization.intelligent_assignment.IntelligentAssigner.build_cost_matrix" title="b2b_territory_optimization.intelligent_assignment.IntelligentAssigner.build_cost_matrix"><code class="xref py py-obj docutils literal notranslate"><span class="pre">build_cost_matrix</span></code></a>()</p></td>
+<td><p>Builds the cost matrix where rows are Sellers and columns are Territories.</p></td>
+</tr>
+</tbody>
+</table>
+<dl class="py method">
+<dt class="sig sig-object py" id="b2b_territory_optimization.intelligent_assignment.IntelligentAssigner.assign_sellers">
+<span class="sig-name descname"><span class="pre">assign_sellers</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">DataFrame</span></span></span><a class="reference internal" href="_modules/b2b_territory_optimization/intelligent_assignment.html#IntelligentAssigner.assign_sellers"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#b2b_territory_optimization.intelligent_assignment.IntelligentAssigner.assign_sellers" title="Link to this definition"></a></dt>
+<dd><p>Runs the Bipartite Matching Algorithm to optimally assign sellers.
+Returns a DataFrame mapping Seller_ID to Territory_ID.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="b2b_territory_optimization.intelligent_assignment.IntelligentAssigner.build_cost_matrix">
+<span class="sig-name descname"><span class="pre">build_cost_matrix</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Tuple</span><span class="p"><span class="pre">[</span></span><span class="pre">ndarray</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="_modules/b2b_territory_optimization/intelligent_assignment.html#IntelligentAssigner.build_cost_matrix"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#b2b_territory_optimization.intelligent_assignment.IntelligentAssigner.build_cost_matrix" title="Link to this definition"></a></dt>
+<dd><p>Builds the cost matrix where rows are Sellers and columns are Territories.
+:returns: Cost Matrix, List of Seller IDs, List of Territory IDs</p>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+<section id="module-b2b_territory_optimization.reassignment">
+<span id="b2b-territory-optimization-reassignment-module"></span><h2>b2b_territory_optimization.reassignment module<a class="headerlink" href="#module-b2b_territory_optimization.reassignment" title="Link to this heading"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="b2b_territory_optimization.reassignment.ReassignmentEngine">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">b2b_territory_optimization.reassignment.</span></span><span class="sig-name descname"><span class="pre">ReassignmentEngine</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">allocated_df</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">target_metric</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'Estimated_TAM'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/b2b_territory_optimization/reassignment.html#ReassignmentEngine"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#b2b_territory_optimization.reassignment.ReassignmentEngine" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>Handles manual manager overrides (moving an account from one territory to another).
+Automatically calculates the resulting imbalance and suggests counter-moves
+to restore equilibrium.</p>
+<p class="rubric">Methods</p>
+<table class="autosummary longtable docutils align-default">
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="#b2b_territory_optimization.reassignment.ReassignmentEngine.get_imbalance" title="b2b_territory_optimization.reassignment.ReassignmentEngine.get_imbalance"><code class="xref py py-obj docutils literal notranslate"><span class="pre">get_imbalance</span></code></a>([taxonomy_bucket])</p></td>
+<td><p>Calculates the current total metric per territory.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#b2b_territory_optimization.reassignment.ReassignmentEngine.move_account" title="b2b_territory_optimization.reassignment.ReassignmentEngine.move_account"><code class="xref py py-obj docutils literal notranslate"><span class="pre">move_account</span></code></a>(account_id, new_territory_id)</p></td>
+<td><p>Manually moves an account to a new territory.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#b2b_territory_optimization.reassignment.ReassignmentEngine.suggest_rebalance" title="b2b_territory_optimization.reassignment.ReassignmentEngine.suggest_rebalance"><code class="xref py py-obj docutils literal notranslate"><span class="pre">suggest_rebalance</span></code></a>(over_territory, ...[, ...])</p></td>
+<td><p>Suggests accounts (or combinations of accounts) to move from the over-allocated territory to the under-allocated territory to minimize their difference.</p></td>
+</tr>
+</tbody>
+</table>
+<dl class="py method">
+<dt class="sig sig-object py" id="b2b_territory_optimization.reassignment.ReassignmentEngine.get_imbalance">
+<span class="sig-name descname"><span class="pre">get_imbalance</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">taxonomy_bucket</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">DataFrame</span></span></span><a class="reference internal" href="_modules/b2b_territory_optimization/reassignment.html#ReassignmentEngine.get_imbalance"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#b2b_territory_optimization.reassignment.ReassignmentEngine.get_imbalance" title="Link to this definition"></a></dt>
+<dd><p>Calculates the current total metric per territory.
+If taxonomy_bucket is provided, limits analysis to territories starting with that string.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="b2b_territory_optimization.reassignment.ReassignmentEngine.move_account">
+<span class="sig-name descname"><span class="pre">move_account</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">account_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">new_territory_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/b2b_territory_optimization/reassignment.html#ReassignmentEngine.move_account"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#b2b_territory_optimization.reassignment.ReassignmentEngine.move_account" title="Link to this definition"></a></dt>
+<dd><p>Manually moves an account to a new territory.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="b2b_territory_optimization.reassignment.ReassignmentEngine.suggest_rebalance">
+<span class="sig-name descname"><span class="pre">suggest_rebalance</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">over_territory</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">under_territory</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">excluded_account_ids</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">top_n</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">5</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">Dict</span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="_modules/b2b_territory_optimization/reassignment.html#ReassignmentEngine.suggest_rebalance"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#b2b_territory_optimization.reassignment.ReassignmentEngine.suggest_rebalance" title="Link to this definition"></a></dt>
+<dd><p>Suggests accounts (or combinations of accounts) to move from the over-allocated
+territory to the under-allocated territory to minimize their difference.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>over_territory</strong> – Territory to take accounts from.</p></li>
+<li><p><strong>under_territory</strong> – Territory to give accounts to.</p></li>
+<li><p><strong>excluded_account_ids</strong> – List of account IDs the manager refuses to move.</p></li>
+<li><p><strong>top_n</strong> – Number of suggestions to return.</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+<section id="module-b2b_territory_optimization.taxonomy">
+<span id="b2b-territory-optimization-taxonomy-module"></span><h2>b2b_territory_optimization.taxonomy module<a class="headerlink" href="#module-b2b_territory_optimization.taxonomy" title="Link to this heading"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="b2b_territory_optimization.taxonomy.TaxonomySchema">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">b2b_territory_optimization.taxonomy.</span></span><span class="sig-name descname"><span class="pre">TaxonomySchema</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">df</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">taxonomy_columns</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/b2b_territory_optimization/taxonomy.html#TaxonomySchema"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#b2b_territory_optimization.taxonomy.TaxonomySchema" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>Defines the strict hierarchical boundaries for territories.
+Accounts are grouped into “Taxonomy Buckets” based on the specified columns.
+Territory optimization happens strictly WITHIN these buckets, ensuring
+hard constraints (e.g. an SMB account cannot end up in an Enterprise territory).</p>
+<p class="rubric">Methods</p>
+<table class="autosummary longtable docutils align-default">
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="#b2b_territory_optimization.taxonomy.TaxonomySchema.get_all_bucket_keys" title="b2b_territory_optimization.taxonomy.TaxonomySchema.get_all_bucket_keys"><code class="xref py py-obj docutils literal notranslate"><span class="pre">get_all_bucket_keys</span></code></a>()</p></td>
+<td><p>Returns a list of all unique taxonomy combinations.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#b2b_territory_optimization.taxonomy.TaxonomySchema.get_bucket" title="b2b_territory_optimization.taxonomy.TaxonomySchema.get_bucket"><code class="xref py py-obj docutils literal notranslate"><span class="pre">get_bucket</span></code></a>(taxonomy_values)</p></td>
+<td><p>Returns the accounts in a specific taxonomy bucket.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#b2b_territory_optimization.taxonomy.TaxonomySchema.get_bucket_summary" title="b2b_territory_optimization.taxonomy.TaxonomySchema.get_bucket_summary"><code class="xref py py-obj docutils literal notranslate"><span class="pre">get_bucket_summary</span></code></a>()</p></td>
+<td><p>Returns a summary of account counts and total TAM per bucket.</p></td>
+</tr>
+</tbody>
+</table>
+<dl class="py method">
+<dt class="sig sig-object py" id="b2b_territory_optimization.taxonomy.TaxonomySchema.get_all_bucket_keys">
+<span class="sig-name descname"><span class="pre">get_all_bucket_keys</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">Tuple</span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="_modules/b2b_territory_optimization/taxonomy.html#TaxonomySchema.get_all_bucket_keys"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#b2b_territory_optimization.taxonomy.TaxonomySchema.get_all_bucket_keys" title="Link to this definition"></a></dt>
+<dd><p>Returns a list of all unique taxonomy combinations.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="b2b_territory_optimization.taxonomy.TaxonomySchema.get_bucket">
+<span class="sig-name descname"><span class="pre">get_bucket</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">taxonomy_values</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Tuple</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">DataFrame</span></span></span><a class="reference internal" href="_modules/b2b_territory_optimization/taxonomy.html#TaxonomySchema.get_bucket"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#b2b_territory_optimization.taxonomy.TaxonomySchema.get_bucket" title="Link to this definition"></a></dt>
+<dd><p>Returns the accounts in a specific taxonomy bucket.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="b2b_territory_optimization.taxonomy.TaxonomySchema.get_bucket_summary">
+<span class="sig-name descname"><span class="pre">get_bucket_summary</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">DataFrame</span></span></span><a class="reference internal" href="_modules/b2b_territory_optimization/taxonomy.html#TaxonomySchema.get_bucket_summary"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#b2b_territory_optimization.taxonomy.TaxonomySchema.get_bucket_summary" title="Link to this definition"></a></dt>
+<dd><p>Returns a summary of account counts and total TAM per bucket.</p>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+<section id="module-b2b_territory_optimization">
+<span id="module-contents"></span><h2>Module contents<a class="headerlink" href="#module-b2b_territory_optimization" title="Link to this heading"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="b2b_territory_optimization.IntelligentAssigner">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">b2b_territory_optimization.</span></span><span class="sig-name descname"><span class="pre">IntelligentAssigner</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">sellers_df</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">allocated_df</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">taxonomy_columns</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/b2b_territory_optimization/intelligent_assignment.html#IntelligentAssigner"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#b2b_territory_optimization.IntelligentAssigner" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>Uses Bipartite Matching (the Hungarian Algorithm) to mathematically
+assign real human sellers to optimized territories based on fit criteria
+and strict dimension matching.</p>
+<p class="rubric">Methods</p>
+<table class="autosummary longtable docutils align-default">
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="#b2b_territory_optimization.IntelligentAssigner.assign_sellers" title="b2b_territory_optimization.IntelligentAssigner.assign_sellers"><code class="xref py py-obj docutils literal notranslate"><span class="pre">assign_sellers</span></code></a>()</p></td>
+<td><p>Runs the Bipartite Matching Algorithm to optimally assign sellers.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#b2b_territory_optimization.IntelligentAssigner.build_cost_matrix" title="b2b_territory_optimization.IntelligentAssigner.build_cost_matrix"><code class="xref py py-obj docutils literal notranslate"><span class="pre">build_cost_matrix</span></code></a>()</p></td>
+<td><p>Builds the cost matrix where rows are Sellers and columns are Territories.</p></td>
+</tr>
+</tbody>
+</table>
+<dl class="py method">
+<dt class="sig sig-object py" id="b2b_territory_optimization.IntelligentAssigner.assign_sellers">
+<span class="sig-name descname"><span class="pre">assign_sellers</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">DataFrame</span></span></span><a class="reference internal" href="_modules/b2b_territory_optimization/intelligent_assignment.html#IntelligentAssigner.assign_sellers"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#b2b_territory_optimization.IntelligentAssigner.assign_sellers" title="Link to this definition"></a></dt>
+<dd><p>Runs the Bipartite Matching Algorithm to optimally assign sellers.
+Returns a DataFrame mapping Seller_ID to Territory_ID.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="b2b_territory_optimization.IntelligentAssigner.build_cost_matrix">
+<span class="sig-name descname"><span class="pre">build_cost_matrix</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Tuple</span><span class="p"><span class="pre">[</span></span><span class="pre">ndarray</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="_modules/b2b_territory_optimization/intelligent_assignment.html#IntelligentAssigner.build_cost_matrix"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#b2b_territory_optimization.IntelligentAssigner.build_cost_matrix" title="Link to this definition"></a></dt>
+<dd><p>Builds the cost matrix where rows are Sellers and columns are Territories.
+:returns: Cost Matrix, List of Seller IDs, List of Territory IDs</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="b2b_territory_optimization.ReassignmentEngine">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">b2b_territory_optimization.</span></span><span class="sig-name descname"><span class="pre">ReassignmentEngine</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">allocated_df</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">target_metric</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'Estimated_TAM'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/b2b_territory_optimization/reassignment.html#ReassignmentEngine"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#b2b_territory_optimization.ReassignmentEngine" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>Handles manual manager overrides (moving an account from one territory to another).
+Automatically calculates the resulting imbalance and suggests counter-moves
+to restore equilibrium.</p>
+<p class="rubric">Methods</p>
+<table class="autosummary longtable docutils align-default">
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="#b2b_territory_optimization.ReassignmentEngine.get_imbalance" title="b2b_territory_optimization.ReassignmentEngine.get_imbalance"><code class="xref py py-obj docutils literal notranslate"><span class="pre">get_imbalance</span></code></a>([taxonomy_bucket])</p></td>
+<td><p>Calculates the current total metric per territory.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#b2b_territory_optimization.ReassignmentEngine.move_account" title="b2b_territory_optimization.ReassignmentEngine.move_account"><code class="xref py py-obj docutils literal notranslate"><span class="pre">move_account</span></code></a>(account_id, new_territory_id)</p></td>
+<td><p>Manually moves an account to a new territory.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#b2b_territory_optimization.ReassignmentEngine.suggest_rebalance" title="b2b_territory_optimization.ReassignmentEngine.suggest_rebalance"><code class="xref py py-obj docutils literal notranslate"><span class="pre">suggest_rebalance</span></code></a>(over_territory, ...[, ...])</p></td>
+<td><p>Suggests accounts (or combinations of accounts) to move from the over-allocated territory to the under-allocated territory to minimize their difference.</p></td>
+</tr>
+</tbody>
+</table>
+<dl class="py method">
+<dt class="sig sig-object py" id="b2b_territory_optimization.ReassignmentEngine.get_imbalance">
+<span class="sig-name descname"><span class="pre">get_imbalance</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">taxonomy_bucket</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">DataFrame</span></span></span><a class="reference internal" href="_modules/b2b_territory_optimization/reassignment.html#ReassignmentEngine.get_imbalance"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#b2b_territory_optimization.ReassignmentEngine.get_imbalance" title="Link to this definition"></a></dt>
+<dd><p>Calculates the current total metric per territory.
+If taxonomy_bucket is provided, limits analysis to territories starting with that string.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="b2b_territory_optimization.ReassignmentEngine.move_account">
+<span class="sig-name descname"><span class="pre">move_account</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">account_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">new_territory_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/b2b_territory_optimization/reassignment.html#ReassignmentEngine.move_account"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#b2b_territory_optimization.ReassignmentEngine.move_account" title="Link to this definition"></a></dt>
+<dd><p>Manually moves an account to a new territory.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="b2b_territory_optimization.ReassignmentEngine.suggest_rebalance">
+<span class="sig-name descname"><span class="pre">suggest_rebalance</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">over_territory</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">under_territory</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">excluded_account_ids</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">top_n</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">5</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">Dict</span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="_modules/b2b_territory_optimization/reassignment.html#ReassignmentEngine.suggest_rebalance"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#b2b_territory_optimization.ReassignmentEngine.suggest_rebalance" title="Link to this definition"></a></dt>
+<dd><p>Suggests accounts (or combinations of accounts) to move from the over-allocated
+territory to the under-allocated territory to minimize their difference.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>over_territory</strong> – Territory to take accounts from.</p></li>
+<li><p><strong>under_territory</strong> – Territory to give accounts to.</p></li>
+<li><p><strong>excluded_account_ids</strong> – List of account IDs the manager refuses to move.</p></li>
+<li><p><strong>top_n</strong> – Number of suggestions to return.</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="b2b_territory_optimization.SellerAssignmentMatrix">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">b2b_territory_optimization.</span></span><span class="sig-name descname"><span class="pre">SellerAssignmentMatrix</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">territories</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/b2b_territory_optimization/assignment.html#SellerAssignmentMatrix"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#b2b_territory_optimization.SellerAssignmentMatrix" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>Handles mapping different types of sellers (AEs, SEs, SDRs) to optimized territories.
+Supports 1:1, 1:N, and N:1 coverage models.</p>
+<p class="rubric">Methods</p>
+<table class="autosummary longtable docutils align-default">
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="#b2b_territory_optimization.SellerAssignmentMatrix.add_role" title="b2b_territory_optimization.SellerAssignmentMatrix.add_role"><code class="xref py py-obj docutils literal notranslate"><span class="pre">add_role</span></code></a>(role_name, territories_per_seller)</p></td>
+<td><p>Registers a seller role and its coverage model.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#b2b_territory_optimization.SellerAssignmentMatrix.export_to_hierarchy" title="b2b_territory_optimization.SellerAssignmentMatrix.export_to_hierarchy"><code class="xref py py-obj docutils literal notranslate"><span class="pre">export_to_hierarchy</span></code></a>([hierarchy_columns_order])</p></td>
+<td><p>Exports the staffing roster into a flat hierarchy format designed explicitly to be ingested by <cite>b2b_revenue_forecasting.SalesHierarchy</cite>.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#b2b_territory_optimization.SellerAssignmentMatrix.generate_assignments" title="b2b_territory_optimization.SellerAssignmentMatrix.generate_assignments"><code class="xref py py-obj docutils literal notranslate"><span class="pre">generate_assignments</span></code></a>()</p></td>
+<td><p>Generates the staffing matrix assigning hypothetical reps to territories based on the defined rules.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#b2b_territory_optimization.SellerAssignmentMatrix.get_territory_roster" title="b2b_territory_optimization.SellerAssignmentMatrix.get_territory_roster"><code class="xref py py-obj docutils literal notranslate"><span class="pre">get_territory_roster</span></code></a>()</p></td>
+<td><p>Pivots the assignments so each row is a territory and columns are roles.</p></td>
+</tr>
+</tbody>
+</table>
+<dl class="py method">
+<dt class="sig sig-object py" id="b2b_territory_optimization.SellerAssignmentMatrix.add_role">
+<span class="sig-name descname"><span class="pre">add_role</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">role_name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">territories_per_seller</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/b2b_territory_optimization/assignment.html#SellerAssignmentMatrix.add_role"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#b2b_territory_optimization.SellerAssignmentMatrix.add_role" title="Link to this definition"></a></dt>
+<dd><p>Registers a seller role and its coverage model.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>role_name</strong> – e.g. “AE”, “SE”, “SDR”</p></li>
+<li><p><strong>territories_per_seller</strong> – <ul>
+<li><p>1.0 means 1:1 (One seller covers exactly one territory)</p></li>
+<li><p>3.0 means 1:3 (One seller covers three territories)</p></li>
+<li><p>0.5 means 2:1 (Two sellers cover one territory)</p></li>
+</ul>
+</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="b2b_territory_optimization.SellerAssignmentMatrix.export_to_hierarchy">
+<span class="sig-name descname"><span class="pre">export_to_hierarchy</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">hierarchy_columns_order</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">DataFrame</span></span></span><a class="reference internal" href="_modules/b2b_territory_optimization/assignment.html#SellerAssignmentMatrix.export_to_hierarchy"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#b2b_territory_optimization.SellerAssignmentMatrix.export_to_hierarchy" title="Link to this definition"></a></dt>
+<dd><p>Exports the staffing roster into a flat hierarchy format designed explicitly
+to be ingested by <cite>b2b_revenue_forecasting.SalesHierarchy</cite>.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>hierarchy_columns_order</strong> – The desired top-down order of roles
+(e.g., [‘Regional_VP’, ‘Sales_Manager’, ‘Account_Executive’]).
+If None, uses the roles as they were added.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>A clean DataFrame ready for <cite>SalesHierarchy.from_dataframe(df, path_cols=…)</cite></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="b2b_territory_optimization.SellerAssignmentMatrix.generate_assignments">
+<span class="sig-name descname"><span class="pre">generate_assignments</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">DataFrame</span></span></span><a class="reference internal" href="_modules/b2b_territory_optimization/assignment.html#SellerAssignmentMatrix.generate_assignments"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#b2b_territory_optimization.SellerAssignmentMatrix.generate_assignments" title="Link to this definition"></a></dt>
+<dd><p>Generates the staffing matrix assigning hypothetical reps to territories
+based on the defined rules.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="b2b_territory_optimization.SellerAssignmentMatrix.get_territory_roster">
+<span class="sig-name descname"><span class="pre">get_territory_roster</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">DataFrame</span></span></span><a class="reference internal" href="_modules/b2b_territory_optimization/assignment.html#SellerAssignmentMatrix.get_territory_roster"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#b2b_territory_optimization.SellerAssignmentMatrix.get_territory_roster" title="Link to this definition"></a></dt>
+<dd><p>Pivots the assignments so each row is a territory and columns are roles.
+If a territory has multiple sellers of the same role (N:1), their IDs are comma-separated.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="b2b_territory_optimization.TaxonomySchema">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">b2b_territory_optimization.</span></span><span class="sig-name descname"><span class="pre">TaxonomySchema</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">df</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">taxonomy_columns</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/b2b_territory_optimization/taxonomy.html#TaxonomySchema"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#b2b_territory_optimization.TaxonomySchema" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>Defines the strict hierarchical boundaries for territories.
+Accounts are grouped into “Taxonomy Buckets” based on the specified columns.
+Territory optimization happens strictly WITHIN these buckets, ensuring
+hard constraints (e.g. an SMB account cannot end up in an Enterprise territory).</p>
+<p class="rubric">Methods</p>
+<table class="autosummary longtable docutils align-default">
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="#b2b_territory_optimization.TaxonomySchema.get_all_bucket_keys" title="b2b_territory_optimization.TaxonomySchema.get_all_bucket_keys"><code class="xref py py-obj docutils literal notranslate"><span class="pre">get_all_bucket_keys</span></code></a>()</p></td>
+<td><p>Returns a list of all unique taxonomy combinations.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#b2b_territory_optimization.TaxonomySchema.get_bucket" title="b2b_territory_optimization.TaxonomySchema.get_bucket"><code class="xref py py-obj docutils literal notranslate"><span class="pre">get_bucket</span></code></a>(taxonomy_values)</p></td>
+<td><p>Returns the accounts in a specific taxonomy bucket.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#b2b_territory_optimization.TaxonomySchema.get_bucket_summary" title="b2b_territory_optimization.TaxonomySchema.get_bucket_summary"><code class="xref py py-obj docutils literal notranslate"><span class="pre">get_bucket_summary</span></code></a>()</p></td>
+<td><p>Returns a summary of account counts and total TAM per bucket.</p></td>
+</tr>
+</tbody>
+</table>
+<dl class="py method">
+<dt class="sig sig-object py" id="b2b_territory_optimization.TaxonomySchema.get_all_bucket_keys">
+<span class="sig-name descname"><span class="pre">get_all_bucket_keys</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">Tuple</span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="_modules/b2b_territory_optimization/taxonomy.html#TaxonomySchema.get_all_bucket_keys"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#b2b_territory_optimization.TaxonomySchema.get_all_bucket_keys" title="Link to this definition"></a></dt>
+<dd><p>Returns a list of all unique taxonomy combinations.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="b2b_territory_optimization.TaxonomySchema.get_bucket">
+<span class="sig-name descname"><span class="pre">get_bucket</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">taxonomy_values</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Tuple</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">DataFrame</span></span></span><a class="reference internal" href="_modules/b2b_territory_optimization/taxonomy.html#TaxonomySchema.get_bucket"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#b2b_territory_optimization.TaxonomySchema.get_bucket" title="Link to this definition"></a></dt>
+<dd><p>Returns the accounts in a specific taxonomy bucket.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="b2b_territory_optimization.TaxonomySchema.get_bucket_summary">
+<span class="sig-name descname"><span class="pre">get_bucket_summary</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">DataFrame</span></span></span><a class="reference internal" href="_modules/b2b_territory_optimization/taxonomy.html#TaxonomySchema.get_bucket_summary"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#b2b_territory_optimization.TaxonomySchema.get_bucket_summary" title="Link to this definition"></a></dt>
+<dd><p>Returns a summary of account counts and total TAM per bucket.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="b2b_territory_optimization.TerritoryAllocator">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">b2b_territory_optimization.</span></span><span class="sig-name descname"><span class="pre">TerritoryAllocator</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">target_metric</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'Estimated_TAM'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">territory_prefix</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'Territory'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/b2b_territory_optimization/allocator.html#TerritoryAllocator"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#b2b_territory_optimization.TerritoryAllocator" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>Allocates accounts into k balanced territories within a specific Taxonomy Bucket.
+It uses a Greedy heuristic (LPT-inspired) to balance continuous metrics (like TAM)
+while respecting hard locks.</p>
+<p class="rubric">Methods</p>
+<table class="autosummary longtable docutils align-default">
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="#b2b_territory_optimization.TerritoryAllocator.allocate_all_taxonomies" title="b2b_territory_optimization.TerritoryAllocator.allocate_all_taxonomies"><code class="xref py py-obj docutils literal notranslate"><span class="pre">allocate_all_taxonomies</span></code></a>(schema, ...[, ...])</p></td>
+<td><p>Applies allocation across all buckets in a TaxonomySchema.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#b2b_territory_optimization.TerritoryAllocator.allocate_bucket" title="b2b_territory_optimization.TerritoryAllocator.allocate_bucket"><code class="xref py py-obj docutils literal notranslate"><span class="pre">allocate_bucket</span></code></a>(df_bucket, num_territories, ...)</p></td>
+<td><p>Allocates a single bucket into <cite>num_territories</cite>.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#b2b_territory_optimization.TerritoryAllocator.allocate_by_capacity" title="b2b_territory_optimization.TerritoryAllocator.allocate_by_capacity"><code class="xref py py-obj docutils literal notranslate"><span class="pre">allocate_by_capacity</span></code></a>(schema, target_capacity)</p></td>
+<td><p>Dynamically predicts required headcount per bucket based on capacity and allocates territories automatically.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#b2b_territory_optimization.TerritoryAllocator.predict_territory_count" title="b2b_territory_optimization.TerritoryAllocator.predict_territory_count"><code class="xref py py-obj docutils literal notranslate"><span class="pre">predict_territory_count</span></code></a>(df_bucket, ...)</p></td>
+<td><p>Predicts the required number of territories (k) for a bucket based on a target capacity.</p></td>
+</tr>
+</tbody>
+</table>
+<dl class="py method">
+<dt class="sig sig-object py" id="b2b_territory_optimization.TerritoryAllocator.allocate_all_taxonomies">
+<span class="sig-name descname"><span class="pre">allocate_all_taxonomies</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">schema</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">num_territories_per_bucket</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Dict</span><span class="p"><span class="pre">[</span></span><span class="pre">Tuple</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">int</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">locked_assignments</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">DataFrame</span></span></span><a class="reference internal" href="_modules/b2b_territory_optimization/allocator.html#TerritoryAllocator.allocate_all_taxonomies"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#b2b_territory_optimization.TerritoryAllocator.allocate_all_taxonomies" title="Link to this definition"></a></dt>
+<dd><p>Applies allocation across all buckets in a TaxonomySchema.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>schema</strong> – An initialized TaxonomySchema object.</p></li>
+<li><p><strong>num_territories_per_bucket</strong> – Dict mapping Taxonomy Key -&gt; number of territories.</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="b2b_territory_optimization.TerritoryAllocator.allocate_bucket">
+<span class="sig-name descname"><span class="pre">allocate_bucket</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">df_bucket</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">num_territories</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">taxonomy_name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">locked_assignments</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">DataFrame</span></span></span><a class="reference internal" href="_modules/b2b_territory_optimization/allocator.html#TerritoryAllocator.allocate_bucket"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#b2b_territory_optimization.TerritoryAllocator.allocate_bucket" title="Link to this definition"></a></dt>
+<dd><p>Allocates a single bucket into <cite>num_territories</cite>.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>df_bucket</strong> – The accounts in this taxonomy bucket.</p></li>
+<li><p><strong>num_territories</strong> – How many territories to carve this bucket into.</p></li>
+<li><p><strong>taxonomy_name</strong> – String representation of the bucket (e.g., “AMER_Enterprise”).</p></li>
+<li><p><strong>locked_assignments</strong> – Dict mapping Account_ID -&gt; target Territory_ID.
+These accounts will NOT be moved.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>DataFrame with a new column ‘Territory_ID’.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="b2b_territory_optimization.TerritoryAllocator.allocate_by_capacity">
+<span class="sig-name descname"><span class="pre">allocate_by_capacity</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">schema</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">target_capacity</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">locked_assignments</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">DataFrame</span></span></span><a class="reference internal" href="_modules/b2b_territory_optimization/allocator.html#TerritoryAllocator.allocate_by_capacity"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#b2b_territory_optimization.TerritoryAllocator.allocate_by_capacity" title="Link to this definition"></a></dt>
+<dd><p>Dynamically predicts required headcount per bucket based on capacity
+and allocates territories automatically.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>schema</strong> – An initialized TaxonomySchema object.</p></li>
+<li><p><strong>target_capacity</strong> – The target capacity per territory (e.g., TAM quota per rep).</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="b2b_territory_optimization.TerritoryAllocator.predict_territory_count">
+<span class="sig-name descname"><span class="pre">predict_territory_count</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">df_bucket</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">target_capacity</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">int</span></span></span><a class="reference internal" href="_modules/b2b_territory_optimization/allocator.html#TerritoryAllocator.predict_territory_count"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#b2b_territory_optimization.TerritoryAllocator.predict_territory_count" title="Link to this definition"></a></dt>
+<dd><p>Predicts the required number of territories (k) for a bucket based on a target capacity.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>df_bucket</strong> – The accounts in this taxonomy bucket.</p></li>
+<li><p><strong>target_capacity</strong> – The target value for the target_metric (e.g., $1,000,000 TAM).</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>The predicted number of territories (minimum 1).</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>int</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="modules.html" class="btn btn-neutral float-left" title="b2b_territory_optimization" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, Shreyas Karwa.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

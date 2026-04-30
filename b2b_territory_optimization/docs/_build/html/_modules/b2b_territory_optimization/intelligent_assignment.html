@@ -1,0 +1,260 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>b2b_territory_optimization.intelligent_assignment &mdash; b2b-territory-optimization 0.1.3 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=9edc463e" />
+
+  
+      <script src="../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../_static/documentation_options.js?v=360bc84d"></script>
+      <script src="../../_static/doctools.js?v=9a2dae69"></script>
+      <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            b2b-territory-optimization
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">API Reference:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../modules.html">b2b_territory_optimization</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">b2b-territory-optimization</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">b2b_territory_optimization.intelligent_assignment</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for b2b_territory_optimization.intelligent_assignment</h1><div class="highlight"><pre>
+<span></span><span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">scipy.optimize</span><span class="w"> </span><span class="kn">import</span> <span class="n">linear_sum_assignment</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">List</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Tuple</span>
+
+<div class="viewcode-block" id="IntelligentAssigner">
+<a class="viewcode-back" href="../../b2b_territory_optimization.html#b2b_territory_optimization.intelligent_assignment.IntelligentAssigner">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">IntelligentAssigner</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Uses Bipartite Matching (the Hungarian Algorithm) to mathematically </span>
+<span class="sd">    assign real human sellers to optimized territories based on fit criteria</span>
+<span class="sd">    and strict dimension matching.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">sellers_df</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span> <span class="n">allocated_df</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span> 
+                 <span class="n">taxonomy_columns</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Args:</span>
+<span class="sd">            sellers_df: DataFrame of human sellers with profiles.</span>
+<span class="sd">            allocated_df: Output DataFrame from TerritoryAllocator containing Account assignments.</span>
+<span class="sd">            taxonomy_columns: List of columns used to create the taxonomy (e.g. [&#39;Region&#39;, &#39;Account_Segment&#39;]).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">sellers_df</span> <span class="o">=</span> <span class="n">sellers_df</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">allocated_df</span> <span class="o">=</span> <span class="n">allocated_df</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">taxonomy_columns</span> <span class="o">=</span> <span class="n">taxonomy_columns</span>
+        
+        <span class="c1"># Build Territory Profiles</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">territory_profiles</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_build_territory_profiles</span><span class="p">()</span>
+        
+    <span class="k">def</span><span class="w"> </span><span class="nf">_build_territory_profiles</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Extracts the profile of each territory from the allocated accounts.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Group by territory to get totals and taxonomy metadata</span>
+        <span class="n">profiles</span> <span class="o">=</span> <span class="p">[]</span>
+        
+        <span class="n">grouped</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">allocated_df</span><span class="o">.</span><span class="n">groupby</span><span class="p">(</span><span class="s1">&#39;Territory_ID&#39;</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">terr_id</span><span class="p">,</span> <span class="n">group</span> <span class="ow">in</span> <span class="n">grouped</span><span class="p">:</span>
+            <span class="c1"># Taxonomy data should be uniform across all accounts in a territory</span>
+            <span class="n">tax_data</span> <span class="o">=</span> <span class="p">{</span><span class="n">col</span><span class="p">:</span> <span class="n">group</span><span class="p">[</span><span class="n">col</span><span class="p">]</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">taxonomy_columns</span><span class="p">}</span>
+            
+            <span class="c1"># Find dominant industry in the territory</span>
+            <span class="k">if</span> <span class="s1">&#39;Industry&#39;</span> <span class="ow">in</span> <span class="n">group</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+                <span class="n">dominant_industry</span> <span class="o">=</span> <span class="n">group</span><span class="p">[</span><span class="s1">&#39;Industry&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">value_counts</span><span class="p">()</span><span class="o">.</span><span class="n">index</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">dominant_industry</span> <span class="o">=</span> <span class="kc">None</span>
+                
+            <span class="n">total_tam</span> <span class="o">=</span> <span class="n">group</span><span class="p">[</span><span class="s1">&#39;Estimated_TAM&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span> <span class="k">if</span> <span class="s1">&#39;Estimated_TAM&#39;</span> <span class="ow">in</span> <span class="n">group</span><span class="o">.</span><span class="n">columns</span> <span class="k">else</span> <span class="mf">0.0</span>
+            
+            <span class="n">profile</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="s1">&#39;Territory_ID&#39;</span><span class="p">:</span> <span class="n">terr_id</span><span class="p">,</span>
+                <span class="s1">&#39;Total_TAM&#39;</span><span class="p">:</span> <span class="n">total_tam</span><span class="p">,</span>
+                <span class="s1">&#39;Dominant_Industry&#39;</span><span class="p">:</span> <span class="n">dominant_industry</span><span class="p">,</span>
+                <span class="s1">&#39;Account_Count&#39;</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">group</span><span class="p">)</span>
+            <span class="p">}</span>
+            <span class="n">profile</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">tax_data</span><span class="p">)</span>
+            <span class="n">profiles</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">profile</span><span class="p">)</span>
+            
+        <span class="n">profiles_df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">profiles</span><span class="p">)</span>
+        
+        <span class="c1"># Rank territories by TAM into tiers (1 = Highest TAM, 3 = Lowest TAM)</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">profiles_df</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="ow">and</span> <span class="s1">&#39;Total_TAM&#39;</span> <span class="ow">in</span> <span class="n">profiles_df</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+            <span class="c1"># Use qcut if we have enough variance, otherwise fallback</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">profiles_df</span><span class="p">[</span><span class="s1">&#39;Territory_Tier&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">qcut</span><span class="p">(</span><span class="n">profiles_df</span><span class="p">[</span><span class="s1">&#39;Total_TAM&#39;</span><span class="p">],</span> <span class="n">q</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span> <span class="n">labels</span><span class="o">=</span><span class="p">[</span><span class="mi">3</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">1</span><span class="p">])</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">int</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+                <span class="c1"># If all TAMs are identical (perfectly balanced), everyone is Tier 2</span>
+                <span class="n">profiles_df</span><span class="p">[</span><span class="s1">&#39;Territory_Tier&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="mi">2</span>
+                
+        <span class="k">return</span> <span class="n">profiles_df</span>
+        
+<div class="viewcode-block" id="IntelligentAssigner.build_cost_matrix">
+<a class="viewcode-back" href="../../b2b_territory_optimization.html#b2b_territory_optimization.intelligent_assignment.IntelligentAssigner.build_cost_matrix">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">build_cost_matrix</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Builds the cost matrix where rows are Sellers and columns are Territories.</span>
+<span class="sd">        Returns:</span>
+<span class="sd">            Cost Matrix, List of Seller IDs, List of Territory IDs</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">sellers</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">sellers_df</span><span class="o">.</span><span class="n">to_dict</span><span class="p">(</span><span class="s1">&#39;records&#39;</span><span class="p">)</span>
+        <span class="n">territories</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">territory_profiles</span><span class="o">.</span><span class="n">to_dict</span><span class="p">(</span><span class="s1">&#39;records&#39;</span><span class="p">)</span>
+        
+        <span class="n">n_sellers</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">sellers</span><span class="p">)</span>
+        <span class="n">n_territories</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">territories</span><span class="p">)</span>
+        
+        <span class="c1"># Create a massive cost matrix (initialized to high values)</span>
+        <span class="c1"># We use Cost instead of Fit because linear_sum_assignment MINIMIZES cost</span>
+        <span class="n">cost_matrix</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">full</span><span class="p">((</span><span class="n">n_sellers</span><span class="p">,</span> <span class="n">n_territories</span><span class="p">),</span> <span class="mf">1000000.0</span><span class="p">)</span>
+        
+        <span class="n">seller_ids</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">territory_ids</span> <span class="o">=</span> <span class="p">[</span><span class="n">t</span><span class="p">[</span><span class="s1">&#39;Territory_ID&#39;</span><span class="p">]</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">territories</span><span class="p">]</span>
+        
+        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">seller</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">sellers</span><span class="p">):</span>
+            <span class="n">seller_ids</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">seller</span><span class="p">[</span><span class="s1">&#39;Seller_ID&#39;</span><span class="p">])</span>
+            <span class="k">for</span> <span class="n">j</span><span class="p">,</span> <span class="n">terr</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">territories</span><span class="p">):</span>
+                
+                <span class="c1"># 1. HARD CONSTRAINTS (Taxonomy Matching)</span>
+                <span class="c1"># If a seller has a Region/Segment dimension, it MUST match the territory</span>
+                <span class="n">is_valid</span> <span class="o">=</span> <span class="kc">True</span>
+                <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">taxonomy_columns</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">seller</span> <span class="ow">and</span> <span class="n">pd</span><span class="o">.</span><span class="n">notna</span><span class="p">(</span><span class="n">seller</span><span class="p">[</span><span class="n">col</span><span class="p">]):</span>
+                        <span class="k">if</span> <span class="n">seller</span><span class="p">[</span><span class="n">col</span><span class="p">]</span> <span class="o">!=</span> <span class="n">terr</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">col</span><span class="p">):</span>
+                            <span class="n">is_valid</span> <span class="o">=</span> <span class="kc">False</span>
+                            <span class="k">break</span>
+                            
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">is_valid</span><span class="p">:</span>
+                    <span class="c1"># Incompatible match - leave cost at 1,000,000 (Infinity)</span>
+                    <span class="k">continue</span>
+                    
+                <span class="c1"># 2. SOFT CONSTRAINTS (Calculating Fit)</span>
+                <span class="c1"># We start with a base cost of 100. A perfect fit will drive the cost down to 0.</span>
+                <span class="n">cost</span> <span class="o">=</span> <span class="mf">100.0</span>
+                
+                <span class="c1"># Seniority vs Territory Tier match (both 1 to 3)</span>
+                <span class="k">if</span> <span class="s1">&#39;Seniority&#39;</span> <span class="ow">in</span> <span class="n">seller</span> <span class="ow">and</span> <span class="s1">&#39;Territory_Tier&#39;</span> <span class="ow">in</span> <span class="n">terr</span><span class="p">:</span>
+                    <span class="n">tier_diff</span> <span class="o">=</span> <span class="nb">abs</span><span class="p">(</span><span class="n">seller</span><span class="p">[</span><span class="s1">&#39;Seniority&#39;</span><span class="p">]</span> <span class="o">-</span> <span class="n">terr</span><span class="p">[</span><span class="s1">&#39;Territory_Tier&#39;</span><span class="p">])</span>
+                    <span class="c1"># Penalty for mismatch</span>
+                    <span class="n">cost</span> <span class="o">+=</span> <span class="p">(</span><span class="n">tier_diff</span> <span class="o">*</span> <span class="mf">20.0</span><span class="p">)</span>
+                
+                <span class="c1"># Domain Expertise match</span>
+                <span class="k">if</span> <span class="s1">&#39;Domain_Expertise&#39;</span> <span class="ow">in</span> <span class="n">seller</span> <span class="ow">and</span> <span class="s1">&#39;Dominant_Industry&#39;</span> <span class="ow">in</span> <span class="n">terr</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="n">seller</span><span class="p">[</span><span class="s1">&#39;Domain_Expertise&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="n">terr</span><span class="p">[</span><span class="s1">&#39;Dominant_Industry&#39;</span><span class="p">]:</span>
+                        <span class="n">cost</span> <span class="o">-=</span> <span class="mf">30.0</span> <span class="c1"># Reward for matching domain</span>
+                        
+                <span class="n">cost_matrix</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span> <span class="o">=</span> <span class="n">cost</span>
+                
+        <span class="k">return</span> <span class="n">cost_matrix</span><span class="p">,</span> <span class="n">seller_ids</span><span class="p">,</span> <span class="n">territory_ids</span></div>
+
+
+<div class="viewcode-block" id="IntelligentAssigner.assign_sellers">
+<a class="viewcode-back" href="../../b2b_territory_optimization.html#b2b_territory_optimization.intelligent_assignment.IntelligentAssigner.assign_sellers">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">assign_sellers</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Runs the Bipartite Matching Algorithm to optimally assign sellers.</span>
+<span class="sd">        Returns a DataFrame mapping Seller_ID to Territory_ID.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">cost_matrix</span><span class="p">,</span> <span class="n">seller_ids</span><span class="p">,</span> <span class="n">territory_ids</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">build_cost_matrix</span><span class="p">()</span>
+        
+        <span class="c1"># Determine if we have a square, wide, or tall matrix</span>
+        <span class="c1"># The algorithm will assign min(n_sellers, n_territories) pairings</span>
+        <span class="n">row_ind</span><span class="p">,</span> <span class="n">col_ind</span> <span class="o">=</span> <span class="n">linear_sum_assignment</span><span class="p">(</span><span class="n">cost_matrix</span><span class="p">)</span>
+        
+        <span class="n">assignments</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">r</span><span class="p">,</span> <span class="n">c</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">row_ind</span><span class="p">,</span> <span class="n">col_ind</span><span class="p">):</span>
+            <span class="n">cost</span> <span class="o">=</span> <span class="n">cost_matrix</span><span class="p">[</span><span class="n">r</span><span class="p">,</span> <span class="n">c</span><span class="p">]</span>
+            
+            <span class="c1"># If cost is near infinity, it&#39;s an invalid match forced by lack of supply</span>
+            <span class="n">is_valid</span> <span class="o">=</span> <span class="n">cost</span> <span class="o">&lt;</span> <span class="mf">500000.0</span>
+            
+            <span class="n">assignments</span><span class="o">.</span><span class="n">append</span><span class="p">({</span>
+                <span class="s1">&#39;Seller_ID&#39;</span><span class="p">:</span> <span class="n">seller_ids</span><span class="p">[</span><span class="n">r</span><span class="p">],</span>
+                <span class="s1">&#39;Territory_ID&#39;</span><span class="p">:</span> <span class="n">territory_ids</span><span class="p">[</span><span class="n">c</span><span class="p">],</span>
+                <span class="s1">&#39;Fit_Cost&#39;</span><span class="p">:</span> <span class="n">cost</span> <span class="k">if</span> <span class="n">is_valid</span> <span class="k">else</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span><span class="p">,</span>
+                <span class="s1">&#39;Is_Valid_Match&#39;</span><span class="p">:</span> <span class="n">is_valid</span>
+            <span class="p">})</span>
+            
+        <span class="k">return</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">assignments</span><span class="p">)</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, Shreyas Karwa.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

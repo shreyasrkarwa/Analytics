@@ -1,0 +1,193 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>b2b_territory_optimization.taxonomy &mdash; b2b-territory-optimization 0.1.3 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=9edc463e" />
+
+  
+      <script src="../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../_static/documentation_options.js?v=360bc84d"></script>
+      <script src="../../_static/doctools.js?v=9a2dae69"></script>
+      <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            b2b-territory-optimization
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">API Reference:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../modules.html">b2b_territory_optimization</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">b2b-territory-optimization</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">b2b_territory_optimization.taxonomy</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for b2b_territory_optimization.taxonomy</h1><div class="highlight"><pre>
+<span></span><span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">List</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">Tuple</span>
+
+<div class="viewcode-block" id="TaxonomySchema">
+<a class="viewcode-back" href="../../b2b_territory_optimization.html#b2b_territory_optimization.taxonomy.TaxonomySchema">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">TaxonomySchema</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Defines the strict hierarchical boundaries for territories.</span>
+<span class="sd">    Accounts are grouped into &quot;Taxonomy Buckets&quot; based on the specified columns.</span>
+<span class="sd">    Territory optimization happens strictly WITHIN these buckets, ensuring</span>
+<span class="sd">    hard constraints (e.g. an SMB account cannot end up in an Enterprise territory).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">df</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span> <span class="n">taxonomy_columns</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Args:</span>
+<span class="sd">            df: The complete accounts DataFrame.</span>
+<span class="sd">            taxonomy_columns: List of columns that define the strict territory </span>
+<span class="sd">                              boundaries (e.g. [&#39;Region&#39;, &#39;Account_Segment&#39;]).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">taxonomy_columns</span> <span class="o">=</span> <span class="n">taxonomy_columns</span>
+        
+        <span class="c1"># Validate columns exist</span>
+        <span class="n">missing</span> <span class="o">=</span> <span class="p">[</span><span class="n">col</span> <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">taxonomy_columns</span> <span class="k">if</span> <span class="n">col</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">df</span><span class="o">.</span><span class="n">columns</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">missing</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Taxonomy columns not found in DataFrame: </span><span class="si">{</span><span class="n">missing</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            
+        <span class="bp">self</span><span class="o">.</span><span class="n">df</span> <span class="o">=</span> <span class="n">df</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">buckets</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_create_buckets</span><span class="p">()</span>
+        
+    <span class="k">def</span><span class="w"> </span><span class="nf">_create_buckets</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="n">Tuple</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Groups the dataframe into strict buckets based on the taxonomy columns.</span>
+<span class="sd">        Returns a dictionary mapping the taxonomy tuple to a sub-dataframe.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">buckets</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="n">grouped</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">df</span><span class="o">.</span><span class="n">groupby</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">taxonomy_columns</span><span class="p">)</span>
+        
+        <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">group</span> <span class="ow">in</span> <span class="n">grouped</span><span class="p">:</span>
+            <span class="c1"># name is a tuple if multiple columns, or a single value if one column</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">):</span>
+                <span class="n">name</span> <span class="o">=</span> <span class="p">(</span><span class="n">name</span><span class="p">,)</span>
+            <span class="n">buckets</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">group</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+            
+        <span class="k">return</span> <span class="n">buckets</span>
+        
+<div class="viewcode-block" id="TaxonomySchema.get_bucket">
+<a class="viewcode-back" href="../../b2b_territory_optimization.html#b2b_territory_optimization.taxonomy.TaxonomySchema.get_bucket">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_bucket</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">taxonomy_values</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Returns the accounts in a specific taxonomy bucket.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">taxonomy_values</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">):</span>
+            <span class="n">taxonomy_values</span> <span class="o">=</span> <span class="p">(</span><span class="n">taxonomy_values</span><span class="p">,)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">buckets</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">taxonomy_values</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">())</span></div>
+
+    
+<div class="viewcode-block" id="TaxonomySchema.get_all_bucket_keys">
+<a class="viewcode-back" href="../../b2b_territory_optimization.html#b2b_territory_optimization.taxonomy.TaxonomySchema.get_all_bucket_keys">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_all_bucket_keys</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Tuple</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Returns a list of all unique taxonomy combinations.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">buckets</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span></div>
+
+
+<div class="viewcode-block" id="TaxonomySchema.get_bucket_summary">
+<a class="viewcode-back" href="../../b2b_territory_optimization.html#b2b_territory_optimization.taxonomy.TaxonomySchema.get_bucket_summary">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_bucket_summary</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Returns a summary of account counts and total TAM per bucket.&quot;&quot;&quot;</span>
+        <span class="n">summary</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">df_bucket</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">buckets</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">name</span> <span class="o">=</span> <span class="s2">&quot;_&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">([</span><span class="nb">str</span><span class="p">(</span><span class="n">k</span><span class="p">)</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">key</span><span class="p">])</span>
+            <span class="n">summary</span><span class="o">.</span><span class="n">append</span><span class="p">({</span>
+                <span class="s1">&#39;Taxonomy_Key&#39;</span><span class="p">:</span> <span class="n">key</span><span class="p">,</span>
+                <span class="s1">&#39;Taxonomy_Name&#39;</span><span class="p">:</span> <span class="n">name</span><span class="p">,</span>
+                <span class="s1">&#39;Account_Count&#39;</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">df_bucket</span><span class="p">),</span>
+                <span class="s1">&#39;Total_TAM&#39;</span><span class="p">:</span> <span class="n">df_bucket</span><span class="p">[</span><span class="s1">&#39;Estimated_TAM&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span> <span class="k">if</span> <span class="s1">&#39;Estimated_TAM&#39;</span> <span class="ow">in</span> <span class="n">df_bucket</span><span class="o">.</span><span class="n">columns</span> <span class="k">else</span> <span class="mi">0</span>
+            <span class="p">})</span>
+        <span class="k">return</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">summary</span><span class="p">)</span><span class="o">.</span><span class="n">sort_values</span><span class="p">(</span><span class="s1">&#39;Account_Count&#39;</span><span class="p">,</span> <span class="n">ascending</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span></div>
+</div>
+
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">data_generator</span><span class="w"> </span><span class="kn">import</span> <span class="n">B2BDataGenerator</span>
+    <span class="n">df</span> <span class="o">=</span> <span class="n">B2BDataGenerator</span><span class="p">()</span><span class="o">.</span><span class="n">generate_accounts</span><span class="p">(</span><span class="mi">100</span><span class="p">)</span>
+    
+    <span class="c1"># Example 1: 1-Level Taxonomy</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;--- 1-Level Taxonomy (Region) ---&quot;</span><span class="p">)</span>
+    <span class="n">schema1</span> <span class="o">=</span> <span class="n">TaxonomySchema</span><span class="p">(</span><span class="n">df</span><span class="p">,</span> <span class="p">[</span><span class="s1">&#39;Region&#39;</span><span class="p">])</span>
+    <span class="nb">print</span><span class="p">(</span><span class="n">schema1</span><span class="o">.</span><span class="n">get_bucket_summary</span><span class="p">())</span>
+    
+    <span class="c1"># Example 2: 2-Level Taxonomy</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">--- 2-Level Taxonomy (Region + Segment) ---&quot;</span><span class="p">)</span>
+    <span class="n">schema2</span> <span class="o">=</span> <span class="n">TaxonomySchema</span><span class="p">(</span><span class="n">df</span><span class="p">,</span> <span class="p">[</span><span class="s1">&#39;Region&#39;</span><span class="p">,</span> <span class="s1">&#39;Account_Segment&#39;</span><span class="p">])</span>
+    <span class="nb">print</span><span class="p">(</span><span class="n">schema2</span><span class="o">.</span><span class="n">get_bucket_summary</span><span class="p">())</span>
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, Shreyas Karwa.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
