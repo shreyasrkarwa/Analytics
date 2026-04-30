@@ -6,7 +6,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="b2b-territory-optimization",
-    version="0.1.0",
+    version="0.1.1",
     author="Shreyas Karwa",
     author_email="",
     description="Mathematical territory carving and dynamic seller allocation for B2B RevOps.",
