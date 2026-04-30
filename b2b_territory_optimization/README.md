@@ -67,6 +67,11 @@ The `TerritoryAllocator` uses an approach inspired by the Longest Processing Tim
 ### Manager Override Suggestions
 When an Account Executive has a pre-existing relationship with a buyer, managers will often manually override the algorithmic territory design to keep them together. When an account is moved, `ReassignmentEngine` calculates the exact delta required to restore balance and evaluates `itertools.combinations` of smaller accounts to suggest the perfect trade.
 
+### Intelligent Bipartite Matching (Hungarian Algorithm)
+Instead of assigning sellers blindly, the `IntelligentAssigner` models human allocation as a classic Operations Research Linear Assignment Problem. Using `scipy.optimize.linear_sum_assignment`, it optimally pairs a roster of real human sellers to carved territories.
+- **Hard Constraints**: Dynamically reads taxonomy columns. If a seller's region is `AMER`, they are strictly locked out of `APAC` territories.
+- **Soft Constraints (Fit Optimization)**: Mathematically aligns Seniority with Territory TAM (Tier 1 reps get Tier 1 territories) and rewards Domain Expertise matches.
+
 ---
 
 ## 🤝 Contributing
