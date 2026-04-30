@@ -10,6 +10,7 @@ class B2BDataGenerator:
     """
     
     def __init__(self, random_seed: int = 42):
+        self.random_seed = random_seed
         np.random.seed(random_seed)
         random.seed(random_seed)
         
@@ -80,6 +81,26 @@ class B2BDataGenerator:
                 'G2_Intent_Score': round(g2_intent_score, 1),
                 'CRM_Activity_Score': round(crm_activity_score, 1),
                 'Existing_Relationship_Rep_ID': existing_rep
+            })
+            
+        return pd.DataFrame(data)
+
+    def generate_synthetic_sellers(self, num_sellers: int) -> pd.DataFrame:
+        """
+        Generates a synthetic roster of human sellers with profiles.
+        This is used to test the bipartite matching algorithms.
+        """
+        np.random.seed(self.random_seed + 1)
+        
+        data = []
+        for _ in range(num_sellers):
+            data.append({
+                'Seller_ID': f"AE-{str(uuid.uuid4())[:6].upper()}",
+                'Role': 'Account_Executive',
+                'Region': np.random.choice(self.regions, p=[0.5, 0.3, 0.2]),
+                'Account_Segment': np.random.choice(self.segments, p=[0.2, 0.3, 0.5]),
+                'Seniority': np.random.choice([1, 2, 3], p=[0.2, 0.5, 0.3]), # 1 = Senior, 3 = Junior
+                'Domain_Expertise': np.random.choice(self.industries)
             })
             
         return pd.DataFrame(data)

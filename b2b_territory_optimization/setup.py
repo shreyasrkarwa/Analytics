@@ -31,5 +31,6 @@ setup(
     install_requires=[
         "pandas>=1.0.0",
         "numpy>=1.19.0",
+        "scipy>=1.7.0",
     ],
 )
