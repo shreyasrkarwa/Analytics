@@ -32,22 +32,14 @@ def run_demo():
     # ---------------------------------------------------------
     # Step 3: Algorithmic Allocation
     # ---------------------------------------------------------
-    print("\n[3] Allocating Accounts to Territories via Greedy Optimization...")
-    # Let's say we decide on headcount for each bucket:
-    k_mapping = {
-        ('AMER', 'SMB'): 4,
-        ('AMER', 'Mid-Market'): 3,
-        ('AMER', 'Enterprise'): 2,
-        ('EMEA', 'SMB'): 3,
-        ('EMEA', 'Mid-Market'): 2,
-        ('EMEA', 'Enterprise'): 1,
-        ('APAC', 'SMB'): 2,
-        ('APAC', 'Mid-Market'): 1,
-        ('APAC', 'Enterprise'): 1,
-    }
+    print("\n[3] Allocating Accounts via Capacity-Driven Prediction...")
+    # Instead of hardcoding k (number of territories), we define our target quota/capacity.
+    # The allocator predicts the required k dynamically per bucket.
+    target_capacity = 1_500_000
+    print(f"Target TAM Capacity per Territory: ${target_capacity:,.2f}")
     
     allocator = TerritoryAllocator(target_metric='Estimated_TAM')
-    allocated_df = allocator.allocate_all_taxonomies(schema, k_mapping)
+    allocated_df = allocator.allocate_by_capacity(schema, target_capacity=target_capacity)
     
     # Show balance for AMER Mid-Market
     amer_mm = allocated_df[allocated_df['Territory_ID'].str.startswith("AMER_Mid-Market")]
@@ -105,8 +97,9 @@ def run_demo():
     suggestions = reassign_engine.suggest_rebalance(over_territory=t2, under_territory=t1)
     
     for s in suggestions:
-        print(f"- Suggest Move: {s['Account_ID']} ({s['Account_Name']}) | Value: ${s['Value']:,.0f}")
-        print(f"  Improves variance delta by: ${s['Delta_Improvement']:,.0f}")
+        accounts_str = ", ".join([f"{a['Account_ID']} ({a['Account_Name']})" for a in s['Accounts']])
+        print(f"- Suggest Move: [{s['Type']}] {accounts_str}")
+        print(f"  Total Value: ${s['Total_Value']:,.0f} | Improves variance delta by: ${s['Delta_Improvement']:,.0f}")
         print("-" * 40)
         
     print("\n=== DEMO COMPLETE ===")

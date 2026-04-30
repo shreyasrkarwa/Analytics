@@ -102,6 +102,59 @@ class TerritoryAllocator:
             
         return pd.concat(allocated_chunks, ignore_index=True)
 
+    def predict_territory_count(self, df_bucket: pd.DataFrame, target_capacity: float) -> int:
+        """
+        Predicts the required number of territories (k) for a bucket based on a target capacity.
+        
+        Args:
+            df_bucket: The accounts in this taxonomy bucket.
+            target_capacity: The target value for the target_metric (e.g., $1,000,000 TAM).
+        Returns:
+            int: The predicted number of territories (minimum 1).
+        """
+        if len(df_bucket) == 0:
+            return 1
+            
+        # Calculate total metric for the bucket
+        # Filter out NaNs and convert to float
+        valid_vals = pd.to_numeric(df_bucket[self.target_metric], errors='coerce').fillna(0)
+        total_metric = valid_vals.sum()
+        
+        if total_metric <= 0:
+            return 1
+            
+        import math
+        # Round up to ensure we have enough capacity
+        k = math.ceil(total_metric / target_capacity)
+        return max(1, k)
+
+    def allocate_by_capacity(self, schema, 
+                             target_capacity: float,
+                             locked_assignments: Optional[Dict[str, str]] = None) -> pd.DataFrame:
+        """
+        Dynamically predicts required headcount per bucket based on capacity 
+        and allocates territories automatically.
+        
+        Args:
+            schema: An initialized TaxonomySchema object.
+            target_capacity: The target capacity per territory (e.g., TAM quota per rep).
+        """
+        allocated_chunks = []
+        
+        for key in schema.get_all_bucket_keys():
+            df_bucket = schema.get_bucket(key)
+            
+            # Dynamically predict k for this specific bucket
+            k = self.predict_territory_count(df_bucket, target_capacity)
+            
+            tax_name = "_".join([str(x) for x in key])
+            
+            df_allocated = self.allocate_bucket(df_bucket, k, tax_name, locked_assignments)
+            allocated_chunks.append(df_allocated)
+            
+        return pd.concat(allocated_chunks, ignore_index=True)
+
+
 
 if __name__ == "__main__":
     from data_generator import B2BDataGenerator

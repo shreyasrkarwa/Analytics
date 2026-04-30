@@ -49,3 +49,21 @@ def test_export_to_hierarchy():
     # Both territories should have the same manager ID
     mgrs = df_hierarchy['Manager'].unique()
     assert len(mgrs) == 1
+
+def test_allocator_capacity_prediction():
+    df = pd.DataFrame({
+        'Account_ID': [1, 2, 3, 4],
+        'Estimated_TAM': [500_000, 600_000, 300_000, 200_000], # Total = 1.6M
+        'Region': ['AMER', 'AMER', 'AMER', 'AMER'],
+        'Segment': ['SMB', 'SMB', 'SMB', 'SMB']
+    })
+    
+    schema = TaxonomySchema(df, ['Region', 'Segment'])
+    allocator = TerritoryAllocator(target_metric='Estimated_TAM')
+    
+    # Target capacity = 1M. Total is 1.6M. We expect ceil(1.6 / 1.0) = 2 territories
+    allocated = allocator.allocate_by_capacity(schema, target_capacity=1_000_000)
+    
+    assert 'Territory_ID' in allocated.columns
+    territories = allocated['Territory_ID'].unique()
+    assert len(territories) == 2
