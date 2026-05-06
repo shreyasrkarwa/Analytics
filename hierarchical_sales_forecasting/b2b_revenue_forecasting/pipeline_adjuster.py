@@ -247,11 +247,12 @@ class PipelineAdjuster:
                     'threshold': threshold
                 }
             
-            # Identify donors (coverage >= healthy) and receivers (coverage < at_risk)
+            # Identify donors (coverage < at_risk) and receivers (coverage >= healthy)
+            # People with low coverage give up quota, people with high coverage take it on.
             donors = {ic: data for ic, data in ic_data.items()
-                      if data['coverage'] >= data['threshold']['healthy']}
+                      if data['coverage'] < data['threshold']['at_risk']}
             receivers = {ic: data for ic, data in ic_data.items()
-                         if data['coverage'] < data['threshold']['at_risk']}
+                         if data['coverage'] >= data['threshold']['healthy']}
             
             if not donors or not receivers:
                 continue  # Nothing to redistribute in this team
@@ -261,28 +262,31 @@ class PipelineAdjuster:
             donor_contributions = {}
             for ic, data in donors.items():
                 max_give = data['quota'] * max_adjustment_pct
-                # Proportional contribution: how far above healthy they are
-                excess_ratio = (data['coverage'] - data['threshold']['healthy']) / data['coverage']
-                contribution = min(max_give, data['quota'] * excess_ratio)
-                contribution = max(0.0, contribution)  # Safety: never negative
+                # Proportional contribution: how far below at_risk they are
+                if data['threshold']['at_risk'] > 0:
+                    gap = (data['threshold']['at_risk'] - data['coverage']) / data['threshold']['at_risk']
+                else:
+                    gap = 0.0
+                gap = max(0.0, min(1.0, gap))
+                contribution = min(max_give, data['quota'] * gap)
                 donor_contributions[ic] = contribution
                 total_surplus += contribution
             
             if total_surplus <= 0:
                 continue
             
-            # Calculate receiver needs (how far below at_risk they are)
+            # Calculate receiver capacity (how far above healthy they are)
             receiver_needs = {}
             total_need = 0.0
             for ic, data in receivers.items():
-                # Need is proportional to gap below at_risk threshold
+                # Capacity is proportional to how far above healthy they are
                 if data['coverage'] > 0:
-                    gap = (data['threshold']['at_risk'] - data['coverage']) / data['threshold']['at_risk']
+                    excess = (data['coverage'] - data['threshold']['healthy']) / data['coverage']
                 else:
-                    gap = 1.0  # Maximum need for ICs with zero coverage
-                need = max(0.0, gap)
-                receiver_needs[ic] = need
-                total_need += need
+                    excess = 0.0
+                excess = max(0.0, excess)
+                receiver_needs[ic] = excess
+                total_need += excess
             
             if total_need <= 0:
                 continue
@@ -295,7 +299,7 @@ class PipelineAdjuster:
                 actual_increase = min(raw_increase, max_receive)
                 adjusted[ic] = ic_data[ic]['quota'] + actual_increase
             
-            # Deduct from donors — proportionally to their contribution
+            # Deduct from donors — proportionally to what was actually distributed
             actual_distributed = sum(adjusted[ic] - ic_data[ic]['quota'] for ic in receivers)
             if actual_distributed > 0 and total_surplus > 0:
                 scale = actual_distributed / total_surplus
