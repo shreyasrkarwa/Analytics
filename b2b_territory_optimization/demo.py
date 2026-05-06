@@ -1,9 +1,10 @@
 import pandas as pd
-from data_generator import B2BDataGenerator
+from b2b_territory_optimization.data_generator import B2BDataGenerator
 from b2b_territory_optimization.taxonomy import TaxonomySchema
 from b2b_territory_optimization.allocator import TerritoryAllocator
 from b2b_territory_optimization.assignment import SellerAssignmentMatrix
 from b2b_territory_optimization.reassignment import ReassignmentEngine
+from b2b_territory_optimization.intelligent_assignment import IntelligentAssigner
 
 def run_demo():
     print("="*60)
@@ -70,9 +71,27 @@ def run_demo():
     print(roster.head(3).to_string())
     
     # ---------------------------------------------------------
-    # Step 5: Manager Overrides & Rebalancing
+    # Step 5: Intelligent Bipartite Matching
     # ---------------------------------------------------------
-    print("\n[5] Simulating Manager Overrides (Relationship Mapping)...")
+    print("\n[5] Simulating Intelligent Bipartite Matching (Hungarian Algorithm)...")
+    
+    # Generate random AE sellers (exactly matching the number of AMER Enterprise territories for simplicity)
+    amer_ent_terrs = allocated_df[allocated_df['Territory_ID'].str.startswith('AMER_Enterprise')]['Territory_ID'].nunique()
+    
+    # We will generate a few sellers just to show the matching engine
+    sellers_df = generator.generate_synthetic_sellers(10)
+    assigner = IntelligentAssigner(sellers_df, allocated_df, taxonomy_cols)
+    assignments = assigner.assign_sellers()
+    
+    print("\nTop 3 Intelligent Seller Matches:")
+    valid_matches = assignments[assignments['Is_Valid_Match'] == True].head(3)
+    for _, row in valid_matches.iterrows():
+        print(f"Matched {row['Seller_ID']} -> {row['Territory_ID']} (Fit Cost: {row['Fit_Cost']})")
+        
+    # ---------------------------------------------------------
+    # Step 6: Manager Overrides & Rebalancing
+    # ---------------------------------------------------------
+    print("\n[6] Simulating Manager Overrides (Relationship Mapping)...")
     
     reassign_engine = ReassignmentEngine(allocated_df, target_metric='Estimated_TAM')
     

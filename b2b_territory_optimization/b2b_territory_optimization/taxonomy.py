@@ -66,7 +66,7 @@ class TaxonomySchema:
         return pd.DataFrame(summary).sort_values('Account_Count', ascending=False)
 
 if __name__ == "__main__":
-    from data_generator import B2BDataGenerator
+    from b2b_territory_optimization.data_generator import B2BDataGenerator
     df = B2BDataGenerator().generate_accounts(100)
     
     # Example 1: 1-Level Taxonomy

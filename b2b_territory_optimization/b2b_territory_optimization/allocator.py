@@ -157,8 +157,8 @@ class TerritoryAllocator:
 
 
 if __name__ == "__main__":
-    from data_generator import B2BDataGenerator
-    from taxonomy import TaxonomySchema
+    from b2b_territory_optimization.data_generator import B2BDataGenerator
+    from b2b_territory_optimization.taxonomy import TaxonomySchema
     
     # 1. Generate Data
     df = B2BDataGenerator(random_seed=42).generate_accounts(500)

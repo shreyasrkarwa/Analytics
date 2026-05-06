@@ -1,4 +1,4 @@
-from data_generator import B2BDataGenerator
+from b2b_territory_optimization.data_generator import B2BDataGenerator
 from b2b_territory_optimization.taxonomy import TaxonomySchema
 from b2b_territory_optimization.allocator import TerritoryAllocator
 from b2b_territory_optimization.intelligent_assignment import IntelligentAssigner

@@ -129,7 +129,27 @@ class ReassignmentEngine:
                     'Delta_Improvement': abs(difference) - abs(difference - 2 * combined_val)
                 })
                 
-        # Sort all suggestions (single and combinations) by improvement and return top_n
+        # 3. Three-Account Combinations
+        if len(subset) >= 3:
+            records_3 = subset.to_dict('records')
+            for a, b, c in itertools.combinations(records_3, 3):
+                combined_val = a[self.target_metric] + b[self.target_metric] + c[self.target_metric]
+                dist = abs(combined_val - target_move_value)
+                suggestions.append({
+                    'Action': 'SUGGESTED_MOVE',
+                    'Type': 'Combination (3 Accounts)',
+                    'Accounts': [
+                        {'Account_ID': a['Account_ID'], 'Account_Name': a.get('Account_Name', '')},
+                        {'Account_ID': b['Account_ID'], 'Account_Name': b.get('Account_Name', '')},
+                        {'Account_ID': c['Account_ID'], 'Account_Name': c.get('Account_Name', '')}
+                    ],
+                    'Total_Value': combined_val,
+                    'From': over_territory,
+                    'To': under_territory,
+                    'Delta_Improvement': abs(difference) - abs(difference - 2 * combined_val)
+                })
+                
+        # Sort all suggestions (single, 2-account, and 3-account) by improvement and return top_n
         suggestions.sort(key=lambda x: x['Delta_Improvement'], reverse=True)
         return suggestions[:top_n]
 
