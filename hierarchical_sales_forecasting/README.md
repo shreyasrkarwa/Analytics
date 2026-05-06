@@ -163,10 +163,10 @@ Coverage = Current Pipeline / Cascaded Quota
 ```
 | Coverage | Status | Action |
 |----------|--------|--------|
-| ≥ healthy threshold | 🟢 Healthy | May donate quota |
+| ≥ healthy threshold | 🟢 Healthy | May receive quota |
 | ≥ at_risk threshold | 🟡 Moderate | No action |
-| ≥ 1.0 | 🟠 At Risk | May receive quota |
-| < 1.0 | 🔴 Critical | Urgent — pipeline below target |
+| ≥ 1.0 | 🟠 At Risk | May donate quota |
+| < 1.0 | 🔴 Critical | Urgent — pipeline below target (May donate quota) |
 
 ### New IC Handling
 | Scenario | Behavior |
