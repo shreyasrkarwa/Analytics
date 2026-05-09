@@ -38,5 +38,23 @@ hierarchical_sales_forecasting/jrpm_submission.docx
 hierarchical_sales_forecasting/jrpm_submission_updated.docx
 hierarchical_sales_forecasting/ssrn_submission.pdf
 hierarchical_sales_forecasting/tds_submission_v2.md
+hierarchical_sales_forecasting/jrpm_blind_review.md
+hierarchical_sales_forecasting/ssrn_paper_final.md
 unified_revenue_platform/eswa_research_paper.md
 unified_revenue_platform/towards_ai_article.md
+
+# b2b_survival_analysis — paper content (keep off GitHub until published)
+b2b_survival_analysis/generate_ssrn_pdf.py
+b2b_survival_analysis/generate_paper.py
+b2b_survival_analysis/ssrn_paper.md
+b2b_survival_analysis/arxiv_paper.md
+b2b_survival_analysis/jrpm_paper.md
+b2b_survival_analysis/towards_ai_article.md
+b2b_survival_analysis/results.json
+b2b_survival_analysis/figures/
+b2b_survival_analysis/telco_churn.csv
+b2b_survival_analysis/static_data.csv
+b2b_survival_analysis/telemetry_data.csv
+b2b_survival_analysis/longitudinal_data.csv
+b2b_survival_analysis/ssrn_submission.pdf
+b2b_survival_analysis/arxiv_submission.pdf
