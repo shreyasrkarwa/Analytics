@@ -95,53 +95,86 @@ def run_renewal_logrank_tests(static_df: pd.DataFrame) -> pd.DataFrame:
 
 
 # ---------------------------------------------------------------------------
-# PART B: PIECEWISE EXPONENTIAL MODEL
+# PART B: PIECEWISE EXPONENTIAL MODEL (COUNTING-PROCESS FORMAT)
 # ---------------------------------------------------------------------------
+
+def _expand_to_counting_process(static_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Expand static account data into counting-process (start/stop/event) format
+    with time-varying renewal boundary indicators.
+
+    Each account contributes one row per month of observation:
+      (account_id, t_start, t_stop, event, at_renewal_boundary, ...)
+
+    The at_renewal_boundary indicator is set PROSPECTIVELY based on contract
+    structure: it is 1 for any month that IS a renewal boundary month for
+    that account, regardless of whether the account actually churns there.
+    This eliminates outcome leakage.
+    """
+    rows = []
+    for _, acct in static_df.iterrows():
+        tte = int(acct['time_to_event'])
+        event = int(acct['event_observed'])
+        cl = int(acct['contract_length_months'])
+
+        for m in range(1, tte + 1):
+            is_last = (m == tte)
+            month_event = 1 if (is_last and event == 1) else 0
+
+            # Prospective indicators — determined by contract structure, not outcome
+            is_renewal = 1 if (m % cl == 0) else 0
+            months_into = m % cl
+            is_early = 1 if (months_into <= 3 or m <= 3) else 0
+            is_late = 1 if (cl - months_into) <= 3 and months_into != 0 else 0
+
+            rows.append({
+                'account_id': acct['account_id'],
+                't_start': m - 1,
+                't_stop': m,
+                'event': month_event,
+                'at_renewal_boundary': is_renewal,
+                'contract_phase_early': is_early,
+                'contract_phase_late': is_late,
+                'has_channel_partner': acct['has_channel_partner'],
+                'initial_arr': acct['initial_arr'],
+                'onboarding_duration_days': acct['onboarding_duration_days'],
+                'account_segment': acct['account_segment'],
+            })
+
+    return pd.DataFrame(rows)
+
 
 def fit_piecewise_exponential(static_df: pd.DataFrame) -> dict:
     """
-    Fit a piecewise exponential survival model with breakpoints at
-    contract renewal boundaries.
+    Fit a piecewise exponential survival model using counting-process format
+    with time-varying renewal boundary indicators.
 
-    The piecewise exponential model estimates a separate (constant)
-    hazard rate for each time interval:
-      - [0, 12):   pre-renewal interval 1
-      - [12, 12]:  renewal cliff (month 12)
-      - [12, 24):  inter-renewal interval
-      - [24, 24]:  renewal cliff (month 24)
-      - etc.
+    Unlike the naive approach (computing at_renewal_boundary from the outcome),
+    this method expands each account into monthly intervals and sets the renewal
+    indicator PROSPECTIVELY: it is 1 for any month that is a contract renewal
+    boundary month, regardless of whether churn occurs there. This is a
+    legitimate time-varying covariate determined by contract terms.
 
-    We implement this by creating indicator variables for "is this a
-    renewal month?" and fitting a Cox model with time-varying step functions.
-    This yields directly interpretable hazard ratios for the cliff effect.
+    Uses CoxTimeVaryingFitter on the expanded dataset.
 
     Returns
     -------
     dict with model, hazard ratios, and confidence intervals
     """
+    from lifelines import CoxTimeVaryingFitter
+
     print("\n" + "=" * 60)
     print("  PIECEWISE EXPONENTIAL MODEL — Renewal Cliff Hazard Ratios")
+    print("  (Counting-Process Format — No Outcome Leakage)")
     print("=" * 60)
 
-    df = static_df.copy()
-
-    # Create renewal indicator: is the event time exactly a renewal month?
-    df['at_renewal_boundary'] = (
-        (df['time_to_event'] % df['contract_length_months'] == 0).astype(int)
-    )
-
-    # Time since last renewal (position within contract cycle)
-    df['months_into_contract'] = df['time_to_event'] % df['contract_length_months']
-
-    # Phase within contract: early (≤3m), mid, late (≥contract-3m)
-    df['contract_phase_early'] = (df['months_into_contract'] <= 3).astype(int)
-    df['contract_phase_late'] = (
-        (df['contract_length_months'] - df['months_into_contract']) <= 3
-    ).astype(int)
+    print("  Expanding to counting-process format...")
+    cp_df = _expand_to_counting_process(static_df)
+    print(f"  Expanded: {len(static_df):,} accounts → {len(cp_df):,} person-month rows")
 
     # Encode segment
-    df = pd.get_dummies(df, columns=['account_segment'], drop_first=True)
-    segment_cols = [c for c in df.columns if c.startswith('account_segment_')]
+    cp_df = pd.get_dummies(cp_df, columns=['account_segment'], drop_first=True)
+    segment_cols = [c for c in cp_df.columns if c.startswith('account_segment_')]
 
     feature_cols = [
         'at_renewal_boundary',
@@ -151,40 +184,46 @@ def fit_piecewise_exponential(static_df: pd.DataFrame) -> dict:
         'initial_arr',
         'onboarding_duration_days',
     ] + segment_cols
+    feature_cols = [c for c in feature_cols if c in cp_df.columns]
 
-    feature_cols = [c for c in feature_cols if c in df.columns]
-    model_df = df[feature_cols + ['time_to_event', 'event_observed']].dropna()
+    # Fit time-varying Cox model
+    ctv = CoxTimeVaryingFitter(penalizer=0.05)
+    ctv.fit(
+        cp_df[['account_id', 't_start', 't_stop', 'event'] + feature_cols],
+        id_col='account_id',
+        start_col='t_start',
+        stop_col='t_stop',
+        event_col='event',
+    )
 
-    cph = CoxPHFitter(penalizer=0.05)
-    cph.fit(model_df, duration_col='time_to_event', event_col='event_observed')
-
-    print(f"\n  Model AIC: {cph.AIC_partial_:.2f}")
-    print(f"  Train C-Index: {cph.concordance_index_:.4f}")
+    print(f"\n  Model AIC (partial): {ctv.AIC_partial_:.2f}")
 
     # Extract renewal cliff hazard ratio
-    summary = cph.summary.copy()
+    summary = ctv.summary.copy()
     print("\n  Hazard Ratios (Key Variables):")
-    key_vars = [c for c in ['at_renewal_boundary', 'contract_phase_early', 'contract_phase_late'] if c in summary.index]
+    key_vars = [c for c in ['at_renewal_boundary', 'contract_phase_early', 'contract_phase_late']
+                if c in summary.index]
+    renewal_hr = None
     if key_vars:
         hr_table = summary.loc[key_vars, ['coef', 'exp(coef)', 'exp(coef) lower 95%',
                                            'exp(coef) upper 95%', 'p']]
         hr_table.columns = ['log_HR', 'HR', 'HR_lower_95', 'HR_upper_95', 'p_value']
         print(hr_table.to_string())
 
-        renewal_hr = summary.loc['at_renewal_boundary', 'exp(coef)'] if 'at_renewal_boundary' in summary.index else None
-        renewal_ci_lo = summary.loc['at_renewal_boundary', 'exp(coef) lower 95%'] if 'at_renewal_boundary' in summary.index else None
-        renewal_ci_hi = summary.loc['at_renewal_boundary', 'exp(coef) upper 95%'] if 'at_renewal_boundary' in summary.index else None
+        if 'at_renewal_boundary' in summary.index:
+            renewal_hr = summary.loc['at_renewal_boundary', 'exp(coef)']
+            renewal_ci_lo = summary.loc['at_renewal_boundary', 'exp(coef) lower 95%']
+            renewal_ci_hi = summary.loc['at_renewal_boundary', 'exp(coef) upper 95%']
 
-        if renewal_hr:
             print(f"\n  ★ RENEWAL CLIFF HAZARD RATIO: {renewal_hr:.3f}×")
             print(f"    95% CI: [{renewal_ci_lo:.3f}, {renewal_ci_hi:.3f}]")
-            print(f"    Interpretation: Churn risk is {renewal_hr:.1f}× higher at contract")
-            print(f"    renewal boundaries vs. all other months.")
+            print(f"    Interpretation: Churn risk is {renewal_hr:.1f}× {'higher' if renewal_hr > 1 else 'lower'} at contract")
+            print(f"    renewal boundary months vs. non-boundary months.")
 
     return {
-        'model': cph,
+        'model': ctv,
         'summary': summary,
-        'renewal_hr': renewal_hr if key_vars and 'at_renewal_boundary' in summary.index else None,
+        'renewal_hr': renewal_hr,
     }
 
 
@@ -201,12 +240,16 @@ def analyze_renewal_cliff_by_segment(static_df: pd.DataFrame) -> pd.DataFrame:
     show a different cliff pattern (hypothesis: Enterprise cliffs are
     softer due to multi-year contracts and stronger CS coverage).
 
+    Uses counting-process format to avoid outcome leakage.
+
     Returns
     -------
     DataFrame with HR estimates and CIs per segment
     """
+    from lifelines import CoxTimeVaryingFitter
+
     print("\n" + "=" * 60)
-    print("  RENEWAL CLIFF BY SEGMENT")
+    print("  RENEWAL CLIFF BY SEGMENT (Counting-Process Format)")
     print("=" * 60)
 
     results = []
@@ -216,19 +259,23 @@ def analyze_renewal_cliff_by_segment(static_df: pd.DataFrame) -> pd.DataFrame:
         if len(sub) < 100:
             continue
 
-        sub['at_renewal_boundary'] = (
-            (sub['time_to_event'] % sub['contract_length_months'] == 0).astype(int)
-        )
-        sub['months_into_contract'] = sub['time_to_event'] % sub['contract_length_months']
+        # Expand to counting-process format
+        cp_df = _expand_to_counting_process(sub)
 
         feature_cols = ['at_renewal_boundary', 'has_channel_partner',
                         'initial_arr', 'onboarding_duration_days']
-        model_df = sub[feature_cols + ['time_to_event', 'event_observed']].dropna()
+        feature_cols = [c for c in feature_cols if c in cp_df.columns]
 
         try:
-            cph = CoxPHFitter(penalizer=0.1)
-            cph.fit(model_df, duration_col='time_to_event', event_col='event_observed')
-            s = cph.summary
+            ctv = CoxTimeVaryingFitter(penalizer=0.1)
+            ctv.fit(
+                cp_df[['account_id', 't_start', 't_stop', 'event'] + feature_cols],
+                id_col='account_id',
+                start_col='t_start',
+                stop_col='t_stop',
+                event_col='event',
+            )
+            s = ctv.summary
 
             if 'at_renewal_boundary' in s.index:
                 results.append({
