@@ -58,3 +58,10 @@ b2b_survival_analysis/telemetry_data.csv
 b2b_survival_analysis/longitudinal_data.csv
 b2b_survival_analysis/ssrn_submission.pdf
 b2b_survival_analysis/arxiv_submission.pdf
+
+# B2B Territory Optimization
+b2b_territory_optimization/SSRN_submission/
+
+# Unified Revenue Platform manuscripts and figures
+unified_revenue_platform/eswa_cover_letter.md
+unified_revenue_platform/figures/
