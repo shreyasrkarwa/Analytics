@@ -1,6 +1,6 @@
 import networkx as nx
 import pandas as pd
-from typing import Dict, Set, Union, Any
+from typing import Dict, List, Set, Union, Any
 
 # Default coverage thresholds used when no per-node overrides are provided
 _DEFAULT_THRESHOLDS = {'healthy': 3.0, 'at_risk': 1.5}
@@ -9,39 +9,73 @@ _DEFAULT_THRESHOLDS = {'healthy': 3.0, 'at_risk': 1.5}
 class PipelineAdjuster:
     """
     Post-cascade pipeline health analyzer and quota adjuster.
-    
-    After QuotaCascader distributes targets top-down, the PipelineAdjuster evaluates
-    pipeline coverage at each node and optionally redistributes quota among ICs within
-    the same manager based on pipeline health.
-    
+
+    After QuotaCascader distributes targets top-down, the PipelineAdjuster
+    evaluates pipeline coverage at each node and optionally redistributes
+    quota among ICs within the same manager based on pipeline health.
+
     Key design constraints:
-      - Only IC-level quotas are adjusted; manager and above quotas are NEVER changed.
+      - Only IC-level quotas are adjusted; manager and above quotas are NEVER
+        changed.
       - Redistribution is zero-sum within each manager's team.
-      - Coverage thresholds are fully configurable per-node with ancestor inheritance.
+      - Coverage thresholds are fully configurable per-node with ancestor
+        inheritance.
       - Locked nodes (CRO-mandated quotas) are excluded from adjustment.
     """
-    
+
     def __init__(self, hierarchy, cascaded_quotas: Dict[str, float],
-                 pipeline_attr: str = 'Current_Pipeline'):
+                 pipeline_attr: Union[str, List[str]] = 'Current_Pipeline'):
         """
         Args:
             hierarchy:        SalesHierarchy object (with pipeline metrics on IC nodes).
             cascaded_quotas:  Dict from QuotaCascader.cascade_quota().
-            pipeline_attr:    Name of the pipeline attribute on IC nodes.
-                              Defaults to 'Current_Pipeline'.
+            pipeline_attr:    Name of the pipeline attribute on IC nodes — OR
+                              a list of column names whose values get SUMMED
+                              into the total pipeline per IC. Useful when
+                              "pipeline" is more than just open opportunities:
+                              e.g., ['Open_Pipeline', 'Late_Stage_Commit',
+                              'Best_Case_Adds'] gives each IC a combined
+                              dollar number to reconcile against quota.
+
+                              All listed columns are assumed to be in the SAME
+                              unit (dollars) since they're summed; mixing units
+                              like dollars + seat counts here would produce a
+                              meaningless coverage ratio.
+
+                              Defaults to 'Current_Pipeline' for backward
+                              compatibility with the v0.2.x API.
         """
         self.graph = hierarchy.graph
         self.cascaded_quotas = cascaded_quotas.copy()
-        self.pipeline_attr = pipeline_attr
-    
+        # Normalize to a list internally so the rest of the code is uniform
+        if isinstance(pipeline_attr, str):
+            self.pipeline_attrs: List[str] = [pipeline_attr]
+        else:
+            self.pipeline_attrs = list(pipeline_attr)
+            if not self.pipeline_attrs:
+                raise ValueError(
+                    "pipeline_attr list must contain at least one column name."
+                )
+        # Keep a single-attribute alias for backward compatibility with any
+        # downstream code reading .pipeline_attr directly.
+        self.pipeline_attr = self.pipeline_attrs[0]
+
     def _get_node_pipeline(self, node_id: str) -> float:
         """
         Recursively calculates the total pipeline for a node by summing the
-        pipeline attribute of all leaf nodes (ICs) underneath it.
+        configured pipeline attribute(s) of all leaf nodes (ICs) underneath
+        it. When multiple pipeline_attrs are configured, each leaf's values
+        across those attributes are summed before rolling up.
         """
         if self.graph.out_degree(node_id) == 0:
-            return self.graph.nodes[node_id].get(self.pipeline_attr, 0.0)
-        
+            attrs = self.graph.nodes[node_id]
+            total = 0.0
+            for col in self.pipeline_attrs:
+                v = attrs.get(col, 0.0)
+                if isinstance(v, (int, float)):
+                    total += float(v)
+            return total
+
         total = 0.0
         for child in self.graph.successors(node_id):
             total += self._get_node_pipeline(child)

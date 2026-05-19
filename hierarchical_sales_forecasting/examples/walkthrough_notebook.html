@@ -1,0 +1,726 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>b2b_revenue_forecasting — Step-by-Step Walkthrough</title>
+<style>
+  :root {
+    color-scheme: light;
+    --bg: #ffffff;
+    --bg-soft: #f7f8fa;
+    --bg-code: #1e2733;
+    --bg-output: #f0f3f7;
+    --bg-callout: #fff8e6;
+    --bg-callout-border: #e9c46a;
+    --bg-takeaway: #e8f4f0;
+    --bg-takeaway-border: #2a9d8f;
+    --bg-highlight: #fff1f0;
+    --bg-highlight-border: #d62828;
+    --text: #1d2433;
+    --text-soft: #5c6677;
+    --text-code: #e6edf3;
+    --text-output: #2b3340;
+    --accent: #2f5cda;
+    --accent-soft: #e8efff;
+    --rule: #e2e6ee;
+    --rule-soft: #eef0f4;
+    --badge-bg: #2f5cda;
+    --badge-text: #ffffff;
+    --mono: "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: var(--sans); color: var(--text); background: var(--bg); line-height: 1.55; font-size: 15px; }
+  .container { max-width: 980px; margin: 0 auto; padding: 36px 28px 80px; }
+  header { border-bottom: 1px solid var(--rule); padding-bottom: 24px; margin-bottom: 32px; }
+  header .eyebrow { color: var(--accent); font-weight: 600; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 8px; }
+  header h1 { font-size: 30px; margin: 0 0 10px; letter-spacing: -0.01em; }
+  header p.subtitle { color: var(--text-soft); margin: 0 0 18px; font-size: 16px; }
+  header .meta { display: flex; flex-wrap: wrap; gap: 18px 28px; color: var(--text-soft); font-size: 13px; }
+  header .meta span strong { color: var(--text); font-weight: 600; }
+  nav.toc { background: var(--bg-soft); border: 1px solid var(--rule); border-radius: 10px; padding: 18px 22px; margin-bottom: 36px; }
+  nav.toc h2 { margin: 0 0 12px; font-size: 14px; color: var(--text-soft); text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; }
+  nav.toc ol { margin: 0; padding-left: 22px; columns: 2; column-gap: 32px; }
+  nav.toc li { break-inside: avoid; margin: 4px 0; }
+  nav.toc a { color: var(--text); text-decoration: none; }
+  nav.toc a:hover { color: var(--accent); text-decoration: underline; }
+  section.step { margin: 0 0 48px; padding-top: 8px; }
+  section.step h2 { display: flex; align-items: center; gap: 14px; margin: 0 0 14px; font-size: 21px; letter-spacing: -0.005em; scroll-margin-top: 24px; }
+  .badge { display: inline-flex; align-items: center; justify-content: center; background: var(--badge-bg); color: var(--badge-text); border-radius: 50%; width: 30px; height: 30px; font-size: 13px; font-weight: 700; flex-shrink: 0; }
+  section.step h3 { font-size: 13px; color: var(--text-soft); text-transform: uppercase; letter-spacing: 0.07em; margin: 22px 0 8px; font-weight: 600; }
+  section.step p { margin: 10px 0; }
+  pre.code { background: var(--bg-code); color: var(--text-code); padding: 16px 18px; border-radius: 8px; overflow-x: auto; font-family: var(--mono); font-size: 13px; line-height: 1.55; margin: 8px 0 14px; position: relative; }
+  pre.code::before { content: "In"; position: absolute; top: 8px; right: 12px; color: #6a737d; font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; }
+  pre.code code { font-family: inherit; background: transparent; padding: 0; color: inherit; }
+  pre.output { background: var(--bg-output); color: var(--text-output); padding: 14px 18px; border-radius: 8px; overflow-x: auto; font-family: var(--mono); font-size: 12.5px; line-height: 1.5; margin: 8px 0 14px; border-left: 3px solid var(--accent); position: relative; white-space: pre; }
+  pre.output::before { content: "Out"; position: absolute; top: 8px; right: 12px; color: var(--text-soft); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; }
+  code.inline { font-family: var(--mono); background: var(--bg-soft); border: 1px solid var(--rule); padding: 1px 6px; border-radius: 4px; font-size: 13px; color: #444c5a; }
+  .callout { background: var(--bg-callout); border-left: 3px solid var(--bg-callout-border); padding: 12px 16px; border-radius: 4px; margin: 16px 0; font-size: 14px; }
+  .callout strong { color: #946800; }
+  .takeaway { background: var(--bg-takeaway); border-left: 3px solid var(--bg-takeaway-border); padding: 12px 16px; border-radius: 4px; margin: 16px 0; font-size: 14px; }
+  .takeaway strong { color: #1d6f64; }
+  .highlight { background: var(--bg-highlight); border-left: 3px solid var(--bg-highlight-border); padding: 12px 16px; border-radius: 4px; margin: 16px 0; font-size: 14px; }
+  .highlight strong { color: #8a1c0f; }
+  footer { margin-top: 60px; padding-top: 24px; border-top: 1px solid var(--rule); color: var(--text-soft); font-size: 13px; }
+  footer p { margin: 6px 0; }
+  .quickstart { background: var(--accent-soft); border: 1px solid #c8d4f5; border-radius: 10px; padding: 16px 20px; margin: 0 0 32px; }
+  .quickstart h3 { margin: 0 0 8px; font-size: 14px; color: var(--accent); text-transform: uppercase; letter-spacing: 0.07em; font-weight: 700; }
+  .quickstart pre { background: var(--bg-code); color: var(--text-code); padding: 12px 14px; border-radius: 6px; overflow-x: auto; font-family: var(--mono); font-size: 12.5px; margin: 8px 0 0; }
+  hr { border: 0; border-top: 1px solid var(--rule); margin: 24px 0; }
+  h2 a.anchor, h3 a.anchor { color: var(--rule); text-decoration: none; opacity: 0; margin-left: 6px; font-weight: 400; }
+  h2:hover a.anchor, h3:hover a.anchor { opacity: 1; }
+</style>
+</head>
+<body>
+<div class="container">
+
+<header>
+  <div class="eyebrow">b2b_revenue_forecasting · v0.3.4</div>
+  <h1>Multi-Metric Cascading &amp; Reconciliation — Walkthrough</h1>
+  <p class="subtitle">End-to-end notebook: how an analyst takes one CSV of historical performance + pipeline data and produces a quota plan, a pipeline diagnosis, a redistributed plan, and a bias-corrected forecast — with full visibility into how each metric actually influences allocation.</p>
+  <div class="meta">
+    <span><strong>Package:</strong> b2b-revenue-forecasting</span>
+    <span><strong>Version:</strong> 0.3.4</span>
+    <span><strong>Dataset:</strong> 170 ICs · 217 hierarchy nodes</span>
+    <span><strong>Macro target:</strong> $50,000,000</span>
+  </div>
+</header>
+
+<div class="quickstart">
+  <h3>Quickstart</h3>
+  <p style="margin: 4px 0 0; font-size: 14px;">From the project root, run both scripts:</p>
+  <pre>pip install -e .
+python examples/generate_demo_data.py
+python examples/walkthrough.py</pre>
+</div>
+
+<nav class="toc">
+  <h2>Contents</h2>
+  <ol>
+    <li><a href="#step-1">Load the analyst's CSV</a></li>
+    <li><a href="#step-2">Build the hierarchy (with brand-new flag)</a></li>
+    <li><a href="#step-3">Declare metrics + directions</a></li>
+    <li><a href="#step-4">Suggest weights for ALL secondary metrics</a></li>
+    <li><a href="#step-5">Override a suggested weight (Pattern A)</a></li>
+    <li><a href="#step-6">Normalized-weights view (stakeholder table)</a></li>
+    <li><a href="#step-7">Exploratory direction inference</a></li>
+    <li><a href="#step-8">Cascade $50M with multi-metric blend</a></li>
+    <li><a href="#step-9">CRO override for a strategic hire</a></li>
+    <li><a href="#step-10">Diagnose pipeline health</a></li>
+    <li><a href="#step-11">Redistribute IC quotas (zero-sum)</a></li>
+    <li><a href="#step-12">Reconcile commits with bias</a></li>
+    <li><a href="#step-13">Export all outputs to CSV (with hedge audit)</a></li>
+    <li><a href="#step-14">Write outputs to a SQL database</a></li>
+    <li><a href="#step-15">Generate an interactive HTML dashboard</a></li>
+    <li><a href="#step-16">Summary report</a></li>
+  </ol>
+</nav>
+
+<section class="step" id="step-1">
+  <h2><span class="badge">1</span>Load the analyst's CSV<a class="anchor" href="#step-1">#</a></h2>
+  <p>The analyst uploads <strong>one</strong> wide CSV with everything: hierarchy columns, historical attainment for any number of metrics, single-column LTM aggregates, multi-source pipeline, and a brand-new flag. One file, no joins.</p>
+
+  <h3>Code</h3>
+<pre class="code"><code>import pandas as pd
+df = pd.read_csv('examples/data/demo_hierarchy.csv', keep_default_na=False)
+print(f"Loaded {len(df)} IC rows, {len(df.columns)} columns")
+print(df[['Region', 'IC', 'Q4_NetNewACV', 'Q4_CloudSeats',
+         'LTM_ExpansionSpent', 'Q4_Has_Active_Cert',
+         'Open_Pipeline', 'Is_Brand_New']].head(2).to_string(index=False))</code></pre>
+
+  <h3>Output</h3>
+<pre class="output">Loaded 170 IC rows from examples/data/demo_hierarchy.csv
+Columns (30): ['Global', 'Region', 'RVP', 'Director', 'Manager', 'IC',
+  'Q1_NetNewACV'...'Q4_NetNewACV', 'Q1_CloudSeats'...'Q4_CloudSeats',
+  'Q1_DCSeats'...'Q4_DCSeats', 'LTM_ExpansionSpent',
+  'Q1_Has_Active_Cert'...'Q4_Has_Active_Cert',
+  'Open_Pipeline', 'Late_Stage_Commit', 'Best_Case_Adds', 'Is_Brand_New',
+  'NetNewACV_4Q_sum', 'CloudSeats_4Q_sum', 'DCSeats_4Q_sum']
+
+First 2 rows (key columns only):
+Region                        IC  Q4_NetNewACV  Q4_CloudSeats  LTM_ExpansionSpent  Q4_Has_Active_Cert  Open_Pipeline Is_Brand_New
+    NA IC_Mgr_Dir_RVP_NA_1_1_1_1     183790.37             47           150219.83                True      407320.79           no
+    NA IC_Mgr_Dir_RVP_NA_1_1_1_2     214837.80             46           361222.87                True      551352.01           no</pre>
+
+  <div class="takeaway"><strong>Why this matters.</strong> No external joins, no separate "brand new ICs" file, no second tool for pipeline. Everything's in one spreadsheet the analyst already maintains.</div>
+</section>
+
+<section class="step" id="step-2">
+  <h2><span class="badge">2</span>Build the hierarchy (with the brand-new flag)<a class="anchor" href="#step-2">#</a></h2>
+  <p>A single <code class="inline">SalesHierarchy.from_dataframe(...)</code> call constructs the DAG, attaches every metric column to the IC nodes, and ingests the <code class="inline">Is_Brand_New</code> CSV column into a special attribute <code class="inline">_is_brand_new</code> the cascader can find later.</p>
+
+  <h3>Code</h3>
+<pre class="code"><code>from b2b_revenue_forecasting import SalesHierarchy
+
+taxonomy = ['Global', 'Region', 'RVP', 'Director', 'Manager', 'IC']
+metrics_cols = [
+    'Q1_NetNewACV','Q2_NetNewACV','Q3_NetNewACV','Q4_NetNewACV',
+    'Q1_CloudSeats','Q2_CloudSeats','Q3_CloudSeats','Q4_CloudSeats',
+    'Q1_DCSeats','Q2_DCSeats','Q3_DCSeats','Q4_DCSeats',
+    'LTM_ExpansionSpent',
+    'Q1_Has_Active_Cert','Q2_Has_Active_Cert',
+    'Q3_Has_Active_Cert','Q4_Has_Active_Cert',
+    'Open_Pipeline','Late_Stage_Commit','Best_Case_Adds',
+]
+hierarchy = SalesHierarchy()
+hierarchy.from_dataframe(
+    df, path_cols=taxonomy, metrics_cols=metrics_cols,
+    brand_new_col='Is_Brand_New',   # ingest the flag from CSV
+)</code></pre>
+
+  <h3>Output</h3>
+<pre class="output">Total nodes in DAG: 217
+Individual Contributors (leaves): 170
+Regions:  ['NA', 'EMEA', 'APAC']
+
+ICs flagged brand-new via CSV: 29
+Examples: ['IC_Mgr_Dir_RVP_NA_1_1_2_3', 'IC_Mgr_Dir_RVP_NA_1_1_3_5', 'IC_Mgr_Dir_RVP_NA_1_1_4_4']</pre>
+
+  <div class="takeaway"><strong>Key idea.</strong> The brand-new IC list lives in the CSV, not in Python. Analysts mark new reps directly in their spreadsheet.</div>
+</section>
+
+<section class="step" id="step-3">
+  <h2><span class="badge">3</span>Declare which metrics drive cascading + their direction<a class="anchor" href="#step-3">#</a></h2>
+  <p><strong>Direction is always a user input.</strong> The analyst declares whether more-of-X means more quota (<code class="inline">proportional</code>) or less quota (<code class="inline">inverse</code>). The package never overrides this from data.</p>
+
+  <h3>Code</h3>
+<pre class="code"><code>from b2b_revenue_forecasting import MetricSpec
+
+declared_metrics = [
+    MetricSpec('NetNewACV',       direction='proportional', weight=1.0, lookback=4),
+    MetricSpec('CloudSeats',      direction='proportional', weight=1.0, lookback=4),
+    MetricSpec('DCSeats',         direction='inverse',      weight=1.0, lookback=4),
+    MetricSpec('ExpansionSpent',  direction='inverse',      weight=1.0,
+               columns=['LTM_ExpansionSpent']),
+    MetricSpec('Has_Active_Cert', direction='proportional', weight=1.0, lookback=4),
+]</code></pre>
+
+  <h3>Output</h3>
+<pre class="output">NetNewACV          direction=proportional  lookback=4
+CloudSeats         direction=proportional  lookback=4
+DCSeats            direction=inverse       lookback=4
+ExpansionSpent     direction=inverse       lookback=4  (single LTM column)
+Has_Active_Cert    direction=proportional  lookback=4  (boolean per quarter)</pre>
+
+  <div class="callout"><strong>Note.</strong> Metric names are arbitrary strings. <code class="inline">Has_Active_Cert</code> is a boolean column — the cascader auto-detects 0/1 data and skips zero-imputation. Single-column metrics like <code class="inline">LTM_ExpansionSpent</code> use the explicit <code class="inline">columns=[...]</code> argument.</div>
+</section>
+
+<section class="step" id="step-4">
+  <h2><span class="badge">4</span>Suggest weights for ALL secondary metrics<a class="anchor" href="#step-4">#</a></h2>
+  <p>All four secondary metrics (CloudSeats, DCSeats, ExpansionSpent, Has_Active_Cert) go through <code class="inline">suggest_weights</code>. NetNewACV is the cascade target itself — correlating it with itself is always 1.0 — so we pin it manually later as the anchor.</p>
+
+  <p>For boolean metrics, we aggregate per-quarter columns into a single per-IC count (0–4) so the correlation is meaningful:</p>
+
+  <h3>Code</h3>
+<pre class="code"><code># Aggregate the 4 quarterly boolean cert columns into one per-IC sum
+df['Has_Cert_4Q_sum'] = (
+    df[['Q1_Has_Active_Cert', 'Q2_Has_Active_Cert',
+        'Q3_Has_Active_Cert', 'Q4_Has_Active_Cert']]
+    .astype(int).sum(axis=1)
+)
+
+candidates = [
+    {'name': 'CloudSeats',      'column': 'CloudSeats_4Q_sum',
+     'direction': 'proportional', 'lookback': 4},
+    {'name': 'DCSeats',         'column': 'DCSeats_4Q_sum',
+     'direction': 'inverse',      'lookback': 4},
+    {'name': 'ExpansionSpent',  'column': 'LTM_ExpansionSpent',
+     'columns': ['LTM_ExpansionSpent'],
+     'direction': 'inverse',      'lookback': 1},
+    {'name': 'Has_Active_Cert', 'column': 'Has_Cert_4Q_sum',
+     'direction': 'proportional', 'lookback': 4},
+]
+suggested, report = MetricSpec.suggest_weights(
+    df, target_column='NetNewACV_4Q_sum',
+    candidate_metrics=candidates,
+)</code></pre>
+
+  <h3>Output</h3>
+<pre class="output">Suggested weights:
+  CloudSeats         direction=proportional  weight=0.980  corr=+0.980  (agrees)
+  DCSeats            direction=inverse       weight=0.067  corr=-0.067  (agrees)
+  ExpansionSpent     direction=inverse       weight=0.000  corr=+0.048  (DISAGREES — but user direction kept)
+  Has_Active_Cert    direction=proportional  weight=0.608  corr=+0.608  (agrees)</pre>
+
+  <div class="takeaway"><strong>What you got.</strong> CloudSeats at +0.98 is the strongest secondary signal. Has_Active_Cert at +0.61 is a meaningful proportional pull. DCSeats came back weak (0.067) but in the expected direction. ExpansionSpent's data sign disagreed with the analyst's call AND magnitude was below the 0.05 threshold, so weight is set to 0 — no influence on the cascade.</div>
+</section>
+
+<section class="step" id="step-5">
+  <h2><span class="badge">5</span>Override a suggested weight (Pattern A)<a class="anchor" href="#step-5">#</a></h2>
+  <p>The RevOps team believes DCSeats is a bigger headwind than the historical data alone reflects (maybe a known platform sunset). The analyst overrides just that weight — the rest stay data-driven.</p>
+
+  <h3>Code</h3>
+<pre class="code"><code># Edit in place — suggested is a list of MetricSpec, fully mutable
+for s in suggested:
+    if s.name == 'DCSeats':
+        before = s.weight
+        s.weight = 0.4   # analyst's domain judgment
+        print(f"  DCSeats weight: {before:.3f} (suggested) -> {s.weight:.3f}")
+
+# Pin the cascade target (NetNewACV) at the anchor weight of 1.0
+cascade_metrics = [
+    MetricSpec('NetNewACV', direction='proportional', weight=1.0, lookback=4),
+    *suggested,
+]</code></pre>
+
+  <h3>Output</h3>
+<pre class="output">DCSeats weight: 0.067 (suggested) -> 0.400 (overridden)
+
+Final cascade metric set:
+  NetNewACV          direction=proportional  weight=1.000
+  CloudSeats         direction=proportional  weight=0.980
+  DCSeats            direction=inverse       weight=0.400
+  ExpansionSpent     direction=inverse       weight=0.000
+  Has_Active_Cert    direction=proportional  weight=0.608</pre>
+
+  <div class="callout"><strong>Pattern B alternative.</strong> Instead of mutating, you can build the final list by hand: <code class="inline">by_name = {s.name: s for s in suggested}; cascade_metrics = [MetricSpec('NetNewACV', ...), by_name['CloudSeats'], MetricSpec('DCSeats', ..., weight=0.4), by_name['Has_Active_Cert']]</code>. Either pattern works — mix-and-match between data-driven and hand-picked weights freely.</div>
+</section>
+
+<section class="step" id="step-6">
+  <h2><span class="badge">6</span>Normalized-weights view (what stakeholders see)<a class="anchor" href="#step-6">#</a></h2>
+  <p>Input weights don't sum to 1 — the package normalizes them at cascade time across the <strong>active</strong> metrics (weight &gt; 0). This is the table to show stakeholders: it answers "how much does each signal actually pull the allocation?"</p>
+
+  <h3>Code</h3>
+<pre class="code"><code>print(MetricSpec.format_normalized_weights(cascade_metrics))
+
+# Same data as a DataFrame for further analysis
+weights_df = MetricSpec.normalized_weights(cascade_metrics)
+print(weights_df.to_string(index=False))</code></pre>
+
+  <h3>Output</h3>
+<pre class="output">Multi-metric cascade — normalized weights:
+  metric           direction     input_weight   normalized_share  active
+  NetNewACV        proportional         1.000             33.47%  yes
+  CloudSeats       proportional         0.980             32.79%  yes
+  DCSeats          inverse              0.400             13.39%  yes
+  ExpansionSpent   inverse              0.000                  —  no
+  Has_Active_Cert  proportional         0.608             20.36%  yes
+
+Available programmatically as a DataFrame:
+         metric    direction  input_weight  normalized_share  active
+      NetNewACV proportional      1.000000          0.334682    True
+     CloudSeats proportional      0.979618          0.327860    True
+        DCSeats      inverse      0.400000          0.133873    True
+ ExpansionSpent      inverse      0.000000          0.000000   False
+Has_Active_Cert proportional      0.608295          0.203585    True</pre>
+
+  <div class="highlight"><strong>This is the table to put in your planning deck.</strong> "NetNewACV drives 33.5% of the allocation, CloudSeats 32.8%, Has_Active_Cert 20.4%, DCSeats 13.4% (inverse), and ExpansionSpent is inactive." Every input weight is also shown so reviewers can see your judgment vs. the data-driven values.</div>
+
+  <div class="takeaway"><strong>Auto-printed on every cascade.</strong> The cascader prints this same table before running, so analysts never have to remember to call it. Also accessible afterward via <code class="inline">cascader.weights_report</code>. Pass <code class="inline">verbose=False</code> to suppress in batch / test runs.</div>
+</section>
+
+<section class="step" id="step-7">
+  <h2><span class="badge">7</span>Sanity-check: infer both direction and weight from data<a class="anchor" href="#step-7">#</a></h2>
+  <p>An exploratory helper that infers BOTH direction (from sign) and weight (from magnitude). Useful as a sanity check, not as a planning API.</p>
+
+  <h3>Code</h3>
+<pre class="code"><code>explored, exp_report = MetricSpec.suggest_directions_and_weights(
+    df, target_column='NetNewACV_4Q_sum',
+    candidate_metrics=candidates,
+)</code></pre>
+
+  <h3>Output</h3>
+<pre class="output">CloudSeats         inferred=proportional  weight=0.980  (corr=+0.980)
+DCSeats            inferred=inverse       weight=0.067  (corr=-0.067)
+ExpansionSpent     inferred=proportional  weight=0.000  (corr=+0.048)
+Has_Active_Cert    inferred=proportional  weight=0.608  (corr=+0.608)</pre>
+
+  <div class="callout"><strong>Useful for catching surprises.</strong> Data signs lean: CloudSeats proportional ✓, DCSeats inverse ✓, ExpansionSpent <em>proportional</em> ✗ (contradicts the domain "inverse" call), Has_Active_Cert proportional ✓. Worth a RevOps conversation about ExpansionSpent — but the cascader still respects the user's call.</div>
+</section>
+
+<section class="step" id="step-8">
+  <h2><span class="badge">8</span>Cascade $50M with multi-metric blend + per-region hedge<a class="anchor" href="#step-8">#</a></h2>
+  <p>The actual cascade. The metrics blend at every level. Per-region hedges: NA aggressive 10%, EMEA + APAC standard 5%. Brand-new ICs flagged in the CSV are picked up automatically. <strong>The normalized-weights table auto-prints at the top of every cascade.</strong></p>
+
+  <h3>Code</h3>
+<pre class="code"><code>from b2b_revenue_forecasting import QuotaCascader
+
+cascader = QuotaCascader(hierarchy)
+quotas = cascader.cascade_quota(
+    'Global_Corp', 50_000_000.0,
+    hedge_multiplier={'Global_Corp': 1.05, 'NA': 1.10,
+                      'EMEA': 1.05, 'APAC': 1.05},
+    metrics=cascade_metrics,
+    new_ic_attr='_is_brand_new',
+)
+# cascader.weights_report -> the same DataFrame for later access</code></pre>
+
+  <h3>Output</h3>
+<pre class="output">Multi-metric cascade — normalized weights:
+  metric           direction     input_weight   normalized_share  active
+  NetNewACV        proportional         1.000             33.47%  yes
+  CloudSeats       proportional         0.980             32.79%  yes
+  DCSeats          inverse              0.400             13.39%  yes
+  ExpansionSpent   inverse              0.000                  —  no
+  Has_Active_Cert  proportional         0.608             20.36%  yes
+
+Macro target:                $  50,000,000.00
+Sum of all IC quotas:        $  56,440,452.40
+Compounded overassignment:            12.88%
+Number of ICs:                           170
+
+Per-region totals at the RVP layer:
+  NA     cascaded quota: $26,309,048.07
+  EMEA   cascaded quota: $11,992,214.32
+  APAC   cascaded quota: $14,198,737.60
+
+Sample IC quotas (3 veteran + 3 brand-new):
+  IC_Mgr_Dir_RVP_NA_1_2_2_4                          $  134,821.55
+  IC_Mgr_Dir_RVP_NA_2_1_1_4                          $  279,345.05
+  IC_Mgr_Dir_RVP_NA_1_1_3_2                          $  404,417.04
+  IC_Mgr_Dir_RVP_APAC_1_2_2_5                        $  334,725.21 (BRAND-NEW)
+  IC_Mgr_Dir_RVP_APAC_1_3_2_4                        $  284,519.90 (BRAND-NEW)
+  IC_Mgr_Dir_RVP_NA_2_2_1_2                          $  285,153.60 (BRAND-NEW)</pre>
+
+  <div class="takeaway"><strong>What happened mathematically.</strong> At every parent node, each child's share = weighted sum of (per-metric share-of-siblings), with weights normalized to 1. Inverse metrics flip via reciprocal-then-normalize. The 29 brand-new ICs each got equal-share carve-out before veterans split the remainder.</div>
+</section>
+
+<section class="step" id="step-9">
+  <h2><span class="badge">9</span>Re-cascade with a CRO override for a strategic hire<a class="anchor" href="#step-9">#</a></h2>
+  <p>The CRO decides one IC must carry exactly $1.2M. The cascader carves that out first and lets the algorithm distribute the remainder among siblings.</p>
+
+  <h3>Code</h3>
+<pre class="code"><code>strategic_ic = 'IC_Mgr_Dir_RVP_NA_1_2_2_4'
+quotas_with_override = cascader.cascade_quota(
+    'Global_Corp', 50_000_000.0,
+    hedge_multiplier=per_node_hedge,
+    metrics=cascade_metrics,
+    new_ic_attr='_is_brand_new',
+    new_ic_overrides={strategic_ic: 1_200_000.0},
+)</code></pre>
+
+  <h3>Output</h3>
+<pre class="output">[Normalized-weights table reprints — see Step 8]
+
+IC_Mgr_Dir_RVP_NA_1_2_2_4 algorithmic quota:   $  134,821.55
+IC_Mgr_Dir_RVP_NA_1_2_2_4 CRO-locked quota:    $1,200,000.00
+Manager total still preserved? Sum of that manager's ICs = $1,378,521.24</pre>
+
+  <div class="takeaway"><strong>How it interacts.</strong> Override is carved out first; remainder within the manager's team is split by the multi-metric algorithm. Brand-new IC carve-outs never stack on top of overrides.</div>
+</section>
+
+<section class="step" id="step-10">
+  <h2><span class="badge">10</span>Diagnose pipeline coverage (multi-column pipeline)<a class="anchor" href="#step-10">#</a></h2>
+  <p>The <code class="inline">PipelineAdjuster</code> sums multiple pipeline columns per IC into a combined dollar value, then divides by quota to get a coverage ratio. Per-region risk thresholds classify each node.</p>
+
+  <h3>Code</h3>
+<pre class="code"><code>from b2b_revenue_forecasting import PipelineAdjuster
+
+adjuster = PipelineAdjuster(
+    hierarchy, quotas,
+    pipeline_attr=['Open_Pipeline', 'Late_Stage_Commit', 'Best_Case_Adds'],
+)
+coverage_thresholds = {
+    'NA':       {'healthy': 1.5, 'at_risk': 0.8},
+    'EMEA':     {'healthy': 2.5, 'at_risk': 1.2},
+    'APAC':     {'healthy': 3.0, 'at_risk': 1.5},
+    '_default': {'healthy': 2.0, 'at_risk': 1.0},
+}
+diagnosis = adjuster.diagnose(coverage_thresholds)</code></pre>
+
+  <h3>Output</h3>
+<pre class="output">Risk-status summary across ALL hierarchy nodes:
+Risk_Status  Nodes  Total_Quota Total_Pipeline
+    Healthy    121 $193,784,252   $515,640,223
+   Moderate     69 $125,957,442   $276,853,296
+   Critical     25   $7,956,830     $4,580,481
+    At Risk      2     $563,286       $753,401
+
+IC-level coverage under Mgr_Dir_RVP_NA_1_2_2:
+                     Node Cascaded_Quota   Pipeline Coverage_Ratio Risk_Status
+IC_Mgr_Dir_RVP_NA_1_2_2_1       $196,932   $145,644          0.74x    Critical
+IC_Mgr_Dir_RVP_NA_1_2_2_2       $182,390   $728,115          3.99x     Healthy
+IC_Mgr_Dir_RVP_NA_1_2_2_3       $129,802   $625,465          4.82x     Healthy
+IC_Mgr_Dir_RVP_NA_1_2_2_4       $134,822   $579,547          4.30x     Healthy
+IC_Mgr_Dir_RVP_NA_1_2_2_5       $369,082 $1,700,815          4.61x     Healthy
+IC_Mgr_Dir_RVP_NA_1_2_2_6       $168,563   $670,432          3.98x     Healthy
+IC_Mgr_Dir_RVP_NA_1_2_2_7       $196,932   $198,341          1.01x    Moderate</pre>
+
+  <div class="takeaway"><strong>Why multi-column matters.</strong> Pipeline isn't just open opportunities — it's open + late-stage commit + best-case adds. Summing per IC gives a more realistic coverage picture without forcing the analyst to pre-aggregate in their spreadsheet.</div>
+</section>
+
+<section class="step" id="step-11">
+  <h2><span class="badge">11</span>Redistribute IC quotas based on pipeline coverage (zero-sum)<a class="anchor" href="#step-11">#</a></h2>
+  <p>Inside each manager's team: low-coverage ICs shed quota; high-coverage ICs absorb it. Capped at ±20% per IC. Manager totals are preserved exactly.</p>
+
+  <h3>Code</h3>
+<pre class="code"><code>adjusted = adjuster.adjust(
+    mode='redistribute',
+    coverage_thresholds=coverage_thresholds,
+    max_adjustment_pct=0.20,
+    locked_nodes={strategic_ic},   # CRO-locked IC excluded
+)</code></pre>
+
+  <h3>Output</h3>
+<pre class="output">ICs whose quota was adjusted: 86 of 170
+Largest manager-level drift (should be ~$0): $0.00 at Mgr_Dir_RVP_APAC_1_2_1
+
+Top 5 ICs by absolute redistribution:
+  IC                                                       Original       Adjusted        Delta
+  IC_Mgr_Dir_RVP_EMEA_1_1_1_5                        $     478,100 $     382,480 $   -95,620
+  IC_Mgr_Dir_RVP_EMEA_1_1_1_7                        $     769,310 $     864,930 +$    95,620
+  IC_Mgr_Dir_RVP_EMEA_1_2_1_4                        $     465,052 $     372,041 $   -93,010
+  IC_Mgr_Dir_RVP_NA_2_1_2_2                          $     336,660 $     269,328 $   -67,332
+  IC_Mgr_Dir_RVP_APAC_1_1_2_5                        $     335,512 $     268,410 $   -67,102</pre>
+
+  <div class="takeaway"><strong>Zero-sum, exactly.</strong> Largest drift across all managers was $0.00. Every dollar a donor gave up was absorbed by a sibling. Manager and above quotas are never touched.</div>
+</section>
+
+<section class="step" id="step-12">
+  <h2><span class="badge">12</span>Reconcile manager commits with historical bias quotients<a class="anchor" href="#step-12">#</a></h2>
+  <p>Take each manager's current-quarter commit, adjust by their historical "sandbagger / happy ears" ratio, blend with an ML baseline.</p>
+
+  <h3>Code</h3>
+<pre class="code"><code>from b2b_revenue_forecasting import CommitReconciler
+
+commit_history = pd.read_csv('examples/data/demo_commit_history.csv')
+reconciler = CommitReconciler(commit_history)
+
+for mgr_id in reconciler.bias_weights:
+    blended = reconciler.reconcile_forecast(
+        mgr_id, current_commit=300_000.0, machine_forecast=320_000.0
+    )</code></pre>
+
+  <h3>Output</h3>
+<pre class="output">Historical bias quotients:
+  Mgr_Dir_RVP_EMEA_1_1_1              bias = 0.70  (happy ears)
+  Mgr_Dir_RVP_NA_1_1_1                bias = 1.40  (sandbagger)
+  Mgr_Dir_RVP_NA_1_1_2                bias = 1.00  (truth-teller)
+
+Reconciling Q1 commits ($300K per manager) with ML baseline of $320K:
+  Mgr_Dir_RVP_EMEA_1_1_1
+     Manager committed:     $300,000
+     Bias-adjusted human:   $210,000
+     Blended with ML:       $265,000
+  Mgr_Dir_RVP_NA_1_1_1
+     Manager committed:     $300,000
+     Bias-adjusted human:   $420,000
+     Blended with ML:       $370,000
+  Mgr_Dir_RVP_NA_1_1_2
+     Manager committed:     $300,000
+     Bias-adjusted human:   $300,000
+     Blended with ML:       $310,000</pre>
+
+  <div class="takeaway"><strong>Two-source forecast.</strong> The sandbagger's $300K commit becomes $420K once corrected for their 1.40 historical ratio; blending with the ML baseline produces $370K. The happy-ears manager's commit deflates to $210K then blends to $265K. The truth-teller barely moves.</div>
+</section>
+
+<section class="step" id="step-13">
+  <h2><span class="badge">13</span>Export all outputs to CSV (with hedge audit)<a class="anchor" href="#step-13">#</a></h2>
+  <p>Run the cascade <strong>twice</strong> — once with the per-region hedge and once with <code class="inline">hedge_multiplier=1.0</code> (no overassignment anywhere). The CSV gets both columns plus the dollar buffer and overassignment percentage per node, giving stakeholders a clean audit trail of where the hedging dollars went.</p>
+
+  <h3>Code</h3>
+<pre class="code"><code>import os
+OUT_DIR = 'examples/data'
+
+# Run the cascade a second time with no hedging — same inputs otherwise
+quotas_unhedged = cascader.cascade_quota(
+    'Global_Corp', 50_000_000.0,
+    hedge_multiplier=1.0,           # exact $50M at root, no overassignment
+    metrics=cascade_metrics,
+    new_ic_attr='_is_brand_new',
+    verbose=False,
+)
+
+# 1) Cascaded quotas — every node at every level, BOTH columns + audit
+cascaded_df = cascader.quotas_to_dataframe(
+    quotas, level_names=taxonomy,
+    unhedged_quotas=quotas_unhedged,    # adds 3 audit columns
+)
+cascaded_df.to_csv(f'{OUT_DIR}/output_cascaded_quotas.csv', index=False)
+
+# 2) Normalized weights — what stakeholders see
+cascader.weights_report.to_csv(f'{OUT_DIR}/output_normalized_weights.csv',
+                                index=False)
+
+# 3) Pipeline diagnosis — coverage + risk for every node
+diagnosis.to_csv(f'{OUT_DIR}/output_pipeline_diagnosis.csv', index=False)
+
+# 4) Redistributed quotas — original vs adjusted with deltas (IC level)
+redist_df = cascader.quotas_diff_to_dataframe(
+    original=quotas, adjusted=adjusted, level_names=taxonomy,
+)
+redist_df.to_csv(f'{OUT_DIR}/output_redistributed_quotas.csv', index=False)
+
+# 5) Commit reconciliation — batch-process all managers
+commits_input = pd.DataFrame({
+    'Manager_ID':       list(reconciler.bias_weights.keys()),
+    'Current_Commit':   [300_000.0] * len(reconciler.bias_weights),
+    'Machine_Forecast': [320_000.0] * len(reconciler.bias_weights),
+})
+recon_df = reconciler.reconcile_all(
+    commits_input, manager_col='Manager_ID',
+    commit_col='Current_Commit', machine_col='Machine_Forecast',
+)
+recon_df.to_csv(f'{OUT_DIR}/output_commit_reconciliation.csv', index=False)</code></pre>
+
+  <h3>Output</h3>
+<pre class="output">[1/5] examples/data/output_cascaded_quotas.csv
+      rows: 217 (every node at every level)
+      columns: ['depth', 'level', 'node_id', 'parent', 'is_leaf',
+                'cascaded_quota', 'unhedged_quota', 'hedge_buffer',
+                'overassignment_pct']
+ depth  level     node_id      parent  is_leaf  cascaded_quota  unhedged_quota  hedge_buffer  overassignment_pct
+     0 Global Global_Corp        None    False     50000000.00     50000000.00          0.00              0.0000
+     1 Region        APAC Global_Corp    False     14198737.60     13522607.24     676130.36              0.0500
+     1 Region        EMEA Global_Corp    False     11992214.32     11421156.50     571057.82              0.0500
+     1 Region          NA Global_Corp    False     26309048.07     25056236.26    1252811.81              0.0500
+     2    RVP  RVP_APAC_1        APAC    False     14908674.48     13522607.24    1386067.24              0.1025
+     2    RVP  RVP_EMEA_1        EMEA    False     12591825.04     11421156.50    1170668.54              0.1025
+     2    RVP    RVP_NA_1          NA    False     18560067.27     16069322.31    2490744.96              0.1550
+     2    RVP    RVP_NA_2          NA    False     10379885.61      8986913.95    1392971.66              0.1550
+
+[2/5] examples/data/output_normalized_weights.csv
+         metric    direction  input_weight  normalized_share  active
+      NetNewACV proportional      1.000000          0.334682    True
+     CloudSeats proportional      0.979618          0.327860    True
+        DCSeats      inverse      0.400000          0.133873    True
+ ExpansionSpent      inverse      0.000000          0.000000   False
+Has_Active_Cert proportional      0.608295          0.203585    True
+
+[3/5] examples/data/output_pipeline_diagnosis.csv
+      rows: 217 (every node)
+       Node  Level  Cascaded_Quota     Pipeline  Coverage_Ratio  Healthy_Threshold  At_Risk_Threshold Risk_Status
+Global_Corp      0     50000000.00 132971233.60          2.6594                2.0                1.0     Healthy
+       APAC      1     14198737.60  34977351.28          2.4634                3.0                1.5    Moderate
+       EMEA      1     11992214.32  24975973.69          2.0827                2.5                1.2    Moderate
+         NA      1     26309048.07  73017908.63          2.7754                1.5                0.8     Healthy
+
+[4/5] examples/data/output_redistributed_quotas.csv
+      rows: 170 (IC level)
+ depth level                     node_id                 parent  is_leaf  original_quota  adjusted_quota     delta  delta_pct
+     5    IC IC_Mgr_Dir_RVP_EMEA_1_1_1_7 Mgr_Dir_RVP_EMEA_1_1_1     True       769309.99       864930.05  95620.07     0.1243
+     5    IC IC_Mgr_Dir_RVP_EMEA_1_1_1_5 Mgr_Dir_RVP_EMEA_1_1_1     True       478100.35       382480.28 -95620.07    -0.2000
+     5    IC IC_Mgr_Dir_RVP_EMEA_1_2_1_4 Mgr_Dir_RVP_EMEA_1_2_1     True       465051.85       372041.48 -93010.37    -0.2000
+     5    IC   IC_Mgr_Dir_RVP_NA_2_1_2_2   Mgr_Dir_RVP_NA_2_1_2     True       336660.20       269328.16 -67332.04    -0.2000
+     5    IC IC_Mgr_Dir_RVP_APAC_1_1_2_5 Mgr_Dir_RVP_APAC_1_1_2     True       335512.17       268409.73 -67102.43    -0.2000
+
+[5/5] examples/data/output_commit_reconciliation.csv
+            manager_id  current_commit  bias_quotient   bias_label  bias_adjusted_commit  machine_forecast  blended_forecast
+Mgr_Dir_RVP_EMEA_1_1_1        300000.0            0.7   happy_ears              210000.0          320000.0          265000.0
+  Mgr_Dir_RVP_NA_1_1_1        300000.0            1.4   sandbagger              420000.0          320000.0          370000.0
+  Mgr_Dir_RVP_NA_1_1_2        300000.0            1.0 truth_teller              300000.0          320000.0          310000.0</pre>
+
+  <div class="highlight"><strong>What each CSV contains.</strong>
+    <br>· <strong>output_cascaded_quotas.csv</strong> — 217 rows: Global → Region → RVP → Director → Manager → IC, each with parent + depth + level name + quota
+    <br>· <strong>output_normalized_weights.csv</strong> — 5 rows: every metric with both input weight AND the % share it actually contributes to allocation
+    <br>· <strong>output_pipeline_diagnosis.csv</strong> — 217 rows: coverage ratio + risk status for every node, with the thresholds applied
+    <br>· <strong>output_redistributed_quotas.csv</strong> — 170 rows: IC-level before/after with delta + delta_pct columns showing exactly who moved how much
+    <br>· <strong>output_commit_reconciliation.csv</strong> — 1 row per manager: bias quotient, label (sandbagger / happy_ears / truth_teller), adjusted commit, blended with ML forecast
+  </div>
+
+  <div class="takeaway"><strong>Helpers used.</strong> <code class="inline">cascader.quotas_to_dataframe(quotas, level_names=taxonomy)</code> for the hierarchy-aware quota table, <code class="inline">cascader.quotas_diff_to_dataframe(original, adjusted, level_names=taxonomy)</code> for the redistribution comparison, <code class="inline">reconciler.reconcile_all(commits_df, ...)</code> for batch reconciliation. <code class="inline">cascader.weights_report</code> and <code class="inline">PipelineAdjuster.diagnose(...)</code> already return DataFrames, so just call <code class="inline">.to_csv()</code> directly.</div>
+</section>
+
+<section class="step" id="step-14">
+  <h2><span class="badge">14</span>Write outputs to a SQL database (SQLite example)<a class="anchor" href="#step-14">#</a></h2>
+  <p>Since every output is already a DataFrame, pandas' built-in <code class="inline">to_sql()</code> handles writes to <strong>any</strong> SQLAlchemy-compatible database — SQLite, Postgres, MySQL, Snowflake, BigQuery, Redshift. Here we demonstrate with SQLite (stdlib, no extra deps); the same pattern works for production databases by swapping the connection.</p>
+
+  <h3>Code</h3>
+<pre class="code"><code>import sqlite3
+
+tables = {
+    'cascaded_quotas':       cascaded_df,
+    'normalized_weights':    cascader.weights_report,
+    'pipeline_diagnosis':    diagnosis,
+    'redistributed_quotas':  redist_df,
+    'commit_reconciliation': recon_df,
+}
+
+with sqlite3.connect(f'{OUT_DIR}/cascade_results.db') as conn:
+    for name, frame in tables.items():
+        frame.to_sql(name, conn, if_exists='replace', index=False)
+
+# Smoke-test query
+with sqlite3.connect(f'{OUT_DIR}/cascade_results.db') as conn:
+    rows = conn.execute("""
+        SELECT level, node_id, cascaded_quota, unhedged_quota
+        FROM cascaded_quotas WHERE depth = 1
+        ORDER BY cascaded_quota DESC
+    """).fetchall()</code></pre>
+
+  <h3>Output</h3>
+<pre class="output">wrote  217 rows to table `cascaded_quotas`
+wrote    5 rows to table `normalized_weights`
+wrote  217 rows to table `pipeline_diagnosis`
+wrote  170 rows to table `redistributed_quotas`
+wrote    3 rows to table `commit_reconciliation`
+
+Smoke-test query — region totals from cascaded_quotas:
+  Region   NA     cascaded $ 26,309,048.07  unhedged $ 25,056,236.26
+  Region   APAC   cascaded $ 14,198,737.60  unhedged $ 13,522,607.24
+  Region   EMEA   cascaded $ 11,992,214.32  unhedged $ 11,421,156.50</pre>
+
+  <div class="callout"><strong>For Postgres / Snowflake / etc</strong>, swap the sqlite3 connection for a SQLAlchemy engine and the same <code class="inline">to_sql()</code> calls work unchanged:
+<pre class="code" style="margin-top: 6px;"><code>from sqlalchemy import create_engine
+engine = create_engine('postgresql://user:pass@host/db')
+cascaded_df.to_sql('cascaded_quotas', engine, if_exists='replace')</code></pre>
+  </div>
+
+  <div class="takeaway"><strong>Why this works.</strong> The package keeps every output as a pandas DataFrame and never opinionates on storage. Analysts pick the destination — file, warehouse, lake, BI tool — and pandas does the write. No new dependencies to fight with the data team about.</div>
+</section>
+
+<section class="step" id="step-15">
+  <h2><span class="badge">15</span>Generate an interactive HTML dashboard<a class="anchor" href="#step-15">#</a></h2>
+  <p>A single call writes a self-contained HTML file with Chart.js visualizations: region totals (with hedge buffer overlaid), top 20 IC quotas, top redistributions from pipeline rebalancing, and pipeline-coverage risk distribution. The file opens in any browser, shares via email or intranet, and embeds all data inline — no server required.</p>
+
+  <h3>Code</h3>
+<pre class="code"><code>cascader.to_html_dashboard(
+    quotas,
+    output_path=f'{OUT_DIR}/cascade_dashboard.html',
+    title="Q1 Cascade Dashboard — $50M Multi-Metric Plan",
+    macro_target=50_000_000.0,
+    unhedged_quotas=quotas_unhedged,    # adds hedge-buffer comparison
+    adjusted_quotas=adjusted,           # adds redistribution chart
+    diagnosis=diagnosis,                # adds risk-status chart
+)</code></pre>
+
+  <h3>Output</h3>
+<pre class="output">Wrote dashboard: examples/data/cascade_dashboard.html
+  size: 13,997 bytes
+  charts: Region totals · Top 20 ICs · Top redistributions · Risk status
+
+Summary stats embedded:
+  Cascaded total (ICs): $56,440,452 across 170 ICs
+  Hedge buffer (IC total): $6,440,452 (12.88% overassignment)
+  Redistributed ICs: 86 (zero-sum per manager)
+  Critical-risk nodes: 25 (from pipeline diagnose)</pre>
+
+  <div class="highlight"><strong>Open the dashboard in your Cowork sidebar:</strong> the same file is available as the <strong>"Cascade Dashboard"</strong> artifact. Or open <code class="inline">examples/data/cascade_dashboard.html</code> directly in any browser, attach it to an email, or post it on your intranet.</div>
+
+  <div class="takeaway"><strong>What's in the dashboard.</strong> 4 summary stat cards · bar chart of region quotas with unhedged base · horizontal bar of top 20 ICs · grouped bar of top redistributions (original vs adjusted) · risk-status counts color-coded by severity · per-region table with cascaded / unhedged / buffer / over %. All interactive, all responsive.</div>
+</section>
+
+<section class="step" id="step-16">
+  <h2><span class="badge">16</span>Summary report<a class="anchor" href="#step-16">#</a></h2>
+  <p>One CSV in → five CSVs, one SQL DB, and one interactive dashboard out. Every major capability exercised — and every weight visible to stakeholders.</p>
+
+<pre class="output">Hierarchy:              217 nodes (170 ICs across 3 regions)
+Multi-metric cascade:   5 metrics blended ($50M -> $56,440,452 with hedging)
+Hedge buffer:           $6,440,452 (12.88% overassignment, full audit in CSV)
+Normalized weights:     NetNewACV 33.5% · CloudSeats 32.8% · Has_Active_Cert 20.4%
+                        DCSeats 13.4% · ExpansionSpent inactive
+Brand-new ICs handled:  29 reps got equal-share carve-out
+CRO overrides applied:  1 (pinned at $1,200,000)
+Pipeline diagnosis:     ran on multi-column sum across 3 columns
+Pipeline adjustments:   86 ICs redistributed within managers (zero-sum)
+Commit reconciliation:  3 managers bias-corrected and blended with ML baseline
+Outputs written:        5 CSVs · 1 SQLite DB · 1 interactive HTML dashboard
+
+Walkthrough complete.</pre>
+
+  <div class="takeaway"><strong>What the analyst saved.</strong> No external joins. No separate "brand new" file. No re-entry of pipeline metrics. No manual CSV/SQL wiring per output. Every choice lives either in code (one block) or in the same CSV. Every output drops to disk as a tidy CSV, a SQL table, AND an interactive dashboard — pick your distribution channel.</div>
+</section>
+
+<footer>
+  <p><strong>Source files</strong></p>
+  <p>· <code class="inline">examples/generate_demo_data.py</code> — generates the demo CSV (170 ICs)</p>
+  <p>· <code class="inline">examples/walkthrough.py</code> — the runnable end-to-end script</p>
+  <p>· <code class="inline">examples/data/demo_hierarchy.csv</code> — the dataset used throughout</p>
+  <p>· <code class="inline">examples/data/demo_commit_history.csv</code> — manager commit history</p>
+  <p style="margin-top: 14px;">Run the whole flow yourself: <code class="inline">python examples/generate_demo_data.py &amp;&amp; python examples/walkthrough.py</code></p>
+</footer>
+
+</div>
+</body>
+</html>

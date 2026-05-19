@@ -1,5 +1,18 @@
+import json
+import datetime
 import networkx as nx
-from typing import Dict, Any
+import pandas as pd
+from typing import Dict, List, Optional, Union, Any
+
+from b2b_revenue_forecasting.metric_spec import MetricSpec
+from b2b_revenue_forecasting._dashboard_template import DASHBOARD_HTML_TEMPLATE
+
+
+# Small floor (as a fraction of the sibling max) applied when computing
+# inverse-direction shares, so that a single zero-valued sibling doesn't
+# absorb 100% of the inverse weight via a 1/0 spike.
+_INVERSE_EPS = 0.01
+
 
 class QuotaCascader:
     def __init__(self, hierarchy):
@@ -8,20 +21,27 @@ class QuotaCascader:
         """
         # Exposes the underlying nx.DiGraph
         self.hierarchy = hierarchy.graph
-        
+        # Populated after each multi-metric cascade_quota call so analysts
+        # can inspect the normalized-weight contributions later (e.g., to
+        # paste into a stakeholder report).
+        self.weights_report = None
+
+    # ------------------------------------------------------------------
+    # Single-metric helpers (legacy path — kept for backward compatibility)
+    # ------------------------------------------------------------------
     def _calculate_node_historical_capacity(self, node_id: str) -> float:
         """
-        Recursively calculates the historical capacity of a node by summing up 
+        Recursively calculates the historical capacity of a node by summing up
         all '_Attainment' metrics of leaf nodes (ICs) underneath it.
-        
+
         Supports any number of historical quarters (4, 8, 12, etc.) by dynamically
         discovering all attributes containing '_Attainment' on each IC node.
-        
+
         For ICs with partial history (e.g., hired recently with some zero quarters),
         zero-valued quarters are imputed with the average of that IC's own non-zero
         quarters. This prevents underweighting reps who haven't been employed for
         the full lookback period.
-        
+
         Returns 0.0 for brand-new ICs with no historical data at all — these are
         handled separately in cascade_quota() via equal-share carve-out.
         """
@@ -30,146 +50,791 @@ class QuotaCascader:
             attrs = self.hierarchy.nodes[node_id]
             # Dynamically collect ALL attainment values (supports any number of quarters)
             attainments = [v for k, v in attrs.items()
-                          if '_Attainment' in k and isinstance(v, (int, float))]
-            
+                           if '_Attainment' in k and isinstance(v, (int, float))]
+
             if not attainments:
                 return 0.0
-            
+
             non_zero = [v for v in attainments if v > 0]
-            
+
             if not non_zero:
                 return 0.0  # Brand-new hire — handled by equal-share in cascade_quota
-            
+
             # Impute zero quarters with the IC's own non-zero average
-            # e.g., IC hired 1 quarter ago: Q1=0, Q2=0, Q3=0, Q4=150K
-            #   → avg_non_zero = 150K → imputed = [150K, 150K, 150K, 150K] → total = 600K
             avg_non_zero = sum(non_zero) / len(non_zero)
             imputed = [v if v > 0 else avg_non_zero for v in attainments]
             return sum(imputed)
-            
+
         # Otherwise, aggregate the mathematical capacity of its children
         total_capacity = 0.0
         for child in self.hierarchy.successors(node_id):
             total_capacity += self._calculate_node_historical_capacity(child)
-            
+
         return total_capacity
 
-    def cascade_quota(self, root_node: str, macro_target: float, hedge_multiplier=1.0,
-                      new_ic_overrides: Dict[str, float] = None) -> Dict[str, float]:
+    # ------------------------------------------------------------------
+    # Multi-metric helpers (new path)
+    # ------------------------------------------------------------------
+    def _aggregate_node_metric(self, node_id: str, spec: MetricSpec) -> float:
+        """
+        Recursively compute one metric's aggregated value for a node, rolling
+        up across the subtree below it.
+
+        Mirrors _calculate_node_historical_capacity but is parameterized by a
+        MetricSpec — so the SAME function works for NetNewACV, CloudSeats,
+        ExpansionSpent, etc.
+
+        For leaf (IC) nodes, the spec's columns are read directly off the
+        node, aggregated (sum/mean/last), with optional zero-imputation for
+        partial-history ICs.
+
+        For non-leaf nodes, the metric is rolled up by SUMMING children — this
+        is the natural rollup for stock/flow metrics (dollars, seats, counts).
+        If you have a metric for which sum is not the right rollup (e.g., a
+        rate), supply a precomputed column on parent nodes and use a leaf-only
+        cascade — but for the metrics the cascader cares about (capacity-like
+        signals), sum-rollup is correct.
+        """
+        if self.hierarchy.out_degree(node_id) == 0:
+            attrs = self.hierarchy.nodes[node_id]
+            raw_values = []
+            for col in spec.resolved_columns():
+                v = attrs.get(col)
+                # Accept any numeric — int, float, AND bool (Python bool is
+                # a subclass of int, so isinstance(True, int) is True).
+                if isinstance(v, (int, float)):
+                    raw_values.append(v)
+
+            if not raw_values:
+                return 0.0
+
+            # Auto-detect boolean / 0-1 sparse metrics. For those, zero is
+            # a meaningful value (False / "didn't happen this quarter"),
+            # not a missing-data marker — so imputation would falsely
+            # inflate the node's signal. Skip imputation regardless of
+            # spec.impute_zeros when the data looks boolean.
+            looks_boolean = all(
+                isinstance(v, bool) or v == 0 or v == 1
+                for v in raw_values
+            )
+
+            values = [float(v) for v in raw_values]
+
+            # Zero-imputation for partial-history nodes (skipped for booleans)
+            if spec.impute_zeros and not looks_boolean:
+                non_zero = [v for v in values if v > 0]
+                if not non_zero:
+                    return 0.0  # truly empty for this metric
+                avg_non_zero = sum(non_zero) / len(non_zero)
+                values = [v if v > 0 else avg_non_zero for v in values]
+
+            if spec.aggregation == "sum":
+                return sum(values)
+            elif spec.aggregation == "mean":
+                return sum(values) / len(values)
+            elif spec.aggregation == "last":
+                return values[-1]
+            else:  # pragma: no cover — guarded by MetricSpec.__post_init__
+                raise ValueError(f"Unknown aggregation: {spec.aggregation}")
+
+        # Non-leaf: roll up across children
+        total = 0.0
+        for child in self.hierarchy.successors(node_id):
+            total += self._aggregate_node_metric(child, spec)
+        return total
+
+    def _compute_composite_shares(
+        self,
+        children: List[str],
+        metrics: List[MetricSpec],
+    ) -> Dict[str, float]:
+        """
+        Compute each child's share-of-parent using a weighted sum of
+        per-metric normalized shares.
+
+        For each metric m:
+          - If direction == "proportional": share_m(child) = value_m(child) / sum_siblings value_m
+          - If direction == "inverse":      share_m(child) = (1 / (value_m(child) + floor)) /
+                                                              sum_siblings(1 / (value_m + floor))
+            where floor = _INVERSE_EPS * max_sibling_value, preventing a 1/0 spike
+            from monopolizing the metric.
+
+        The final composite share for each child is:
+          composite(child) = sum_m( normalized_weight_m * share_m(child) )
+
+        Because each per-metric share-vector sums to 1 and the weights sum to 1,
+        the composite vector also sums to 1 — making it directly usable to split
+        a target across children.
+
+        Returns
+        -------
+        dict[child_id -> share]   sums to 1.0 (within floating tolerance).
+        Returns {} if no metric had usable data; caller should fall back to
+        equal split in that case.
+        """
+        if not children:
+            return {}
+
+        # Active metrics: weight > 0 only. Otherwise the metric is essentially
+        # disabled and contributes nothing.
+        active = [m for m in metrics if m.weight > 0]
+        if not active:
+            return {}
+
+        # Normalize weights so they sum to 1
+        total_w = sum(m.weight for m in active)
+        norm_weights = [m.weight / total_w for m in active]
+
+        composite = {c: 0.0 for c in children}
+        usable_metric_weight = 0.0  # weight from metrics that produced usable shares
+
+        for spec, w in zip(active, norm_weights):
+            values = {c: self._aggregate_node_metric(c, spec) for c in children}
+
+            if spec.direction == "proportional":
+                total = sum(values.values())
+                if total <= 0:
+                    # No siblings have any data for this metric — skip it; its
+                    # weight gets redistributed implicitly via renormalization
+                    # at the end.
+                    continue
+                shares = {c: values[c] / total for c in children}
+
+            else:  # inverse
+                # Apply floor relative to the sibling-max so a zero doesn't
+                # cause a 1/0 spike. If all siblings are zero, the metric has
+                # no signal here — skip it.
+                max_v = max(values.values())
+                if max_v <= 0:
+                    continue
+                floor = _INVERSE_EPS * max_v
+                inv = {c: 1.0 / (values[c] + floor) for c in children}
+                inv_total = sum(inv.values())
+                shares = {c: inv[c] / inv_total for c in children}
+
+            for c in children:
+                composite[c] += w * shares[c]
+            usable_metric_weight += w
+
+        if usable_metric_weight == 0:
+            return {}
+
+        # If some metrics were skipped (no signal), the composite won't sum to
+        # 1 — renormalize across the metrics that DID contribute.
+        if abs(usable_metric_weight - 1.0) > 1e-9:
+            composite = {c: v / usable_metric_weight for c, v in composite.items()}
+
+        return composite
+
+    def _is_brand_new_by_rule(
+        self,
+        node_id: str,
+        metrics: List[MetricSpec],
+        rule: str,
+    ) -> bool:
+        """
+        Auto-detect whether a leaf node should be treated as brand-new,
+        using one of the supported rules.
+
+        rule == "all_metrics_zero":
+            True iff EVERY metric's aggregated value for this node is zero.
+        rule == "primary_metric_zero":
+            True iff the FIRST metric's aggregated value for this node is
+            zero. (The "primary" metric is whichever metric the user
+            listed first.)
+        """
+        if not metrics:
+            return False
+
+        if rule == "primary_metric_zero":
+            return self._aggregate_node_metric(node_id, metrics[0]) == 0.0
+
+        # default: all_metrics_zero
+        return all(
+            self._aggregate_node_metric(node_id, m) == 0.0
+            for m in metrics
+        )
+
+    def _node_has_brand_new_flag(self, node_id: str, attr: str) -> bool:
+        """True iff the node has a truthy value under the given attribute."""
+        return bool(self.hierarchy.nodes[node_id].get(attr, False))
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+    def cascade_quota(
+        self,
+        root_node: str,
+        macro_target: float,
+        hedge_multiplier: Union[float, Dict[str, float]] = 1.0,
+        new_ic_overrides: Optional[Dict[str, float]] = None,
+        metrics: Optional[List[MetricSpec]] = None,
+        new_ic_ids: Optional[List[str]] = None,
+        new_ic_attr: Optional[str] = None,
+        new_ic_rule: Optional[str] = None,
+        verbose: bool = True,
+    ) -> Dict[str, float]:
         """
         Distributes the macro_target from the root_node down to all descendants.
-        Uses historical capacity to proportionally weight distribution at each level.
-        
-        Supports any number of historical quarters — the algorithm dynamically discovers
-        all '_Attainment' attributes on IC nodes.
-        
-        hedge_multiplier: Can be a single float (e.g., 1.05 to apply a 5% buffer at EVERY level)
-                          OR a dictionary of specific nodes to their explicit hedge 
-                          (e.g., {'RVP_NA_1': 1.10, 'Dir_RVP_NA_1_1': 1.05}). 
-                          Defaults to 1.0 (no hedge).
-        
-        new_ic_overrides: Optional Dict[str, float] mapping IC node IDs to fixed quota amounts.
-                          Use for CRO-mandated quotas that override the algorithm.
-                          e.g., {'IC_Strategic_Hire': 500000.0}
-                          These ICs are excluded from proportional distribution.
-                          
-        New IC handling (automatic):
-          - Brand-new ICs (all zeros): Receive equal share (target / num_children)
-            before proportional distribution of the remainder among experienced ICs.
-          - Partial-history ICs: Zero quarters are imputed with the IC's own non-zero
-            average, so they compete fairly in proportional distribution.
+
+        Two modes:
+
+        1) LEGACY (metrics=None, default) — preserves the v0.2.x behavior
+           exactly. Uses the implicit single-metric pathway that auto-discovers
+           '_Attainment' attributes on IC nodes and sums them as historical
+           capacity.
+
+        2) MULTI-METRIC (metrics=[MetricSpec, ...]) — at every level, the
+           share each child receives is a weighted blend of per-metric shares.
+           Each MetricSpec carries its own direction (proportional / inverse),
+           weight, lookback, and column mapping. See MetricSpec docstring for
+           details. Suggested weights can be generated via
+           MetricSpec.suggest_from_data().
+
+        Parameters
+        ----------
+        root_node : str
+            The top node whose quota we're distributing.
+        macro_target : float
+            The total target dollar amount at the root.
+        hedge_multiplier : float | Dict[str, float]
+            Single float -> 5% buffer at EVERY manager level (e.g., 1.05).
+            Dict -> per-node hedge mapping (e.g., {'RVP_NA_1': 1.10}).
+            Defaults to 1.0 (no hedge).
+        new_ic_overrides : Optional[Dict[str, float]]
+            IC IDs mapped to fixed quota amounts that bypass the algorithm.
+            (CRO-mandated quotas.)
+        metrics : Optional[List[MetricSpec]]
+            If provided, switches to multi-metric cascading. If None, the
+            legacy single-metric ('_Attainment') path is used.
+        new_ic_ids : Optional[List[str]]
+            Explicit list of IC IDs to treat as brand-new (equal-share
+            carve-out). Programmatic equivalent of new_ic_attr — useful
+            when the brand-new list comes from outside the CSV.
+        new_ic_attr : Optional[str]
+            Name of a node attribute that flags brand-new ICs (typically
+            populated via SalesHierarchy.from_dataframe(brand_new_col=...)
+            from a CSV column). When provided, the cascader reads this flag
+            from every leaf node — keeping all configuration in the same
+            CSV the analyst already uploads. Defaults to None.
+        new_ic_rule : Optional[str]
+            Auto-detection rule for brand-new ICs:
+              "all_metrics_zero"     — IC is new iff EVERY configured metric
+                                       is zero (matches legacy intent).
+              "primary_metric_zero"  — IC is new iff the FIRST metric in
+                                       the list is zero. Useful when a
+                                       primary signal (e.g., NetNewACV) is
+                                       zero but secondary signals (cloud
+                                       seats, accreditations) already exist.
+        verbose : bool
+            When True (default) in multi-metric mode, prints the normalized
+            weights table before cascading so the analyst can see — and
+            explain to stakeholders — exactly how much each signal
+            influences allocation. Pass verbose=False to suppress (useful
+            in tests / batch runs). The normalized-weights DataFrame is
+            ALSO stored on self.weights_report for later inspection
+            regardless of verbose.
+
+        Brand-new detection — either-or precedence
+        ------------------------------------------
+        Either you tell the package WHICH ICs are brand-new (via
+        new_ic_attr from CSV, or new_ic_ids from Python), OR you tell the
+        package the RULE to figure it out (via new_ic_rule). Mixing both
+        in the same call raises ValueError, because the explicit list and
+        the rule answer the same question and disagreement would be silent.
+
+        When none of new_ic_attr / new_ic_ids / new_ic_rule are set
+        AND metrics= is provided, we default to new_ic_rule='all_metrics_zero'
+        — the safest choice (matches the v0.2.x intent for the legacy path).
+
+        Returns
+        -------
+        Dict[str, float]  node_id -> assigned quota
         """
         if new_ic_overrides is None:
             new_ic_overrides = {}
-        
+        explicit_new_ic_set = set(new_ic_ids or [])
+
+        # ---- Either-or enforcement for brand-new IC detection -----------
+        explicit_path_used = bool(new_ic_attr) or bool(new_ic_ids)
+        if explicit_path_used and new_ic_rule is not None:
+            raise ValueError(
+                "Brand-new IC detection is either-or: pass an explicit "
+                "identifier (new_ic_attr=<csv-column> OR new_ic_ids=<list>) "
+                "OR pass new_ic_rule='all_metrics_zero' / 'primary_metric_zero' "
+                "— not both. They answer the same question and silent "
+                "disagreement would be a bug factory."
+            )
+
+        # Resolve the effective rule for the case where no explicit path is used
+        effective_rule = new_ic_rule if new_ic_rule is not None else "all_metrics_zero"
+        if effective_rule not in ("all_metrics_zero", "primary_metric_zero"):
+            raise ValueError(
+                f"new_ic_rule must be 'all_metrics_zero' or "
+                f"'primary_metric_zero', got '{effective_rule}'."
+            )
+
+        # Choose which weight engine to use for THIS cascade.
+        # In multi-metric mode we close over `metrics`; in legacy mode we use
+        # the existing _Attainment-based capacity.
+        use_metrics = metrics is not None and len(metrics) > 0
+
+        # Compute + store + (optionally) print the normalized-weights view
+        # so the analyst can see and explain how each metric contributes.
+        if use_metrics:
+            self.weights_report = MetricSpec.normalized_weights(metrics)
+            if verbose:
+                print(MetricSpec.format_normalized_weights(metrics))
+        else:
+            self.weights_report = None
+
+        def child_weights(children: List[str]) -> Dict[str, float]:
+            """
+            Compute a normalized share dict for the given children using the
+            currently-selected engine. Falls back to an even split if the
+            engine returns no usable signal.
+            """
+            if use_metrics:
+                shares = self._compute_composite_shares(children, metrics)
+                if shares:
+                    return shares
+                return {c: 1.0 / len(children) for c in children}
+
+            # Legacy path: capacity = sum of all _Attainment columns
+            caps = {c: self._calculate_node_historical_capacity(c) for c in children}
+            total = sum(caps.values())
+            if total > 0:
+                return {c: caps[c] / total for c in children}
+            return {c: 1.0 / len(children) for c in children}
+
+        def is_new_ic(node_id: str) -> bool:
+            """True if this leaf should get the equal-share carve-out."""
+            if use_metrics:
+                # Explicit path wins when set (mutex was enforced above)
+                if new_ic_attr and self._node_has_brand_new_flag(node_id, new_ic_attr):
+                    return True
+                if node_id in explicit_new_ic_set:
+                    return True
+                if explicit_path_used:
+                    # Explicit identification was in play; rule is intentionally
+                    # NOT consulted (the user opted into the explicit path).
+                    return False
+                return self._is_brand_new_by_rule(node_id, metrics, effective_rule)
+            # Legacy path: capacity == 0
+            return self._calculate_node_historical_capacity(node_id) == 0.0
+
         # Dictionary to store dynamically calculated quotas
         quotas = {root_node: macro_target}
-        
+
         # Traverse top-down through the organization
         for node in nx.topological_sort(self.hierarchy):
             if node not in quotas:
                 continue
-                
+
             current_target = quotas[node]
             children = list(self.hierarchy.successors(node))
-            
+
             if not children:
-                continue # Reached an IC (leaf node)
-                
+                continue  # Reached an IC (leaf node)
+
             # Determine the specific hedge for this manager node
             if isinstance(hedge_multiplier, dict):
                 current_hedge = hedge_multiplier.get(node, 1.0)
             else:
                 current_hedge = hedge_multiplier
-                
+
             # Apply the hedge/overassignment buffer for this layer of management
             target_to_distribute = current_target * current_hedge
-            
+
             # Check if we're at the leaf level (all children are ICs)
             at_leaf_level = all(self.hierarchy.out_degree(c) == 0 for c in children)
-            
+
             if at_leaf_level:
                 # Handle CRO overrides — carve out fixed quotas first
                 override_ics = [c for c in children if c in new_ic_overrides]
                 override_total = sum(new_ic_overrides[c] for c in override_ics)
-                
-                # Identify brand-new ICs (all zeros, no override) — give them equal share
+
+                # Identify brand-new ICs (no override) — give them equal share
                 remaining_children = [c for c in children if c not in override_ics]
-                new_ics = [c for c in remaining_children
-                           if self._calculate_node_historical_capacity(c) == 0.0]
+                new_ics = [c for c in remaining_children if is_new_ic(c)]
                 experienced_ics = [c for c in remaining_children if c not in new_ics]
-                
+
                 # Assign override quotas
                 for ic in override_ics:
                     quotas[ic] = new_ic_overrides[ic]
-                
+
                 if new_ics:
                     # Equal share for brand-new ICs (from total pool, not remainder)
                     equal_share = target_to_distribute / len(children)
                     for ic in new_ics:
                         quotas[ic] = equal_share
-                    
+
                     # Distribute remainder proportionally among experienced ICs
-                    remaining = target_to_distribute - override_total - (equal_share * len(new_ics))
-                    
-                    exp_capacities = {c: self._calculate_node_historical_capacity(c) 
-                                      for c in experienced_ics}
-                    total_exp_capacity = sum(exp_capacities.values())
-                    
-                    for ic in experienced_ics:
-                        if total_exp_capacity > 0:
-                            weight = exp_capacities[ic] / total_exp_capacity
-                        else:
-                            weight = 1.0 / len(experienced_ics) if experienced_ics else 0
-                        quotas[ic] = remaining * weight
+                    remaining = (target_to_distribute - override_total
+                                 - (equal_share * len(new_ics)))
+
+                    if experienced_ics:
+                        weights = child_weights(experienced_ics)
+                        for ic in experienced_ics:
+                            quotas[ic] = remaining * weights[ic]
                 else:
-                    # No new ICs — standard proportional distribution (minus overrides)
+                    # No new ICs — standard distribution (minus overrides)
                     remaining = target_to_distribute - override_total
-                    
-                    child_capacities = {c: self._calculate_node_historical_capacity(c)
-                                        for c in experienced_ics}
-                    total_child_capacity = sum(child_capacities.values())
-                    
-                    for child in experienced_ics:
-                        if total_child_capacity > 0:
-                            weight = child_capacities[child] / total_child_capacity
-                        else:
-                            weight = 1.0 / len(experienced_ics) if experienced_ics else 0
-                        quotas[child] = remaining * weight
+                    if experienced_ics:
+                        weights = child_weights(experienced_ics)
+                        for ic in experienced_ics:
+                            quotas[ic] = remaining * weights[ic]
             else:
                 # Non-leaf level — standard proportional distribution
-                child_capacities = {child: self._calculate_node_historical_capacity(child) 
-                                    for child in children}
-                total_child_capacity = sum(child_capacities.values())
-                
-                # Distribute proportionally based on historical capacity performance
+                weights = child_weights(children)
                 for child in children:
-                    if total_child_capacity > 0:
-                        weight = child_capacities[child] / total_child_capacity
-                    else:
-                        # Fallback to pure even mathematical split if no historical data exists
-                        weight = 1.0 / len(children)
-                        
-                    quotas[child] = target_to_distribute * weight
-                
+                    quotas[child] = target_to_distribute * weights[child]
+
         return quotas
+
+    # ------------------------------------------------------------------
+    # CSV-export helpers (convert dict output -> analyst-ready DataFrame)
+    # ------------------------------------------------------------------
+    def _node_depths(self) -> Dict[str, int]:
+        """Compute depth of every node from the root(s). Roots are at 0."""
+        depths: Dict[str, int] = {}
+        roots = [n for n in self.hierarchy.nodes
+                 if self.hierarchy.in_degree(n) == 0]
+        for root in roots:
+            lengths = nx.shortest_path_length(self.hierarchy, source=root)
+            for node, d in lengths.items():
+                # If a node is reachable from multiple roots, keep the
+                # shallowest depth.
+                if node not in depths or d < depths[node]:
+                    depths[node] = d
+        return depths
+
+    def quotas_to_dataframe(
+        self,
+        quotas: Dict[str, float],
+        level_names: Optional[List[str]] = None,
+        unhedged_quotas: Optional[Dict[str, float]] = None,
+    ) -> pd.DataFrame:
+        """
+        Convert a cascade_quota result dict into a tidy DataFrame ready to
+        write to CSV (`.to_csv('cascaded_quotas.csv', index=False)`).
+
+        Columns:
+          node_id            — the node identifier
+          parent             — the node's direct parent (None for root)
+          depth              — distance from root (root = 0)
+          level              — level NAME if level_names provided, else
+                               omitted (e.g., 'Region', 'IC')
+          is_leaf            — True iff this is an IC / leaf node
+          cascaded_quota     — the assigned quota dollar amount
+
+        If unhedged_quotas is provided, three additional audit columns:
+          unhedged_quota     — what the quota would be if no hedge / no
+                               overassignment were applied at any level
+                               (i.e., cascade run with hedge_multiplier=1.0)
+          hedge_buffer       — cascaded_quota − unhedged_quota (the dollar
+                               overassignment added by hedging)
+          overassignment_pct — hedge_buffer / unhedged_quota
+
+        Rows are sorted by (depth, node_id) so the CSV reads top-down
+        from root → ICs.
+
+        Parameters
+        ----------
+        quotas : Dict[str, float]
+            The dict returned by cascade_quota() with hedging applied.
+        level_names : Optional[List[str]]
+            Same shape as the path_cols list passed to
+            SalesHierarchy.from_dataframe(). When provided, each row gets
+            a human-readable 'level' column (e.g., 'Global', 'Region',
+            'RVP', 'Director', 'Manager', 'IC').
+        unhedged_quotas : Optional[Dict[str, float]]
+            A SECOND cascade_quota result computed with
+            hedge_multiplier=1.0 (no overassignment anywhere) but
+            otherwise identical inputs. When provided, adds the audit
+            columns above so stakeholders can see how much of each
+            quota is "real allocation" vs "hedge buffer."
+
+            Typical call pattern:
+                quotas = cascader.cascade_quota(..., hedge_multiplier=my_hedge)
+                quotas_raw = cascader.cascade_quota(..., hedge_multiplier=1.0,
+                                                     verbose=False)
+                df = cascader.quotas_to_dataframe(
+                    quotas, level_names=taxonomy,
+                    unhedged_quotas=quotas_raw,
+                )
+        """
+        depths = self._node_depths()
+        rows = []
+        for node, quota in quotas.items():
+            parents = list(self.hierarchy.predecessors(node))
+            parent = parents[0] if parents else None
+            depth = depths.get(node, -1)
+            row = {
+                "node_id": node,
+                "parent": parent,
+                "depth": depth,
+                "is_leaf": self.hierarchy.out_degree(node) == 0,
+                "cascaded_quota": round(float(quota), 2),
+            }
+            if level_names and 0 <= depth < len(level_names):
+                row["level"] = level_names[depth]
+
+            if unhedged_quotas is not None:
+                unhedged = float(unhedged_quotas.get(node, 0.0))
+                buffer = float(quota) - unhedged
+                pct = (buffer / unhedged) if unhedged != 0 else 0.0
+                row["unhedged_quota"] = round(unhedged, 2)
+                row["hedge_buffer"] = round(buffer, 2)
+                row["overassignment_pct"] = round(pct, 4)
+
+            rows.append(row)
+
+        df = pd.DataFrame(rows)
+        # Reorder columns: depth/level lead, then identifiers, then values
+        col_order = ["depth"]
+        if "level" in df.columns:
+            col_order.append("level")
+        col_order += ["node_id", "parent", "is_leaf", "cascaded_quota"]
+        if unhedged_quotas is not None:
+            col_order += ["unhedged_quota", "hedge_buffer", "overassignment_pct"]
+        df = df[col_order]
+        return df.sort_values(["depth", "node_id"]).reset_index(drop=True)
+
+    def quotas_diff_to_dataframe(
+        self,
+        original: Dict[str, float],
+        adjusted: Dict[str, float],
+        level_names: Optional[List[str]] = None,
+        leaf_only: bool = True,
+    ) -> pd.DataFrame:
+        """
+        Compare two quota dicts (e.g., before vs after pipeline
+        redistribution) and return a side-by-side DataFrame ready for
+        CSV export.
+
+        Columns:
+          node_id, parent, depth, (level), is_leaf,
+          original_quota, adjusted_quota, delta, delta_pct
+
+        delta_pct is `delta / original_quota` (0 if original is 0).
+
+        Parameters
+        ----------
+        original, adjusted : Dict[str, float]
+            The two quota dicts to compare. Keys must match.
+        level_names : Optional[List[str]]
+            Optional human-readable level names (see quotas_to_dataframe).
+        leaf_only : bool
+            If True (default), only includes leaf / IC nodes — which is
+            where PipelineAdjuster.adjust() actually changes anything.
+            Set False to include the full hierarchy.
+        """
+        depths = self._node_depths()
+        rows = []
+        all_nodes = set(original) | set(adjusted)
+        for node in all_nodes:
+            is_leaf = self.hierarchy.out_degree(node) == 0
+            if leaf_only and not is_leaf:
+                continue
+            orig = float(original.get(node, 0.0))
+            adj = float(adjusted.get(node, 0.0))
+            delta = adj - orig
+            pct = (delta / orig) if orig != 0 else 0.0
+            parents = list(self.hierarchy.predecessors(node))
+            parent = parents[0] if parents else None
+            depth = depths.get(node, -1)
+            row = {
+                "node_id": node,
+                "parent": parent,
+                "depth": depth,
+                "is_leaf": is_leaf,
+                "original_quota": round(orig, 2),
+                "adjusted_quota": round(adj, 2),
+                "delta": round(delta, 2),
+                "delta_pct": round(pct, 4),
+            }
+            if level_names and 0 <= depth < len(level_names):
+                row["level"] = level_names[depth]
+            rows.append(row)
+
+        df = pd.DataFrame(rows)
+        col_order = ["depth"]
+        if "level" in df.columns:
+            col_order.append("level")
+        col_order += ["node_id", "parent", "is_leaf",
+                      "original_quota", "adjusted_quota", "delta", "delta_pct"]
+        df = df[col_order]
+        return df.sort_values(["depth", "node_id"]).reset_index(drop=True)
+
+    # ------------------------------------------------------------------
+    # HTML dashboard (self-contained, opens in any browser)
+    # ------------------------------------------------------------------
+    def to_html_dashboard(
+        self,
+        quotas: Dict[str, float],
+        output_path: str,
+        title: str = "Quota Cascade Dashboard",
+        macro_target: Optional[float] = None,
+        region_level_index: int = 1,
+        top_n_ics: int = 20,
+        top_n_redistributions: int = 12,
+        unhedged_quotas: Optional[Dict[str, float]] = None,
+        adjusted_quotas: Optional[Dict[str, float]] = None,
+        diagnosis: Optional[pd.DataFrame] = None,
+    ) -> None:
+        """
+        Generate a self-contained interactive HTML dashboard visualizing
+        the cascade. Opens in any browser; no server required. Uses
+        Chart.js loaded from CDN; cascade data is embedded inline as
+        JSON.
+
+        Charts rendered:
+          - Quota by region (with unhedged base overlaid if provided)
+          - Top N IC quotas (horizontal bar)
+          - Top redistributions: original vs adjusted (if
+            adjusted_quotas provided)
+          - Pipeline coverage by risk status (if diagnosis provided)
+          - Per-region summary table (cascaded / unhedged / buffer / %)
+
+        Parameters
+        ----------
+        quotas : Dict[str, float]
+            The dict returned by cascade_quota() (with hedging).
+        output_path : str
+            File path to write the HTML to. Overwrites if exists.
+        title : str
+            Title shown in the dashboard header.
+        macro_target : Optional[float]
+            The macro target the cascade was started from. Used for
+            summary stats. If None, inferred from the root node's quota.
+        region_level_index : int
+            Depth in the hierarchy where "regions" sit. Default 1 (i.e.,
+            children of the root). Set to match your taxonomy.
+        top_n_ics : int
+            How many ICs to show in the top-ICs chart. Default 20.
+        top_n_redistributions : int
+            How many ICs to show in the redistributions chart (sorted by
+            absolute delta). Default 12.
+        unhedged_quotas, adjusted_quotas, diagnosis : optional
+            Same shapes as in quotas_to_dataframe / PipelineAdjuster.
+            When provided, additional charts/columns light up.
+        """
+        depths = self._node_depths()
+
+        # --- Roots & macro target inference
+        roots = [n for n in self.hierarchy.nodes
+                 if self.hierarchy.in_degree(n) == 0]
+        root_quota = quotas[roots[0]] if roots and roots[0] in quotas else None
+        if macro_target is None and root_quota is not None:
+            # If hedging was applied at the root, the root quota already
+            # has the root hedge multiplier folded in. Use the unhedged
+            # root if we have it.
+            if unhedged_quotas is not None and roots[0] in unhedged_quotas:
+                macro_target = unhedged_quotas[roots[0]]
+            else:
+                macro_target = root_quota
+
+        # --- Region rows (depth == region_level_index)
+        region_rows = []
+        for node, q in quotas.items():
+            if depths.get(node) == region_level_index:
+                row = {"region": node, "cascaded": float(q)}
+                if unhedged_quotas is not None:
+                    row["unhedged"] = float(unhedged_quotas.get(node, 0.0))
+                else:
+                    row["unhedged"] = None
+                region_rows.append(row)
+        region_rows.sort(key=lambda r: -r["cascaded"])
+
+        # --- Leaves & top ICs
+        leaves = [(n, float(q)) for n, q in quotas.items()
+                  if self.hierarchy.out_degree(n) == 0]
+        leaves.sort(key=lambda t: -t[1])
+        top_ics = [{"node_id": n, "cascaded_quota": q}
+                   for n, q in leaves[:top_n_ics]]
+
+        # --- Redistributions (if adjusted provided)
+        redistributions = []
+        if adjusted_quotas is not None:
+            diffs = []
+            for node, _ in leaves:
+                orig = float(quotas.get(node, 0.0))
+                adj = float(adjusted_quotas.get(node, 0.0))
+                delta = adj - orig
+                if abs(delta) > 0.5:  # ignore noise
+                    diffs.append((node, orig, adj, delta))
+            diffs.sort(key=lambda t: -abs(t[3]))
+            redistributions = [
+                {"node_id": n, "original": o, "adjusted": a, "delta": d}
+                for n, o, a, d in diffs[:top_n_redistributions]
+            ]
+
+        # --- Risk status counts (if diagnosis provided)
+        risk_counts = []
+        if diagnosis is not None and "Risk_Status" in diagnosis.columns:
+            counts = diagnosis["Risk_Status"].value_counts().to_dict()
+            order = ["Healthy", "Moderate", "At Risk", "Critical"]
+            for status in order:
+                if status in counts:
+                    risk_counts.append({"status": status, "count": int(counts[status])})
+            for status, count in counts.items():
+                if status not in order:
+                    risk_counts.append({"status": status, "count": int(count)})
+
+        # --- Summary cards
+        ic_total = sum(q for _, q in leaves)
+        summary_cards = [
+            {"label": "Cascaded total (ICs)",
+             "value": f"${ic_total:,.0f}",
+             "sub": f"across {len(leaves)} ICs"},
+        ]
+        if unhedged_quotas is not None:
+            unhedged_total = sum(unhedged_quotas.get(n, 0.0) for n, _ in leaves)
+            buffer = ic_total - unhedged_total
+            buffer_pct = (buffer / unhedged_total * 100) if unhedged_total > 0 else 0.0
+            summary_cards.append({
+                "label": "Hedge buffer (IC total)",
+                "value": f"${buffer:,.0f}",
+                "sub": f"{buffer_pct:.2f}% overassignment",
+            })
+        if adjusted_quotas is not None:
+            n_moved = sum(
+                1 for n, _ in leaves
+                if abs(float(adjusted_quotas.get(n, 0)) - float(quotas.get(n, 0))) > 0.5
+            )
+            summary_cards.append({
+                "label": "Redistributed ICs",
+                "value": f"{n_moved}",
+                "sub": "zero-sum per manager",
+            })
+        if diagnosis is not None and "Risk_Status" in diagnosis.columns:
+            critical = int((diagnosis["Risk_Status"] == "Critical").sum())
+            summary_cards.append({
+                "label": "Critical-risk nodes",
+                "value": f"{critical}",
+                "sub": "from pipeline diagnose",
+            })
+
+        # --- Build the payload
+        payload = {
+            "meta": {
+                "generated": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
+                "ic_count": len(leaves),
+                "macro_target": float(macro_target) if macro_target is not None else 0.0,
+                "summary_cards": summary_cards,
+            },
+            "regions": region_rows,
+            "top_ics": top_ics,
+            "redistributions": redistributions,
+            "risk_counts": risk_counts,
+        }
+
+        html = (
+            DASHBOARD_HTML_TEMPLATE
+            .replace("__TITLE__", title)
+            .replace("__PAYLOAD__", json.dumps(payload))
+        )
+
+        with open(output_path, "w", encoding="utf-8") as f:
+            f.write(html)

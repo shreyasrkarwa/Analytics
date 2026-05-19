@@ -2,6 +2,28 @@ import networkx as nx
 import pandas as pd
 from typing import List, Dict, Any
 
+
+def _coerce_brand_new_flag(value: Any) -> bool:
+    """
+    Coerce a CSV cell into a brand-new boolean.
+
+    Truthy: True, 1, "true", "yes", "y", "t" (case-insensitive)
+    Falsy:  False, 0, "false", "no", "n", "f", "" (case-insensitive)
+    """
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        v = value.strip().lower()
+        if v in ("true", "yes", "y", "t", "1"):
+            return True
+        if v in ("false", "no", "n", "f", "0", ""):
+            return False
+    # Unknown -> treat as not brand-new (safer default)
+    return False
+
+
 class SalesHierarchy:
     """
     Models a B2B Enterprise Org Chart as a Directed Acyclic Graph (DAG).
@@ -24,30 +46,58 @@ class SalesHierarchy:
         """Creates a direct reporting relationship."""
         self.graph.add_edge(parent_id, child_id)
         
-    def from_dataframe(self, df: pd.DataFrame, path_cols: List[str], metrics_cols: List[str] = None):
+    def from_dataframe(self, df: pd.DataFrame, path_cols: List[str],
+                       metrics_cols: List[str] = None,
+                       brand_new_col: str = None):
         """
         Builds the hierarchy flexibly from a flattened organizational DataFrame.
-        `path_cols` should outline the hierarchy from root to IC, e.g., 
+        `path_cols` should outline the hierarchy from root to IC, e.g.,
         ['Global', 'Region', 'Second Level Manager', 'First Level Manager', 'IC'].
         Because the algorithm loops sequentially, it naturally supports 3 nodes or 10 nodes deep.
+
+        Parameters
+        ----------
+        df : pd.DataFrame
+            One row per IC.
+        path_cols : List[str]
+            Hierarchy columns from root to leaf.
+        metrics_cols : List[str], optional
+            Historical-performance columns to attach as attributes to the
+            deepest node in each row. Accepts ANY metric names and ANY
+            numeric data types — including booleans (True/False are stored
+            as-is and aggregated as 1/0 by the cascader).
+        brand_new_col : str, optional
+            Name of a boolean / 0-1 column on the IC row marking that IC as
+            a brand-new hire. Stored on the leaf node as a special attribute
+            ('_is_brand_new'). QuotaCascader reads this when you call
+            cascade_quota(new_ic_attr='_is_brand_new'), letting analysts
+            keep all configuration in the same CSV instead of passing a
+            separate Python list. Cells parsed as truthy
+            (True / 1 / "true" / "yes") flag the IC as brand-new.
         """
         for _, row in df.iterrows():
             # Dynamically add nodes and edges down the structural path
             for i in range(len(path_cols) - 1):
                 parent = row[path_cols[i]]
                 child = row[path_cols[i+1]]
-                
+
                 # Check for NaNs handles jagged hierarchies (e.g., an IC reporting directly to a VP)
                 if pd.notna(parent) and pd.notna(child):
                     self.add_node(str(parent))
-                    
+
                     # If this is the deepest defined node for this row, attach its historical metrics
                     if i == len(path_cols) - 2 and metrics_cols:
                         metrics = {col: row[col] for col in metrics_cols if pd.notna(row[col])}
+                        if brand_new_col and brand_new_col in row.index and pd.notna(row[brand_new_col]):
+                            metrics['_is_brand_new'] = _coerce_brand_new_flag(row[brand_new_col])
                         self.add_node(str(child), attributes=metrics)
+                    elif i == len(path_cols) - 2 and brand_new_col and brand_new_col in row.index and pd.notna(row[brand_new_col]):
+                        # Edge case: no metrics_cols but brand_new_col provided
+                        self.add_node(str(child),
+                                      attributes={'_is_brand_new': _coerce_brand_new_flag(row[brand_new_col])})
                     else:
                         self.add_node(str(child))
-                    
+
                     self.add_edge(str(parent), str(child))
 
     def get_children(self, node_id: str) -> List[str]:

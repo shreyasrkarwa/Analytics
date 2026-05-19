@@ -17,8 +17,22 @@ Unlike traditional bottom-up time-series libraries (which are strictly built for
 |--------|---------|
 | **`SalesHierarchy`** | Build flexible org charts as DAGs from flat CRM data — supports 3-level startups to 10-level enterprises |
 | **`QuotaCascader`** | Distribute macro-targets top-down using rolling N-quarter capacity models with configurable managerial hedges |
+| **`MetricSpec`** | Declare which historical metrics (NetNewACV, CloudSeats, DC seats, LTM expansion, …) drive cascading, in what direction (proportional or inverse), and at what weight — with auto-suggested weights from correlation analysis |
 | **`CommitReconciler`** | Detect sandbagging and "happy ears" bias via historical Bias Quotients, then auto-correct forecasts |
 | **`PipelineAdjuster`** | Diagnose pipeline health with per-region thresholds and redistribute IC quotas using zero-sum logic |
+
+### What's New in v0.3.x
+
+- **Multi-metric cascading** via the new `MetricSpec` API — blend historical NetNewACV with any number of secondary signals (cloud seats, on-prem seats, LTM expansion spend, customer-sat scores, certification flags, anything else the analyst tracks), each marked as `proportional` or `inverse`, with per-metric weights and lookbacks
+- **Direction is always a user input.** Domain knowledge ("more cloud seats means more ACV") trumps statistical sign. The package surfaces correlations and warns on mismatch but never overrides the analyst's call
+- **`MetricSpec.suggest_weights(...)`** suggests weights (magnitude of correlation) for user-declared directions. For exploratory use, `MetricSpec.suggest_directions_and_weights(...)` infers both
+- **Normalized-weights view** — `MetricSpec.normalized_weights(specs)` shows the post-normalization share each metric actually contributes; auto-printed before every multi-metric cascade and accessible via `cascader.weights_report`
+- **Brand-new IC handling — either-or:** flag brand-new ICs in the same CSV the analyst already uploads (`brand_new_col='Is_Brand_New'` on `SalesHierarchy.from_dataframe`, then `new_ic_attr='_is_brand_new'` on `cascade_quota`), OR pick a rule (`new_ic_rule='all_metrics_zero'` / `'primary_metric_zero'`). Passing both raises `ValueError`
+- **Any metric name, any numeric type** — including booleans (`Has_Active_Cert: True/False`). Boolean / 0-1 sparse metrics are auto-detected and excluded from zero-imputation so False isn't mistaken for missing data
+- **`PipelineAdjuster` accepts multiple pipeline columns** — `pipeline_attr=['Open_Pipeline', 'Late_Stage_Commit', 'Best_Case_Adds']` sums them per IC into a combined dollar amount for the coverage ratio
+- **CSV / SQL / dashboard exports** — every output converts to a DataFrame via `cascader.quotas_to_dataframe(...)`, `cascader.quotas_diff_to_dataframe(...)`, or `reconciler.reconcile_all(...)`. From there `.to_csv()`, `.to_sql()`, or `cascader.to_html_dashboard(...)` writes wherever you need
+- **Hedge audit columns** — pass `unhedged_quotas=` to `quotas_to_dataframe` for `unhedged_quota`, `hedge_buffer`, and `overassignment_pct` columns showing exactly how much of each quota is hedge buffer
+- **Fully backward compatible** — `cascade_quota(...)` without `metrics=` behaves exactly as in v0.2.x
 
 ### What's New in v0.2.0
 
@@ -88,7 +102,91 @@ quotas = cascader.cascade_quota('Global_Corp', 100_000_000.0,
 )
 ```
 
-### 3. Detect & Fix Forecasting Bias
+### 3. Multi-Metric Cascading (v0.3+)
+
+For real B2B planning, the metric you're cascading (e.g., NetNewACV) is rarely the only signal that should drive its allocation. Cloud-seat counts predict more new ACV; on-prem (DC) seat counts predict less; high LTM expansion spend means the account is already saturated. The `MetricSpec` API lets you mix any number of these into a single cascade.
+
+**Direction is always your call.** You declare whether each metric is `proportional` (more → more quota) or `inverse` (more → less quota) up front. The package surfaces correlations and warns when the data sign disagrees, but never overrides your domain knowledge.
+
+```python
+from b2b_revenue_forecasting import MetricSpec
+
+# Declare each metric's role — direction is required, weight is your knob
+metrics = [
+    MetricSpec('NetNewACV',     direction='proportional', weight=1.0, lookback=4),
+    MetricSpec('CloudSeats',    direction='proportional', weight=0.5, lookback=4),
+    MetricSpec('DCSeats',       direction='inverse',      weight=0.4, lookback=4),
+    MetricSpec('ExpansionSpent',direction='inverse',      weight=0.7,
+               columns=['LTM_ExpansionSpent']),  # single LTM column
+]
+
+quotas = cascader.cascade_quota(
+    'Global_Corp', 100_000_000.0,
+    hedge_multiplier=1.05,
+    metrics=metrics,
+)
+```
+
+**Any metric name, any data type works.** `Customer_Sat_Score`, `MQLs_Sourced_via_Outbound`, `Has_Active_Cert` (boolean), `Renewals_Caught_Up` (0/1 counter) — anything numeric, with any column name. Boolean and 0/1 sparse metrics are auto-detected and excluded from zero-imputation so `False` isn't treated as a missing value.
+
+**How the blend works.** At every level, each child gets a share of the parent's quota equal to a weighted sum of its per-metric shares-of-siblings. Proportional metrics use raw shares; inverse metrics flip via reciprocal-then-normalize. The final per-child share is `Σ_m (weight_m × share_m(child))`, which sums to 1 across siblings.
+
+**Don't know the weights?** Pass `direction=` on each candidate, let `suggest_weights()` propose magnitudes via Pearson correlation:
+
+```python
+suggestions, report = MetricSpec.suggest_weights(
+    df,
+    target_column='NetNewACV_4Q_sum',
+    candidate_metrics=[
+        {'name': 'CloudSeats',     'column': 'CloudSeats_4Q_sum',
+         'direction': 'proportional', 'lookback': 4},
+        {'name': 'DCSeats',        'column': 'DCSeats_4Q_sum',
+         'direction': 'inverse',      'lookback': 4},
+        {'name': 'ExpansionSpent', 'column': 'LTM_ExpansionSpent',
+         'columns': ['LTM_ExpansionSpent'],
+         'direction': 'inverse',      'lookback': 1},
+    ],
+)
+# report['CloudSeats']['weight'] == 0.62, ['rationale'] explains why,
+# ['direction_matches_data'] tells you if your call agrees with the sign
+
+quotas = cascader.cascade_quota('Global_Corp', 100_000_000.0, metrics=suggestions)
+```
+
+For pure exploration (you don't yet have a domain opinion), use `MetricSpec.suggest_directions_and_weights(...)` — it infers both from data. This is a sanity-check helper, not a production-planning API.
+
+**Brand-new ICs — either-or, your choice of where they're listed.** The cleanest option keeps everything in the same CSV the analyst already uploads:
+
+```python
+# CSV has a column Is_Brand_New with True / 1 / "yes" for each new hire
+hierarchy = SalesHierarchy()
+hierarchy.from_dataframe(
+    df, path_cols=[...], metrics_cols=[...],
+    brand_new_col='Is_Brand_New',     # ingested as node attribute _is_brand_new
+)
+
+quotas = cascader.cascade_quota(
+    'Global_Corp', 100_000_000.0,
+    metrics=metrics,
+    new_ic_attr='_is_brand_new',       # read the flag from the CSV
+)
+```
+
+Or, if you don't want a separate column, pick an auto-detection rule:
+
+```python
+quotas = cascader.cascade_quota(
+    'Global_Corp', 100_000_000.0,
+    metrics=metrics,
+    new_ic_rule='all_metrics_zero',    # or 'primary_metric_zero'
+)
+```
+
+You pick one or the other — passing both an explicit identifier (`new_ic_attr` or `new_ic_ids`) AND `new_ic_rule` in the same call raises `ValueError`, because the two would silently disagree.
+
+Brand-new ICs get an equal-share carve-out of the team target before the remainder is split proportionally — just like the single-metric path.
+
+### 4. Detect & Fix Forecasting Bias
 
 ```python
 from b2b_revenue_forecasting.commit_reconciler import CommitReconciler
@@ -110,12 +208,54 @@ blended = reconciler.reconcile_forecast('Mgr_A', 100_000, machine_forecast=120_0
 # → $135,000
 ```
 
-### 4. Pipeline Health Diagnosis & Redistribution
+### 5. Export to CSV, SQL, or an Interactive Dashboard
+
+Every output is a pandas DataFrame, so the same code writes anywhere:
+
+```python
+# CSV — analyst-ready, one row per node at every level
+cascaded_df = cascader.quotas_to_dataframe(quotas, level_names=taxonomy)
+cascaded_df.to_csv('cascaded_quotas.csv', index=False)
+
+# CSV with hedge audit — also include the unhedged baseline
+quotas_unhedged = cascader.cascade_quota(
+    'Global_Corp', 100_000_000.0, hedge_multiplier=1.0,
+    metrics=cascade_metrics, verbose=False,
+)
+cascader.quotas_to_dataframe(
+    quotas, level_names=taxonomy, unhedged_quotas=quotas_unhedged,
+).to_csv('cascaded_quotas_with_audit.csv', index=False)
+# → adds unhedged_quota, hedge_buffer, overassignment_pct columns
+
+# SQL — same DataFrames, any SQLAlchemy-compatible database
+import sqlite3
+with sqlite3.connect('cascade.db') as conn:
+    cascaded_df.to_sql('cascaded_quotas', conn, if_exists='replace', index=False)
+    cascader.weights_report.to_sql('normalized_weights', conn,
+                                    if_exists='replace', index=False)
+# Postgres / Snowflake / BigQuery: swap conn for a SQLAlchemy engine
+
+# Interactive HTML dashboard — Chart.js, self-contained, shareable
+cascader.to_html_dashboard(
+    quotas, output_path='cascade_dashboard.html',
+    title='Q1 Cascade — $100M Plan',
+    unhedged_quotas=quotas_unhedged,
+    adjusted_quotas=adjusted, diagnosis=diagnosis,
+)
+```
+
+### 6. Pipeline Health Diagnosis & Redistribution
 
 ```python
 from b2b_revenue_forecasting.pipeline_adjuster import PipelineAdjuster
 
+# Single pipeline column (backward compat)
 adjuster = PipelineAdjuster(hierarchy, quotas, pipeline_attr='Current_Pipeline')
+
+# Or sum multiple dollar-denominated pipeline columns from the same CSV
+adjuster = PipelineAdjuster(hierarchy, quotas, pipeline_attr=[
+    'Open_Pipeline', 'Late_Stage_Commit', 'Best_Case_Adds',
+])
 
 # Configure per-region coverage thresholds (ICs inherit from ancestors)
 thresholds = {
