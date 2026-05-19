@@ -67,11 +67,5 @@ unified_revenue_platform/eswa_cover_letter.md
 unified_revenue_platform/figures/
 unified_revenue_platform/urp_architecture.svg
 
-# Generated example outputs (reproducible via walkthrough.py)
-hierarchical_sales_forecasting/examples/data/output_*.csv
-hierarchical_sales_forecasting/examples/data/cascade_dashboard.html
-hierarchical_sales_forecasting/examples/data/cascade_results.db
-hierarchical_sales_forecasting/examples/data/demo_*.csv
-
 # Extracted Articles
 hierarchical_sales_forecasting/article_extracted.txt

@@ -1,0 +1,4 @@
+manager_id,current_commit,bias_quotient,bias_label,bias_adjusted_commit,machine_forecast,blended_forecast
+Mgr_Dir_RVP_EMEA_1_1_1,300000.0,0.7,happy_ears,210000.0,320000.0,265000.0
+Mgr_Dir_RVP_NA_1_1_1,300000.0,1.4,sandbagger,420000.0,320000.0,370000.0
+Mgr_Dir_RVP_NA_1_1_2,300000.0,1.0,truth_teller,300000.0,320000.0,310000.0
