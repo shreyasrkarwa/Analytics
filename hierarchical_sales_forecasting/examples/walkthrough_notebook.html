@@ -76,12 +76,12 @@
 <div class="container">
 
 <header>
-  <div class="eyebrow">b2b_revenue_forecasting · v0.3.4</div>
+  <div class="eyebrow">b2b_revenue_forecasting · v0.4.0</div>
   <h1>Multi-Metric Cascading &amp; Reconciliation — Walkthrough</h1>
   <p class="subtitle">End-to-end notebook: how an analyst takes one CSV of historical performance + pipeline data and produces a quota plan, a pipeline diagnosis, a redistributed plan, and a bias-corrected forecast — with full visibility into how each metric actually influences allocation.</p>
   <div class="meta">
     <span><strong>Package:</strong> b2b-revenue-forecasting</span>
-    <span><strong>Version:</strong> 0.3.4</span>
+    <span><strong>Version:</strong> 0.4.0</span>
     <span><strong>Dataset:</strong> 170 ICs · 217 hierarchy nodes</span>
     <span><strong>Macro target:</strong> $50,000,000</span>
   </div>
@@ -113,7 +113,9 @@ python examples/walkthrough.py</pre>
     <li><a href="#step-13">Export all outputs to CSV (with hedge audit)</a></li>
     <li><a href="#step-14">Write outputs to a SQL database</a></li>
     <li><a href="#step-15">Generate an interactive HTML dashboard</a></li>
-    <li><a href="#step-16">Summary report</a></li>
+    <li><a href="#step-16">PART B: White-space cascade with a gate</a></li>
+    <li><a href="#step-17">Reconcile against historical attainment</a></li>
+    <li><a href="#step-18">Summary report</a></li>
   </ol>
 </nav>
 
@@ -692,10 +694,112 @@ Summary stats embedded:
 </section>
 
 <section class="step" id="step-16">
-  <h2><span class="badge">16</span>Summary report<a class="anchor" href="#step-16">#</a></h2>
+  <h2><span class="badge">16</span>Part B — White-space cascade with a hard gate<a class="anchor" href="#step-16">#</a></h2>
+  <p><strong>The alternative planning philosophy:</strong> instead of historical attainment, cascade on FORWARD-looking signals — current installed seats (where can they expand?), knowledge-worker counts (how big is the addressable account?), LTM spend (dampener — high recent spend leaves less headroom). Then apply a <strong>hard gate</strong>: territories with zero unmigrated seats get $0 because there's no white space to sell into, full stop.</p>
+
+  <div class="callout"><strong>When to use this.</strong> White-space planning is right when past attainment is noisy (rapid growth, territory shuffles, recent re-orgs) and the org wants every rep measured against the opportunity actually in front of them. It's an explicit fairness choice: "what can be achieved" trumps "what has been done."</div>
+
+  <h3>Code</h3>
+<pre class="code"><code># Forward-looking metric slate (no historical attainment here)
+forward_metrics = [
+    MetricSpec('Current_Seats_ProductX',  direction='proportional',
+               weight=1.0, columns=['Current_Seats_ProductX']),
+    MetricSpec('Knowledge_Workers_Count', direction='proportional',
+               weight=0.7, columns=['Knowledge_Workers_Count']),
+    MetricSpec('LTM_ExpansionSpent',      direction='inverse',
+               weight=0.5, columns=['LTM_ExpansionSpent']),  # dampener
+]
+
+# Hard gate: territories with zero unmigrated seats get $0
+gate_metrics = [
+    MetricSpec('Unmigrated_Seats', columns=['Unmigrated_Seats']),
+    #  gate_threshold defaults to 0.0 — node is gated when value <= 0
+]
+
+ws_quotas = cascader_ws.cascade_quota(
+    'Global_Corp', 50_000_000.0,
+    hedge_multiplier=1.05,
+    metrics=forward_metrics,
+    gate_metrics=gate_metrics,
+    new_ic_attr='_is_brand_new',
+)
+# cascader_ws.gated_nodes -> the set of nodes that received $0 due to gates</code></pre>
+
+  <h3>Output</h3>
+<pre class="output">Multi-metric cascade — normalized weights:
+  metric                   direction     input_weight   normalized_share  active
+  Current_Seats_ProductX   proportional         1.000             45.45%  yes
+  Knowledge_Workers_Count  proportional         0.700             31.82%  yes
+  LTM_ExpansionSpent       inverse              0.500             22.73%  yes
+Gates active: 1 (Unmigrated_Seats); 18 nodes gated (will receive $0)
+
+White-space cascade summary:
+  Macro target:        $50,000,000.00
+  Sum of IC quotas:    $63,814,078.12
+  Gated IC nodes:        17  (got $0 — no white space)
+  Funded IC nodes:      153
+
+  Whole-subtree gate propagation example:
+    Mgr_Dir_RVP_APAC_1_1_1 (entire team fully migrated): $0.00
+      ├─ IC_Mgr_Dir_RVP_APAC_1_1_1_1: $0.00
+      ├─ IC_Mgr_Dir_RVP_APAC_1_1_1_2: $0.00
+      └─ IC_Mgr_Dir_RVP_APAC_1_1_1_3: $0.00
+      (4 ICs total — all $0)
+
+Wrote examples/data/output_whitespace_cascaded_quotas.csv
+  columns: ['depth', 'level', 'node_id', 'parent', 'is_leaf',
+            'cascaded_quota', 'is_gated']
+Sample gated IC rows (is_gated=True, cascaded_quota=0):
+ depth level                     node_id                 parent  is_leaf  cascaded_quota  is_gated
+     5    IC IC_Mgr_Dir_RVP_APAC_1_1_1_1 Mgr_Dir_RVP_APAC_1_1_1     True             0.0      True
+     5    IC IC_Mgr_Dir_RVP_APAC_1_1_1_2 Mgr_Dir_RVP_APAC_1_1_1     True             0.0      True
+     5    IC IC_Mgr_Dir_RVP_APAC_1_1_1_3 Mgr_Dir_RVP_APAC_1_1_1     True             0.0      True</pre>
+
+  <div class="highlight"><strong>How gates work mathematically.</strong> Before the weighted blend runs at each level, the cascader checks every child against every gate. Gated children get quota = 0 and are removed from the blend pool — the non-gated siblings absorb the full target_to_distribute via the existing share-of-siblings math. Because gate values aggregate from leaves upward, a non-leaf is automatically gated iff <em>all</em> its descendants fail the gate. No extra propagation logic needed. Multiple gates compose with AND. CRO overrides win over gates.</div>
+
+  <div class="takeaway"><strong>The <code class="inline">is_gated</code> column matters for audit.</strong> It distinguishes "$0 because gated" (a deliberate exclusion the planner chose) from "$0 because the metric signals were weak" (algorithmic outcome). Stakeholders should see this distinction.</div>
+</section>
+
+<section class="step" id="step-17">
+  <h2><span class="badge">17</span>Reconcile the white-space cascade against historical attainment<a class="anchor" href="#step-17">#</a></h2>
+  <p>In white-space planning the reconciliation flips: instead of comparing the new quota to <strong>forward</strong> pipeline, compare it to <strong>historical</strong> attainment. The question becomes "have they hit targets at this size before?" Reps flagged Critical or At Risk are those the forward-looking plan asks for a significant step-up from.</p>
+
+  <h3>Code</h3>
+<pre class="code"><code>historical_adjuster = PipelineAdjuster(
+    hierarchy_ws, ws_quotas,
+    pipeline_attr=['Q1_NetNewACV', 'Q2_NetNewACV',
+                   'Q3_NetNewACV', 'Q4_NetNewACV'],
+)
+# Thresholds tightened — historical-attainment ratios cluster near 1.0
+# (not 1.5–3x like forward pipeline coverage)
+historical_thresholds = {
+    'NA':       {'healthy': 1.10, 'at_risk': 0.80},
+    'EMEA':     {'healthy': 1.05, 'at_risk': 0.75},
+    'APAC':     {'healthy': 1.00, 'at_risk': 0.70},
+    '_default': {'healthy': 1.00, 'at_risk': 0.75},
+}
+ws_diagnosis = historical_adjuster.diagnose(historical_thresholds)</code></pre>
+
+  <h3>Output</h3>
+<pre class="output">Historical-attainment vs new cascaded quota — risk summary:
+Risk_Status  Nodes  Total_Quota  Total_HistoricalAct
+    Healthy    167 $324,465,056         $931,677,143
+   Critical     45  $12,768,085          $24,918,549
+   Moderate      5   $2,862,499           $2,792,648
+
+Reading: nodes flagged 'At Risk' or 'Critical' are those whose
+historical attainment is well below the new white-space target —
+i.e., the forward-looking plan asks them to step up significantly.</pre>
+
+  <div class="takeaway"><strong>Same PipelineAdjuster, semantically different signal.</strong> The framework doesn't know whether you're feeding it pipeline or historical attainment — both are "dollar amounts to compare against quota." The reconciler's classification logic is identical; only the columns and the thresholds change. That's how the same package supports both planning philosophies without duplicate code.</div>
+</section>
+
+<section class="step" id="step-18">
+  <h2><span class="badge">18</span>Summary report<a class="anchor" href="#step-18">#</a></h2>
   <p>One CSV in → five CSVs, one SQL DB, and one interactive dashboard out. Every major capability exercised — and every weight visible to stakeholders.</p>
 
-<pre class="output">Hierarchy:              217 nodes (170 ICs across 3 regions)
+<pre class="output">--- Part A (earned planning) ---
+Hierarchy:              217 nodes (170 ICs across 3 regions)
 Multi-metric cascade:   5 metrics blended ($50M -> $56,440,452 with hedging)
 Hedge buffer:           $6,440,452 (12.88% overassignment, full audit in CSV)
 Normalized weights:     NetNewACV 33.5% · CloudSeats 32.8% · Has_Active_Cert 20.4%
@@ -705,7 +809,15 @@ CRO overrides applied:  1 (pinned at $1,200,000)
 Pipeline diagnosis:     ran on multi-column sum across 3 columns
 Pipeline adjustments:   86 ICs redistributed within managers (zero-sum)
 Commit reconciliation:  3 managers bias-corrected and blended with ML baseline
-Outputs written:        5 CSVs · 1 SQLite DB · 1 interactive HTML dashboard
+
+--- Part B (white-space planning) ---
+Forward cascade:        3 forward metrics blended ($50M -> $63,814,078)
+Gated nodes:            18 (17 ICs + 1 whole Manager subtree); got $0
+Whole-team gate demo:   Mgr_Dir_RVP_APAC_1_1_1 + 4 ICs all $0 (no unmigrated seats)
+Historical reconciler:  past-4Q-attainment vs new cascade
+                        Healthy 167 · Moderate 5 · Critical 45
+
+Outputs written:        7 CSVs · 1 SQLite DB · 1 interactive HTML dashboard
 
 Walkthrough complete.</pre>
 

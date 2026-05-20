@@ -25,6 +25,9 @@ class QuotaCascader:
         # can inspect the normalized-weight contributions later (e.g., to
         # paste into a stakeholder report).
         self.weights_report = None
+        # Populated after each cascade with gates so quotas_to_dataframe
+        # and stakeholder reports can show WHY a node has zero quota.
+        self.gated_nodes = set()
 
     # ------------------------------------------------------------------
     # Single-metric helpers (legacy path — kept for backward compatibility)
@@ -259,6 +262,35 @@ class QuotaCascader:
         """True iff the node has a truthy value under the given attribute."""
         return bool(self.hierarchy.nodes[node_id].get(attr, False))
 
+    def _compute_gated_set(self, gate_metrics: List[MetricSpec]) -> set:
+        """
+        Return the set of node_ids that fail at least one gate.
+
+        For each gate metric, every node's aggregated value (rolled up
+        from leaves via _aggregate_node_metric, same as cascade signals)
+        is compared against the gate's gate_threshold. If value <=
+        threshold, the node fails this gate. Gates compose with AND —
+        any failing gate marks the node as gated.
+
+        Because _aggregate_node_metric sums child values for non-leaves,
+        a non-leaf is automatically gated iff ALL its descendants
+        contribute zero to the metric — which means white-space-style
+        gates ("no unmigrated seats anywhere in this subtree") propagate
+        upward naturally without extra logic.
+        """
+        gated = set()
+        if not gate_metrics:
+            return gated
+
+        for node in self.hierarchy.nodes:
+            for gate in gate_metrics:
+                value = self._aggregate_node_metric(node, gate)
+                threshold = getattr(gate, "gate_threshold", 0.0)
+                if value <= threshold:
+                    gated.add(node)
+                    break  # AND logic: first failure is enough
+        return gated
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
@@ -272,6 +304,7 @@ class QuotaCascader:
         new_ic_ids: Optional[List[str]] = None,
         new_ic_attr: Optional[str] = None,
         new_ic_rule: Optional[str] = None,
+        gate_metrics: Optional[List[MetricSpec]] = None,
         verbose: bool = True,
     ) -> Dict[str, float]:
         """
@@ -326,6 +359,31 @@ class QuotaCascader:
                                        primary signal (e.g., NetNewACV) is
                                        zero but secondary signals (cloud
                                        seats, accreditations) already exist.
+        gate_metrics : Optional[List[MetricSpec]]
+            Hard kill-switch metrics. Each spec's aggregated value is
+            checked at every node; nodes whose value is <= the spec's
+            gate_threshold (default 0.0) are EXCLUDED from the cascade
+            and receive quota = 0. The excluded share is redistributed
+            among non-gated siblings via the existing blend.
+
+            Gates compose with AND: if ANY gate fails for a node, the
+            node is gated. Because gate values are summed from leaves
+            upward, a whole subtree (manager / director / region) is
+            naturally gated when none of its leaves pass the gate —
+            which is exactly the desired "no white space anywhere in
+            this branch => no quota" semantics.
+
+            CRO overrides win over gates: an IC pinned via
+            new_ic_overrides gets its pinned quota even if its gate
+            value is 0. (The CRO has explicitly assigned business
+            judgment.)
+
+            Useful for white-space-planning flows: e.g., cascading
+            "migration NetNewACV" with a gate on "Unmigrated_Seats"
+            ensures territories with nothing left to migrate get $0.
+
+            The set of gated nodes is stored on self.gated_nodes after
+            each call.
         verbose : bool
             When True (default) in multi-metric mode, prints the normalized
             weights table before cascading so the analyst can see — and
@@ -388,6 +446,15 @@ class QuotaCascader:
         else:
             self.weights_report = None
 
+        # Precompute the gated set (nodes whose any gate fails). Stored on
+        # self so analysts can inspect it and so quotas_to_dataframe can
+        # mark gated nodes in its is_gated column.
+        self.gated_nodes = self._compute_gated_set(gate_metrics or [])
+        if gate_metrics and verbose:
+            print(f"Gates active: {len(gate_metrics)} "
+                  f"({', '.join(g.name for g in gate_metrics)}); "
+                  f"{len(self.gated_nodes)} nodes gated (will receive $0)")
+
         def child_weights(children: List[str]) -> Dict[str, float]:
             """
             Compute a normalized share dict for the given children using the
@@ -424,7 +491,11 @@ class QuotaCascader:
             return self._calculate_node_historical_capacity(node_id) == 0.0
 
         # Dictionary to store dynamically calculated quotas
-        quotas = {root_node: macro_target}
+        # If the root itself is gated, every node gets 0.
+        if root_node in self.gated_nodes:
+            quotas = {root_node: 0.0}
+        else:
+            quotas = {root_node: macro_target}
 
         # Traverse top-down through the organization
         for node in nx.topological_sort(self.hierarchy):
@@ -436,6 +507,20 @@ class QuotaCascader:
 
             if not children:
                 continue  # Reached an IC (leaf node)
+
+            # Gate filter — gated children always get quota 0, do NOT
+            # contribute to the blend, and are excluded from brand-new
+            # carve-out / override logic below. (Exception: CRO overrides
+            # win over gates — pinned ICs keep their pinned quota even if
+            # gated. Documented as explicit business override.)
+            gated_children = [c for c in children
+                              if c in self.gated_nodes
+                              and c not in new_ic_overrides]
+            for c in gated_children:
+                quotas[c] = 0.0
+            children = [c for c in children if c not in gated_children]
+            if not children:
+                continue  # All children gated (and no overrides) — node done
 
             # Determine the specific hedge for this manager node
             if isinstance(hedge_multiplier, dict):
@@ -588,6 +673,12 @@ class QuotaCascader:
                 row["hedge_buffer"] = round(buffer, 2)
                 row["overassignment_pct"] = round(pct, 4)
 
+            # Flag gated nodes so analysts can distinguish "0 because gated"
+            # from "0 because no signal." Only populated when the most recent
+            # cascade_quota call used gate_metrics.
+            if self.gated_nodes:
+                row["is_gated"] = node in self.gated_nodes
+
             rows.append(row)
 
         df = pd.DataFrame(rows)
@@ -598,6 +689,8 @@ class QuotaCascader:
         col_order += ["node_id", "parent", "is_leaf", "cascaded_quota"]
         if unhedged_quotas is not None:
             col_order += ["unhedged_quota", "hedge_buffer", "overassignment_pct"]
+        if "is_gated" in df.columns:
+            col_order.append("is_gated")
         df = df[col_order]
         return df.sort_values(["depth", "node_id"]).reset_index(drop=True)
 

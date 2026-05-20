@@ -1,6 +1,6 @@
 metric,direction,input_weight,normalized_share,active
-NetNewACV,proportional,1.0,0.33468182834663657,True
-CloudSeats,proportional,0.9796175403028147,0.32786018946898093,True
-DCSeats,inverse,0.4,0.13387273133865463,True
-ExpansionSpent,inverse,0.0,0.0,False
-Has_Active_Cert,proportional,0.6082949046007678,0.20358525084572784,True
+NetNewACV,proportional,1.0,0.32261917333242274,True
+CloudSeats,proportional,0.9800626341325855,0.3161869968378514,True
+DCSeats,inverse,0.4,0.1290476693329691,True
+ExpansionSpent,inverse,0.09508496684128528,0.030676233398676284,True
+Has_Active_Cert,proportional,0.6244821875186208,0.20146992709808043,True

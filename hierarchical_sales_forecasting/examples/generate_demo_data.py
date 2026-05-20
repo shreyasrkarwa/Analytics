@@ -23,6 +23,11 @@ Produces TWO CSVs in examples/data/:
         Multi-source open pipeline (for PipelineAdjuster):
           Open_Pipeline, Late_Stage_Commit, Best_Case_Adds
 
+        Forward-looking columns (for white-space-planning cascade):
+          Current_Seats_ProductX     — current installed-base, proportional
+          Knowledge_Workers_Count    — total knowledge workers in territory
+          Unmigrated_Seats           — gate metric: 0 => no migration target
+
         Brand-new flag (for QuotaCascader new_ic_attr):
           Is_Brand_New         — 'yes' / 'no'
 
@@ -141,6 +146,24 @@ def generate_hierarchy_csv():
                         late_stage = avg_acv * np.random.uniform(0.3, 0.9)
                         best_case = avg_acv * np.random.uniform(0.1, 0.6)
 
+                        # --- Forward-looking columns (white-space planning)
+                        # Current installed seats of Product X (proportional)
+                        current_seats = max(0, int(np.random.uniform(20, 500)))
+                        # Total knowledge workers in the territory
+                        knowledge_workers = max(current_seats + 50,
+                                                int(np.random.uniform(200, 5000)))
+                        # Unmigrated seats — the gate metric. ~12% of ICs
+                        # are fully migrated (0 unmigrated => gate fails).
+                        # For an extra demo touch, the entire team under
+                        # Mgr_Dir_RVP_APAC_1_1_1 is fully migrated so we
+                        # can show whole-subtree gating propagation.
+                        force_zero = (manager == 'Mgr_Dir_RVP_APAC_1_1_1'
+                                      or np.random.random() < 0.12)
+                        if force_zero:
+                            unmigrated_seats = 0
+                        else:
+                            unmigrated_seats = max(1, int(np.random.uniform(5, 200)))
+
                         # --- Is_Brand_New flag
                         if tenure == 'brand_new':
                             is_brand_new = 'yes'
@@ -187,6 +210,10 @@ def generate_hierarchy_csv():
                             'Open_Pipeline':     round(open_pipe, 2),
                             'Late_Stage_Commit': round(late_stage, 2),
                             'Best_Case_Adds':    round(best_case, 2),
+                            # Forward-looking columns (white-space planning)
+                            'Current_Seats_ProductX':  current_seats,
+                            'Knowledge_Workers_Count': knowledge_workers,
+                            'Unmigrated_Seats':        unmigrated_seats,
                             # Brand-new flag (for cascade_quota new_ic_attr)
                             'Is_Brand_New': is_brand_new,
                             # Pre-aggregated convenience columns for
@@ -205,10 +232,12 @@ def generate_hierarchy_csv():
     n_total = len(df)
     n_zero_acv = int((df['NetNewACV_4Q_sum'] == 0).sum())
     n_flagged = int((df['Is_Brand_New'] == 'yes').sum())
+    n_zero_unmigrated = int((df['Unmigrated_Seats'] == 0).sum())
     print(f"Hierarchy CSV: {out}")
     print(f"  Total ICs: {n_total}")
     print(f"  ICs with zero 4Q NetNewACV: {n_zero_acv}")
     print(f"  ICs flagged Is_Brand_New=yes: {n_flagged}")
+    print(f"  ICs with zero Unmigrated_Seats (will be gated): {n_zero_unmigrated}")
     return df
 
 

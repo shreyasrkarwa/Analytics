@@ -21,6 +21,66 @@ Unlike traditional bottom-up time-series libraries (which are strictly built for
 | **`CommitReconciler`** | Detect sandbagging and "happy ears" bias via historical Bias Quotients, then auto-correct forecasts |
 | **`PipelineAdjuster`** | Diagnose pipeline health with per-region thresholds and redistribute IC quotas using zero-sum logic |
 
+### What's New in v0.4.0
+
+- **Gate metrics — hard kill-switches.** `cascade_quota(..., gate_metrics=[...])` excludes any node whose rolled-up gate value is at or below a threshold from the cascade entirely (quota = 0), redistributing its share among non-gated siblings. Designed for white-space planning: e.g., gating "migration NetNewACV" on `Unmigrated_Seats` zeros out territories with nothing left to migrate. Gates propagate upward naturally — a manager whose whole team fails the gate gets $0 too. Composes with AND across multiple gates. CRO overrides win over gates.
+- **Two planning philosophies, both supported.** See the section below.
+- **`is_gated` column in `quotas_to_dataframe`** when gates were used, so analysts can distinguish "$0 because gated" from "$0 because no signal."
+- **`cascader.gated_nodes`** — the set of gated nodes from the most recent cascade, stored for inspection.
+
+### Two Planning Philosophies
+
+The package supports two philosophically distinct ways of building a quota plan. Both use the same primitives — pick the one that matches how your org thinks about fairness.
+
+**Earned planning** — *"who has proven they can sell this?"*
+
+Cascade on **historical** signals (past NetNewACV attainment, past cloud-seat adds, LTM expansion). Reconcile against **forward** pipeline (open opps + late-stage commit + best-case). Best when historical attainment is a clean signal of forward capacity (mature business, low churn in territories, stable rep tenure).
+
+```python
+historical_metrics = [
+    MetricSpec('NetNewACV',  direction='proportional', weight=1.0, lookback=4),
+    MetricSpec('CloudSeats', direction='proportional', weight=0.6, lookback=4),
+    MetricSpec('DCSeats',    direction='inverse',      weight=0.4, lookback=4),
+]
+quotas = cascader.cascade_quota('Global_Corp', macro_target, metrics=historical_metrics)
+
+# Reconcile against forward pipeline
+adjuster = PipelineAdjuster(hierarchy, quotas,
+                            pipeline_attr=['Open_Pipeline', 'Late_Stage_Commit'])
+```
+
+**White-space planning** — *"what can be achieved if we look at the opportunity in front of us?"*
+
+Cascade on **forward-looking** signals (current installed seats, knowledge-worker counts, white-space indicators), with dampeners (LTM spend) and hard gates (unmigrated seats). Reconcile against **historical** attainment to flag where the plan asks for a step-up. Best when past performance is noisy (rapid growth, territory shuffles, recent re-orgs) and the org wants every rep to be measured against the opportunity in front of them.
+
+```python
+forward_metrics = [
+    MetricSpec('Current_Seats_ProductX',  direction='proportional', weight=1.0,
+               columns=['Current_Seats_ProductX']),
+    MetricSpec('Knowledge_Workers_Count', direction='proportional', weight=0.7,
+               columns=['Knowledge_Workers_Count']),
+    MetricSpec('LTM_ExpansionSpent',      direction='inverse',      weight=0.5,
+               columns=['LTM_ExpansionSpent']),
+]
+gate_metrics = [
+    MetricSpec('Unmigrated_Seats', columns=['Unmigrated_Seats']),  # threshold defaults to 0
+]
+quotas = cascader.cascade_quota(
+    'Global_Corp', macro_target,
+    metrics=forward_metrics, gate_metrics=gate_metrics,
+)
+
+# Reconcile against historical attainment
+adjuster = PipelineAdjuster(hierarchy, quotas, pipeline_attr=[
+    'Q1_NetNewACV', 'Q2_NetNewACV', 'Q3_NetNewACV', 'Q4_NetNewACV',
+])
+diagnosis = adjuster.diagnose(coverage_thresholds={
+    '_default': {'healthy': 1.0, 'at_risk': 0.75},   # ratios near 1.0, not 1.5–3x
+})
+```
+
+Neither philosophy is "correct" — they answer different questions. The package supports either as a first-class flow, and you can blend them (some metrics historical, some forward) by mixing them in a single `metrics=` list.
+
 ### What's New in v0.3.x
 
 - **Multi-metric cascading** via the new `MetricSpec` API — blend historical NetNewACV with any number of secondary signals (cloud seats, on-prem seats, LTM expansion spend, customer-sat scores, certification flags, anything else the analyst tracks), each marked as `proportional` or `inverse`, with per-metric weights and lookbacks

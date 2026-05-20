@@ -545,6 +545,171 @@ def test_end_to_end_with_synthetic_csv():
     assert all(quotas[n] >= 0 for n in leaves)
 
 
+# ----------------------------------------------------------------------
+# 14. Gate metric: a single gate zeroes a node and redistributes share
+# ----------------------------------------------------------------------
+def test_gate_metric_basic():
+    print(f"\n\n{SEPARATOR}")
+    print("TEST 14: Gate metric zeroes a node; siblings absorb the share")
+    print(SEPARATOR)
+    df = pd.DataFrame({
+        'Global': ['Corp'] * 3,
+        'Mgr':    ['Mgr'] * 3,
+        'IC':     ['IC_A', 'IC_B', 'IC_Gated'],
+        'Q1_NetNewACV': [100_000, 100_000, 100_000],
+        'Q2_NetNewACV': [100_000, 100_000, 100_000],
+        'Q3_NetNewACV': [100_000, 100_000, 100_000],
+        'Q4_NetNewACV': [100_000, 100_000, 100_000],
+        'Unmigrated_Seats': [50, 50, 0],   # IC_Gated has no white space
+    })
+    cols = [c for c in df.columns if c.startswith('Q')] + ['Unmigrated_Seats']
+    h = _build_simple_hierarchy(df, ['Global', 'Mgr', 'IC'], cols)
+    cascader = QuotaCascader(h)
+
+    quotas = cascader.cascade_quota(
+        'Corp', 300_000.0,
+        metrics=[MetricSpec('NetNewACV', direction='proportional',
+                            weight=1.0, lookback=4)],
+        gate_metrics=[MetricSpec('Unmigrated_Seats',
+                                  columns=['Unmigrated_Seats'])],
+        verbose=False,
+    )
+    print(f"  IC_A:     ${quotas['IC_A']:,.2f} (expected $150,000)")
+    print(f"  IC_B:     ${quotas['IC_B']:,.2f} (expected $150,000)")
+    print(f"  IC_Gated: ${quotas['IC_Gated']:,.2f} (expected $0)")
+    print(f"  Cascader gated_nodes: {cascader.gated_nodes}")
+    assert quotas['IC_Gated'] == 0.0
+    # IC_A and IC_B split the full $300K (gated share goes to them)
+    assert abs(quotas['IC_A'] - 150_000.0) < 0.01
+    assert abs(quotas['IC_B'] - 150_000.0) < 0.01
+    assert 'IC_Gated' in cascader.gated_nodes
+
+
+# ----------------------------------------------------------------------
+# 15. Gate propagates upward — whole subtree gets $0
+# ----------------------------------------------------------------------
+def test_gate_propagates_upward():
+    print(f"\n\n{SEPARATOR}")
+    print("TEST 15: Gate propagates — whole subtree (Mgr + ICs) gets $0")
+    print(SEPARATOR)
+    # Two managers; Mgr_Empty's ICs ALL have 0 unmigrated seats, so the
+    # manager itself should also be gated and get $0.
+    df = pd.DataFrame({
+        'Global': ['Corp'] * 4,
+        'Mgr':    ['Mgr_Full', 'Mgr_Full', 'Mgr_Empty', 'Mgr_Empty'],
+        'IC':     ['IC_F1', 'IC_F2', 'IC_E1', 'IC_E2'],
+        'Q1_NetNewACV': [100_000] * 4,
+        'Q2_NetNewACV': [100_000] * 4,
+        'Q3_NetNewACV': [100_000] * 4,
+        'Q4_NetNewACV': [100_000] * 4,
+        'Unmigrated_Seats': [50, 80, 0, 0],
+    })
+    cols = [c for c in df.columns if c.startswith('Q')] + ['Unmigrated_Seats']
+    h = _build_simple_hierarchy(df, ['Global', 'Mgr', 'IC'], cols)
+    cascader = QuotaCascader(h)
+
+    quotas = cascader.cascade_quota(
+        'Corp', 1_000_000.0,
+        metrics=[MetricSpec('NetNewACV', direction='proportional',
+                            weight=1.0, lookback=4)],
+        gate_metrics=[MetricSpec('Unmigrated_Seats',
+                                  columns=['Unmigrated_Seats'])],
+        verbose=False,
+    )
+    print(f"  Mgr_Full:  ${quotas['Mgr_Full']:,.2f} (expected $1,000,000)")
+    print(f"  Mgr_Empty: ${quotas['Mgr_Empty']:,.2f} (expected $0 — whole team gated)")
+    print(f"  IC_F1:     ${quotas['IC_F1']:,.2f}")
+    print(f"  IC_F2:     ${quotas['IC_F2']:,.2f}")
+    print(f"  IC_E1:     ${quotas['IC_E1']:,.2f} (expected $0)")
+    print(f"  IC_E2:     ${quotas['IC_E2']:,.2f} (expected $0)")
+    assert quotas['Mgr_Empty'] == 0.0
+    assert quotas['IC_E1'] == 0.0
+    assert quotas['IC_E2'] == 0.0
+    # Mgr_Full absorbs Mgr_Empty's share too
+    assert abs(quotas['Mgr_Full'] - 1_000_000.0) < 0.01
+    assert 'Mgr_Empty' in cascader.gated_nodes
+
+
+# ----------------------------------------------------------------------
+# 16. Multiple gates compose with AND
+# ----------------------------------------------------------------------
+def test_gates_compose_with_and():
+    print(f"\n\n{SEPARATOR}")
+    print("TEST 16: Multiple gates compose with AND")
+    print(SEPARATOR)
+    df = pd.DataFrame({
+        'Global': ['Corp'] * 4,
+        'Mgr':    ['Mgr'] * 4,
+        'IC':     ['IC_PassBoth', 'IC_FailA', 'IC_FailB', 'IC_FailBoth'],
+        'Q1_NetNewACV': [100_000] * 4,
+        'Q2_NetNewACV': [100_000] * 4,
+        'Q3_NetNewACV': [100_000] * 4,
+        'Q4_NetNewACV': [100_000] * 4,
+        'Gate_A': [10, 0, 10,  0],
+        'Gate_B': [10, 10, 0,  0],
+    })
+    cols = [c for c in df.columns if c.startswith('Q')] + ['Gate_A', 'Gate_B']
+    h = _build_simple_hierarchy(df, ['Global', 'Mgr', 'IC'], cols)
+    cascader = QuotaCascader(h)
+
+    quotas = cascader.cascade_quota(
+        'Corp', 400_000.0,
+        metrics=[MetricSpec('NetNewACV', direction='proportional',
+                            weight=1.0, lookback=4)],
+        gate_metrics=[
+            MetricSpec('Gate_A', columns=['Gate_A']),
+            MetricSpec('Gate_B', columns=['Gate_B']),
+        ],
+        verbose=False,
+    )
+    # Only IC_PassBoth survives -> gets full $400K
+    print(f"  IC_PassBoth: ${quotas['IC_PassBoth']:,.2f} (expected $400,000)")
+    print(f"  IC_FailA:    ${quotas['IC_FailA']:,.2f} (expected $0)")
+    print(f"  IC_FailB:    ${quotas['IC_FailB']:,.2f} (expected $0)")
+    print(f"  IC_FailBoth: ${quotas['IC_FailBoth']:,.2f} (expected $0)")
+    assert abs(quotas['IC_PassBoth'] - 400_000.0) < 0.01
+    assert quotas['IC_FailA'] == 0.0
+    assert quotas['IC_FailB'] == 0.0
+    assert quotas['IC_FailBoth'] == 0.0
+
+
+# ----------------------------------------------------------------------
+# 17. CRO override wins over gate
+# ----------------------------------------------------------------------
+def test_cro_override_wins_over_gate():
+    print(f"\n\n{SEPARATOR}")
+    print("TEST 17: CRO override wins over gate (explicit business override)")
+    print(SEPARATOR)
+    df = pd.DataFrame({
+        'Global': ['Corp'] * 2,
+        'Mgr':    ['Mgr'] * 2,
+        'IC':     ['IC_Normal', 'IC_Gated_But_Override'],
+        'Q1_NetNewACV': [100_000, 100_000],
+        'Q2_NetNewACV': [100_000, 100_000],
+        'Q3_NetNewACV': [100_000, 100_000],
+        'Q4_NetNewACV': [100_000, 100_000],
+        'Unmigrated_Seats': [50, 0],  # the second IC fails the gate
+    })
+    cols = [c for c in df.columns if c.startswith('Q')] + ['Unmigrated_Seats']
+    h = _build_simple_hierarchy(df, ['Global', 'Mgr', 'IC'], cols)
+    cascader = QuotaCascader(h)
+
+    quotas = cascader.cascade_quota(
+        'Corp', 500_000.0,
+        metrics=[MetricSpec('NetNewACV', direction='proportional',
+                            weight=1.0, lookback=4)],
+        gate_metrics=[MetricSpec('Unmigrated_Seats',
+                                  columns=['Unmigrated_Seats'])],
+        new_ic_overrides={'IC_Gated_But_Override': 200_000.0},
+        verbose=False,
+    )
+    # CRO pinned IC_Gated_But_Override at $200K; IC_Normal gets the rest
+    print(f"  IC_Gated_But_Override: ${quotas['IC_Gated_But_Override']:,.2f} (expected $200,000 — CRO wins)")
+    print(f"  IC_Normal:             ${quotas['IC_Normal']:,.2f} (expected $300,000)")
+    assert abs(quotas['IC_Gated_But_Override'] - 200_000.0) < 0.01
+    assert abs(quotas['IC_Normal'] - 300_000.0) < 0.01
+
+
 if __name__ == '__main__':
     test_backward_compat()
     test_single_proportional_metric_matches_legacy()
@@ -559,6 +724,10 @@ if __name__ == '__main__':
     test_suggest_directions_and_weights_still_available()
     test_pipeline_adjuster_multi_column()
     test_end_to_end_with_synthetic_csv()
+    test_gate_metric_basic()
+    test_gate_propagates_upward()
+    test_gates_compose_with_and()
+    test_cro_override_wins_over_gate()
 
     print(f"\n\n{SEPARATOR}")
     print("ALL MULTI-METRIC TESTS PASSED")

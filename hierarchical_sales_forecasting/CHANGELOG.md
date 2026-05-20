@@ -3,6 +3,36 @@
 All notable changes to `b2b_revenue_forecasting` are documented here.
 This project loosely follows [Semantic Versioning](https://semver.org/).
 
+## [0.4.0] — 2026-05
+
+### Added
+- **Gate metrics** — hard kill-switches via
+  `cascade_quota(..., gate_metrics=[MetricSpec(...)])`. Any node whose
+  rolled-up gate value is ≤ `gate_threshold` (default 0.0) is excluded
+  from the cascade entirely (quota = 0), and its share is redistributed
+  among non-gated siblings via the existing blend. Gates propagate
+  upward naturally (a manager whose whole team fails the gate gets $0).
+  Multiple gates compose with AND. CRO overrides win over gates.
+  Designed for white-space planning: e.g., gating migration NetNewACV
+  on `Unmigrated_Seats` zeros out territories with nothing left to
+  migrate.
+- **`MetricSpec.gate_threshold`** field (default 0.0) — meaningful only
+  when the spec is passed in `gate_metrics`.
+- **`cascader.gated_nodes`** set is populated after every cascade with
+  gates so analysts can inspect which nodes were excluded.
+- **`is_gated` column** in `quotas_to_dataframe` output (added
+  automatically when gates were used) so CSVs distinguish "$0 because
+  gated" from "$0 because no signal."
+- **README documents two planning philosophies** (earned vs.
+  white-space) as equal-status flows, with code samples for each.
+- **Walkthrough Part B** added: white-space planning end-to-end
+  (forward-looking cascade with gates → historical-attainment
+  reconciliation).
+
+### Notes
+- Fully backward compatible. Cascades without `gate_metrics=` behave
+  identically to v0.3.4.
+
 ## [0.3.4] — 2026-05
 
 ### Added

@@ -96,6 +96,13 @@ class MetricSpec:
     columns: Optional[List[str]] = None
     aggregation: str = "sum"
     impute_zeros: bool = True
+    # Only meaningful when this spec is passed to cascade_quota(gate_metrics=...).
+    # A node is gated (excluded from cascade — quota = 0) when its aggregated
+    # value for this metric is <= gate_threshold. Default 0.0 matches the
+    # "must have at least some of this" semantics ("0 unmigrated seats =>
+    # 0 migration quota"). Set higher to require a minimum (e.g., 5 means
+    # "must have at least 5 seats").
+    gate_threshold: float = 0.0
 
     def __post_init__(self):
         if self.direction not in DIRECTIONS:
