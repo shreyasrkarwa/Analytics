@@ -32,13 +32,13 @@ In B2C product optimization (like Netflix or Airbnb), running A/B tests is a bre
 1. **Tiny Sample Sizes**: Unlike B2C platforms with millions of clicks, an enterprise B2B company might close only 100 to 500 major contracts per year. 
 2. **Long Sales Cycles**: A single B2B deal can take 3 to 9 months to move from procurement to close, making rapid experimental iterations impossible.
 3. **High Statistical Power Barrier**: 
-   Let’s look at the math. Suppose your baseline Net Revenue Retention (NRR) is 85% with a standard deviation of 10%. To detect a meaningful 3% absolute improvement in NRR with 80% statistical power and a standard 5% significance level ($\alpha = 0.05$), the standard sample size formula dictates:
+   Let’s look at the math. Suppose your baseline Net Revenue Retention (NRR) is 85% with a standard deviation of 10%. To detect a meaningful 3% absolute improvement in NRR with 80% statistical power and a standard 5% significance level (α = 0.05), the standard sample size formula dictates:
 
-   $$N = \frac{2 \cdot (Z_{\alpha/2} + Z_{\beta})^2 \cdot \sigma^2}{\delta^2}$$
-   
-   Plugging in the values:
-   
-   $$N = \frac{2 \cdot (1.96 + 0.84)^2 \cdot (10)^2}{3^2} \approx 174 \text{ accounts per group}$$
+   **Sample Size (N) = [ 2 * (Z_α/2 + Z_β)² * σ² ] / δ²**
+
+   Plugging in our values:
+
+   **N = [ 2 * (1.96 + 0.84)² * (10)² ] / (3)² ≈ 174 accounts per group**
 
    That means you need **348 highly qualified enterprise accounts** to run a clean, randomized test. For many enterprise companies, a cohort of 348 renewals represents multiple years of sales cycles. Forcing a random pricing policy over that duration would paralyze your sales team.
 
@@ -55,6 +55,9 @@ Sales reps are highly incentivized to hit quotas. If an account is struggling (p
 In B2B sales and revenue operations, Directed Acyclic Graphs (DAGs) are a powerful mathematical abstraction. While they are traditionally used to model and optimize downstream allocations like hierarchical sales targets (Karwa, 2026a), they are equally critical for upstream analysis—specifically, mapping causal paths in historical CRM data to identify why naive estimations fail.
 
 This dynamic creates a classic **confounding relationship** that can be mapped using a **Directed Acyclic Graph (DAG)**:
+
+![Causal Directed Acyclic Graph (DAG) for Defensive Discounting Confounding](causal_dag.png)
+*Figure 1: Causal Directed Acyclic Graph (DAG) illustrating the selection bias of "defensive discounting" in B2B enterprise renewals. Confounders (Customer Health, Competitor Presence) affect both the Treatment assignment and the NRR Outcome, creating backdoor paths that mask the true treatment effect. (Image by author)*
 
 ```mermaid
 graph TD
@@ -213,6 +216,8 @@ When we execute the above simulation, the results reveal the stark power of caus
 | **Multivariate OLS Regression** | **+4.843%** |  **Success.** Almost perfectly isolates the true causal effect by blocking confounders. |
 | **Propensity Score Matching (PSM)** | **+5.115%** |  **Success.** Recovers the true effect beautifully via a matched, balanced pseudo-RCT cohort. |
 
+*Table 1: Methodological performance comparison in recovering the true +5.000% NRR discount impact. The naive difference in means is highly biased by sales reps discounting underperforming deals, whereas both causal controls (regression and matching) successfully isolate and recover the causal ground truth.*
+
 ### Visualizing the Balance
 Propensity Score Matching works by ensuring that the distribution of covariates (health, competitor presence) is balanced across both groups. Before matching, the discounted and undiscounted accounts look completely different. After matching, their estimated propensity score distributions are identical:
 
@@ -225,6 +230,9 @@ Control (No Discount):  █ █ █ █ █ █ █  (skewed toward low propensi
 Treated (Discounted):   █ █ █ █ █ █ █  (Perfectly Balanced Cohort)
 Matched Control:        █ █ █ █ █ █ █  (Perfectly Balanced Cohort)
 ```
+
+![Propensity Score Covariate Balance](propensity_score_balance.png)
+*Figure 2: Distribution of estimated propensity scores for discounted and undiscounted accounts before and after Nearest Neighbor matching. The raw cohorts are heavily skewed in opposite directions, while the matched cohorts exhibit perfect overlapping balance, enabling a clean causal comparison.*
 
 By comparing ONLY the matched cohorts, we ensure that we are comparing "apples to apples"—i.e., a struggling account that got a discount compared directly with a struggling account that did not.
 
