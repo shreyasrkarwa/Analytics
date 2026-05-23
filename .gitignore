@@ -69,3 +69,8 @@ unified_revenue_platform/urp_architecture.svg
 
 # Extracted Articles
 hierarchical_sales_forecasting/article_extracted.txt
+
+# Confidentially Untracked ESWA Submissions and Manuscripts
+b2b_territory_optimization/ESWA_submission/
+unified_revenue_platform/eswa_research_paper_anonymized.md
+unified_revenue_platform/suggested_reviewers.md
