@@ -78,3 +78,19 @@ unified_revenue_platform/suggested_reviewers.md
 # B2B Revenue Causal ML draft and planning materials
 b2b-revenue-causal-ml/article_draft.md
 b2b-revenue-causal-ml/outline.md
+
+# Confidentially Untracked DSS Submissions and Manuscripts
+unified_revenue_platform/dss_*
+unified_revenue_platform/CHANGES.md
+unified_revenue_platform/tables/
+
+# Lock files and temp files
+*.~lock.*
+.~lock.*
+*.tmp
+*.temp
+
+# Validation and evaluation outputs
+outputs/
+usaspending_analysis/outputs/
+
