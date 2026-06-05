@@ -84,6 +84,16 @@ unified_revenue_platform/dss_*
 unified_revenue_platform/CHANGES.md
 unified_revenue_platform/tables/
 
+# JDS journal submissions, manuscripts, figures, and tables
+unified_revenue_platform/JDS - Final Submission Files/
+unified_revenue_platform/JDS_author_bio.md
+unified_revenue_platform/JDS_cover_letter.md
+unified_revenue_platform/JDS_manuscript.md
+unified_revenue_platform/JDS_manuscript_anonymized.md
+unified_revenue_platform/JDS_title_page.md
+unified_revenue_platform/ziEypCDy
+
+
 # Lock files and temp files
 *.~lock.*
 .~lock.*
