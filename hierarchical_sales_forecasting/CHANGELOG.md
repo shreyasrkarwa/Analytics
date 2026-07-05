@@ -3,6 +3,51 @@
 All notable changes to `b2b_revenue_forecasting` are documented here.
 This project loosely follows [Semantic Versioning](https://semver.org/).
 
+## [0.6.0] — 2026-07
+
+Fixes [issue #1](https://github.com/shreyasrkarwa/Analytics/issues/1):
+`RecursionError` when a hierarchy row holds the same value at two
+adjacent levels. `from_dataframe` used to build the `parent -> child`
+edge without checking `parent != child`, producing a self-loop (or a
+cross-row cycle); the cascader's recursive aggregation then recursed
+forever, crashing with a cryptic `RecursionError` deep inside networkx.
+
+### Fixed
+- **Self-loops can no longer be built from data.** `from_dataframe`
+  resolves each row's path with a collision policy (below) so
+  `team='T1', rep='T1'` never creates `T1 -> T1`.
+- **Blank-string levels no longer collapse branches.** Cells that are
+  empty/whitespace or the literal strings "nan"/"none"/"null" (common
+  with `keep_default_na=False`) are now treated as missing — like real
+  NaN — instead of becoming a shared node named "nan". `'NA'` (North
+  America) is deliberately still treated as data.
+- **Cyclic graphs fail fast with a clear error.** `cascade_quota`
+  validates the graph up front and the recursive helpers carry a
+  recursion-stack guard, so any cycle raises
+  `HierarchyValidationError` naming the cycle instead of a
+  `RecursionError`. Diamond-shaped DAGs (a node reachable via two
+  branches) remain allowed, matching previous aggregation behavior.
+
+### Added
+- **`on_collision` parameter on `from_dataframe`** —
+  `"suffix"` (default) | `"skip"` | `"error"`.
+  - `"suffix"`: the deeper duplicate is deterministically renamed to
+    `<value>__<level_column>` (e.g. `T1__node_5_rep_no`), the edge is
+    kept, and one summary warning lists examples. Non-colliding node
+    ids are unchanged.
+  - `"skip"`: the duplicate level is dropped from that row's path
+    (jagged-hierarchy semantics).
+  - `"error"`: raise immediately, naming the row and value.
+- **`SalesHierarchy.validate()`** — asserts the graph is a DAG;
+  raises `HierarchyValidationError` naming any self-loop or cycle.
+  Called automatically at the end of `from_dataframe`; call it
+  manually after building via `add_edge()`.
+- **`HierarchyValidationError`** exported at package top level.
+
+### Notes
+- Backward compatible for clean data: node ids, edges, and cascade
+  results are unchanged when no row has duplicate/blank levels.
+
 ## [0.5.0] — 2026-07
 
 Fixes [issue #12](https://github.com/shreyasrkarwa/Analytics/issues/12):

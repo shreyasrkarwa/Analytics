@@ -5,6 +5,7 @@ import pandas as pd
 from typing import Dict, List, Optional, Union, Any
 
 from b2b_revenue_forecasting.metric_spec import MetricSpec
+from b2b_revenue_forecasting.hierarchy import HierarchyValidationError
 from b2b_revenue_forecasting._dashboard_template import DASHBOARD_HTML_TEMPLATE
 
 
@@ -62,7 +63,8 @@ class QuotaCascader:
     # ------------------------------------------------------------------
     # Single-metric helpers (legacy path — kept for backward compatibility)
     # ------------------------------------------------------------------
-    def _calculate_node_historical_capacity(self, node_id: str) -> float:
+    def _calculate_node_historical_capacity(self, node_id: str,
+                                            _visited: Optional[set] = None) -> float:
         """
         Recursively calculates the historical capacity of a node by summing up
         all '_Attainment' metrics of leaf nodes (ICs) underneath it.
@@ -77,7 +79,22 @@ class QuotaCascader:
 
         Returns 0.0 for brand-new ICs with no historical data at all — these are
         handled separately in cascade_quota() via equal-share carve-out.
+
+        A recursion-stack guard (issue #1) turns accidental cycles /
+        self-loops into a clear HierarchyValidationError instead of a
+        RecursionError bottoming out inside networkx. (_visited tracks the
+        CURRENT path only, so diamond-shaped DAGs — a node reachable via
+        two branches — are still allowed, matching previous behavior.)
         """
+        if _visited is None:
+            _visited = set()
+        if node_id in _visited:
+            raise HierarchyValidationError(
+                f"Cycle detected while aggregating capacity at node "
+                f"'{node_id}'. The hierarchy is not a DAG — run "
+                f"SalesHierarchy.validate() to locate the cycle."
+            )
+
         # If it's a leaf node (IC), return its historical capacity
         if self.hierarchy.out_degree(node_id) == 0:
             attrs = self.hierarchy.nodes[node_id]
@@ -98,17 +115,25 @@ class QuotaCascader:
             imputed = [v if v > 0 else avg_non_zero for v in attainments]
             return sum(imputed)
 
-        # Otherwise, aggregate the mathematical capacity of its children
-        total_capacity = 0.0
-        for child in self.hierarchy.successors(node_id):
-            total_capacity += self._calculate_node_historical_capacity(child)
+        # Otherwise, aggregate the mathematical capacity of its children.
+        # Push onto the recursion stack, recurse, then pop — so only true
+        # ancestor->descendant->ancestor cycles trip the guard.
+        _visited.add(node_id)
+        try:
+            total_capacity = 0.0
+            for child in self.hierarchy.successors(node_id):
+                total_capacity += self._calculate_node_historical_capacity(
+                    child, _visited)
+        finally:
+            _visited.discard(node_id)
 
         return total_capacity
 
     # ------------------------------------------------------------------
     # Multi-metric helpers (new path)
     # ------------------------------------------------------------------
-    def _aggregate_node_metric(self, node_id: str, spec: MetricSpec) -> float:
+    def _aggregate_node_metric(self, node_id: str, spec: MetricSpec,
+                               _visited: Optional[set] = None) -> float:
         """
         Recursively compute one metric's aggregated value for a node, rolling
         up across the subtree below it.
@@ -127,7 +152,20 @@ class QuotaCascader:
         rate), supply a precomputed column on parent nodes and use a leaf-only
         cascade — but for the metrics the cascader cares about (capacity-like
         signals), sum-rollup is correct.
+
+        A recursion-stack guard (issue #1) raises a clear
+        HierarchyValidationError on cycles/self-loops instead of a
+        RecursionError; diamond-shaped DAGs remain allowed.
         """
+        if _visited is None:
+            _visited = set()
+        if node_id in _visited:
+            raise HierarchyValidationError(
+                f"Cycle detected while aggregating metric '{spec.name}' at "
+                f"node '{node_id}'. The hierarchy is not a DAG — run "
+                f"SalesHierarchy.validate() to locate the cycle."
+            )
+
         if self.hierarchy.out_degree(node_id) == 0:
             attrs = self.hierarchy.nodes[node_id]
             raw_values = []
@@ -170,10 +208,14 @@ class QuotaCascader:
             else:  # pragma: no cover — guarded by MetricSpec.__post_init__
                 raise ValueError(f"Unknown aggregation: {spec.aggregation}")
 
-        # Non-leaf: roll up across children
-        total = 0.0
-        for child in self.hierarchy.successors(node_id):
-            total += self._aggregate_node_metric(child, spec)
+        # Non-leaf: roll up across children (push/pop the recursion stack)
+        _visited.add(node_id)
+        try:
+            total = 0.0
+            for child in self.hierarchy.successors(node_id):
+                total += self._aggregate_node_metric(child, spec, _visited)
+        finally:
+            _visited.discard(node_id)
         return total
 
     def _compute_composite_shares(
@@ -504,6 +546,21 @@ class QuotaCascader:
             raise ValueError(
                 f"gate_fallback must be one of {_GATE_FALLBACKS}, "
                 f"got '{gate_fallback}'."
+            )
+
+        # ---- Fail fast on cyclic graphs (issue #1) ----------------------
+        # Hierarchies built via from_dataframe are validated at build time,
+        # but a graph assembled manually with add_edge() could contain a
+        # cycle — which previously surfaced as a RecursionError deep inside
+        # networkx. Raise a clear, actionable error instead.
+        if not nx.is_directed_acyclic_graph(self.hierarchy):
+            cycle = nx.find_cycle(self.hierarchy)
+            path = " -> ".join([cycle[0][0]] + [e[1] for e in cycle])
+            raise HierarchyValidationError(
+                f"cascade_quota requires a DAG, but the hierarchy contains "
+                f"a cycle: {path}. Fix the reporting structure (see "
+                f"SalesHierarchy.from_dataframe's on_collision parameter) "
+                f"before cascading."
             )
 
         # Choose which weight engine to use for THIS cascade.

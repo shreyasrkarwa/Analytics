@@ -21,6 +21,23 @@ Unlike traditional bottom-up time-series libraries (which are strictly built for
 | **`CommitReconciler`** | Detect sandbagging and "happy ears" bias via historical Bias Quotients, then auto-correct forecasts |
 | **`PipelineAdjuster`** | Diagnose pipeline health with per-region thresholds and redistribute IC quotas using zero-sum logic |
 
+### What's New in v0.6.0 — dirty hierarchies can't crash the cascade ([issue #1](https://github.com/shreyasrkarwa/Analytics/issues/1))
+
+Previously, a row with the same value at two adjacent levels (e.g., team `T1` AND rep `T1`) silently built a self-loop, and `cascade_quota` crashed with a cryptic `RecursionError` deep inside networkx. v0.6.0 makes malformed hierarchies either self-heal or fail loudly with an actionable message.
+
+- **`on_collision` parameter on `from_dataframe`** — `"suffix"` (default, renames the deeper duplicate to `<value>__<level_column>` and warns), `"skip"` (drops the duplicate level, jagged-style), or `"error"` (raise naming the row).
+- **Blank-string hygiene** — empty cells and literal `"nan"`/`"none"`/`"null"` strings (a `keep_default_na=False` hazard) are treated as missing levels instead of becoming a shared `"nan"` node. `'NA'` the region is still data.
+- **`hierarchy.validate()`** + automatic DAG validation at the end of `from_dataframe` — cross-row cycles raise `HierarchyValidationError` naming the cycle path.
+- **Fail-fast cascades** — `cascade_quota` checks the graph up front, and the recursive aggregators carry recursion-stack guards, so a cyclic graph can never RecursionError again. Diamond-shaped DAGs remain supported.
+
+```python
+h = SalesHierarchy()
+h.from_dataframe(df, path_cols=taxonomy, metrics_cols=cols,
+                 on_collision='suffix')   # default — shown for clarity
+# -> UserWarning: 1 duplicate-level value(s) detected and renamed ...
+h.validate()                              # explicit re-check, chainable
+```
+
 ### What's New in v0.5.0 — no more stranded targets ([issue #12](https://github.com/shreyasrkarwa/Analytics/issues/12))
 
 Previously, when a gate zeroed an **entire subtree** (e.g., a Migration cascade where no rep in the whole slice had DC entitlement), the target for that slice was silently dropped — depth-0 held the target while depth 1+ summed short. v0.5.0 guarantees **the base (un-hedged) quota sums to the macro target at every depth**.
