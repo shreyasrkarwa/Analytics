@@ -21,6 +21,31 @@ Unlike traditional bottom-up time-series libraries (which are strictly built for
 | **`CommitReconciler`** | Detect sandbagging and "happy ears" bias via historical Bias Quotients, then auto-correct forecasts |
 | **`PipelineAdjuster`** | Diagnose pipeline health with per-region thresholds and redistribute IC quotas using zero-sum logic |
 
+### What's New in v0.7.0 — batch cascading with `cascade_many` ([issue #4](https://github.com/shreyasrkarwa/Analytics/issues/4))
+
+Real planning cascades many targets across many segments — every `(sales_type, product, regional)` combination, for every quarter. `cascade_many` replaces the hand-rolled loop with one call: it prepares each combination once (filter → validated hierarchy → weights) and cascades every matching target row against it, returning tidy long frames tagged with your group keys.
+
+```python
+from b2b_revenue_forecasting import cascade_many, MetricSpec
+
+quotas_long, weights_long = cascade_many(
+    hierarchy_df,                     # taxonomy + metric columns, 1 row per rep
+    target_df,                        # group keys + fiscal_quarter + target
+    group_keys=["st1_sales_type", "base_product_r4f", "regional"],
+    target_col="nn_acv_target",
+    taxonomy=["regional", "node_3_region", "node_4_team", "node_5_rep_no"],
+    metrics=[MetricSpec("knowledge_workers", direction="proportional",
+                        weight=1.0, columns=["knowledge_workers"])],
+    gate_metrics=[MetricSpec("dc_seats", columns=["dc_seats"])],
+    hedge_multiplier=1.05,
+)
+# quotas_long: group keys + fiscal_quarter + node_id/depth/level +
+#              cascaded_quota + base_quota + gate audit columns
+quotas_long.to_csv("all_cascades.csv", index=False)
+```
+
+Extra `target_df` columns (like `fiscal_quarter`) act as sub-targets that reuse the prepared combination. Weights can be fixed, suggested once globally, or re-suggested per combination (`suggest_config=` + `weights_mode="per_group"`). Failing combinations warn and are skipped by default (`on_error="raise"` to fail fast). Every slice gets the full correctness stack: value coercion, duplicate-level healing, DAG validation, never-gated roots, and a base layer that reconciles at every depth.
+
 ### What's New in v0.6.1 — non-numeric metrics can't silently zero a slice ([issue #3](https://github.com/shreyasrkarwa/Analytics/issues/3))
 
 A gate column holding `numpy.bool_` scalars or `"true"`/`"false"` strings used to aggregate to 0 for every leaf — gating entire slices to $0 with no traceback. Now every metric value is **coerced on ingest** (numpy scalars unboxed, boolean strings → bools, `"1,200"` / `"$500"` / `"12.5%"` → numbers), uncoercible cells **warn and are treated as missing**, and the cascader itself warns once per column if it ever meets a value it can't read. No API changes; the `MAX(CASE WHEN flag THEN 1 ELSE 0 END)` SQL workaround is no longer needed.

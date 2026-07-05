@@ -3,6 +3,48 @@
 All notable changes to `b2b_revenue_forecasting` are documented here.
 This project loosely follows [Semantic Versioning](https://semver.org/).
 
+## [0.7.0] — 2026-07
+
+Implements [issue #4](https://github.com/shreyasrkarwa/Analytics/issues/4):
+a native batch / multi-combination cascade API. Replaces the ~150 lines
+of consumer boilerplate (filter per combo → build hierarchy → suggest
+weights → cascade → tag → concat) with one call that centralizes all
+the correctness work from v0.5.0–v0.6.1.
+
+### Added
+- **`cascade_many(hierarchy_df, target_df, group_keys, target_col,
+  taxonomy, ...)`** — top-level function (also exported from the
+  package root). For each unique `group_keys` combination in
+  `target_df` it filters `hierarchy_df`, builds a validated
+  `SalesHierarchy` once, resolves weights, and cascades EVERY matching
+  target row — extra `target_df` columns (e.g. `fiscal_quarter`) act
+  as sub-targets that reuse the prepared combination
+  ("prepare once / cascade many").
+  - Returns `(quotas_long_df, weights_long_df)`: tidy long frames
+    tagged with the group keys, sub-target columns, and the input
+    target. Quota rows carry `cascaded_quota`, `base_quota`
+    (un-hedged), `hedge_buffer`, and the gate audit columns
+    (`is_gated` / `gate_relaxed` / `is_unallocated`) when applicable.
+  - **Weights**: pass a fixed `metrics=[MetricSpec, ...]` slate, or
+    `suggest_config={"target_column": ..., "candidate_metrics": [...]}`
+    with `weights_mode="global"` (suggest once on the full frame) or
+    `"per_group"` (re-suggest per combination).
+  - **Error handling**: `on_error="skip"` (default) warns per failed
+    combination and continues, with a summary warning at the end;
+    `"raise"` fails fast.
+  - All other cascade options pass through: `gate_metrics`,
+    `hedge_multiplier`, `gate_fallback`, `new_ic_*`, `brand_new_col`,
+    `on_collision`.
+  - Root detection: each combination's slice must resolve to exactly
+    one `taxonomy[0]` value; otherwise a clear error suggests adding
+    the root column to `group_keys`.
+
+### Notes
+- Every combination benefits from the full correctness stack:
+  metric-value coercion (v0.6.1), duplicate-level healing and DAG
+  validation (v0.6.0), never-gated root and per-depth reconciliation
+  of the base layer (v0.5.0).
+
 ## [0.6.1] — 2026-07
 
 Fixes [issue #3](https://github.com/shreyasrkarwa/Analytics/issues/3):

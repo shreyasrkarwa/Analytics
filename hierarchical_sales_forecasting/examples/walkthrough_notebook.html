@@ -76,12 +76,12 @@
 <div class="container">
 
 <header>
-  <div class="eyebrow">b2b_revenue_forecasting · v0.5.0</div>
+  <div class="eyebrow">b2b_revenue_forecasting · v0.7.0</div>
   <h1>Multi-Metric Cascading &amp; Reconciliation — Walkthrough</h1>
   <p class="subtitle">End-to-end notebook: how an analyst takes one CSV of historical performance + pipeline data and produces a quota plan, a pipeline diagnosis, a redistributed plan, and a bias-corrected forecast — with full visibility into how each metric actually influences allocation.</p>
   <div class="meta">
     <span><strong>Package:</strong> b2b-revenue-forecasting</span>
-    <span><strong>Version:</strong> 0.5.0</span>
+    <span><strong>Version:</strong> 0.7.0</span>
     <span><strong>Dataset:</strong> 170 ICs · 217 hierarchy nodes</span>
     <span><strong>Macro target:</strong> $50,000,000</span>
   </div>
@@ -116,7 +116,8 @@ python examples/walkthrough.py</pre>
     <li><a href="#step-16">PART B: White-space cascade with a gate</a></li>
     <li><a href="#step-17">Gate fallback + per-depth reconciliation (v0.5.0)</a></li>
     <li><a href="#step-18">Reconcile against historical attainment</a></li>
-    <li><a href="#step-19">Summary report</a></li>
+    <li><a href="#step-19">PART C: Batch cascading with cascade_many (v0.7.0)</a></li>
+    <li><a href="#step-20">Summary report</a></li>
   </ol>
 </nav>
 
@@ -178,9 +179,13 @@ Individual Contributors (leaves): 170
 Regions:  ['NA', 'EMEA', 'APAC']
 
 ICs flagged brand-new via CSV: 29
-Examples: ['IC_Mgr_Dir_RVP_NA_1_1_2_3', 'IC_Mgr_Dir_RVP_NA_1_1_3_5', 'IC_Mgr_Dir_RVP_NA_1_1_4_4']</pre>
+Examples: ['IC_Mgr_Dir_RVP_NA_1_1_2_3', 'IC_Mgr_Dir_RVP_NA_1_1_3_5', 'IC_Mgr_Dir_RVP_NA_1_1_4_4']
+
+Graph validated as a DAG: True</pre>
 
   <div class="takeaway"><strong>Key idea.</strong> The brand-new IC list lives in the CSV, not in Python. Analysts mark new reps directly in their spreadsheet.</div>
+
+  <div class="callout"><strong>Data hygiene is automatic since v0.6.x.</strong> <code class="inline">from_dataframe</code> now heals or flags the classic dirty-CSV traps: a row repeating the same value at two levels is auto-renamed instead of creating a self-loop (<code class="inline">on_collision='suffix'</code>, also <code class="inline">'skip'</code>/<code class="inline">'error'</code>); blank or literal <code class="inline">"nan"</code> cells are treated as missing instead of collapsing branches; metric cells are coerced (<code class="inline">numpy</code> scalars, <code class="inline">"true"/"false"</code>, <code class="inline">"$1,200"</code>, <code class="inline">"12.5%"</code>) with uncoercible values warned and dropped — never a silent 0; and the finished graph is DAG-validated, so a cycle raises <code class="inline">HierarchyValidationError</code> naming the path instead of a <code class="inline">RecursionError</code> at cascade time. <code class="inline">hierarchy.validate()</code> re-checks on demand.</div>
 </section>
 
 <section class="step" id="step-3">
@@ -855,8 +860,67 @@ i.e., the forward-looking plan asks them to step up significantly.</pre>
 </section>
 
 <section class="step" id="step-19">
-  <h2><span class="badge">19</span>Summary report<a class="anchor" href="#step-19">#</a></h2>
-  <p>One CSV in → five CSVs, one SQL DB, and one interactive dashboard out. Every major capability exercised — and every weight visible to stakeholders.</p>
+  <h2><span class="badge">19</span>Part C — Batch cascading with <code class="inline">cascade_many</code> (v0.7.0)<a class="anchor" href="#step-19">#</a></h2>
+  <p>Steps 8–18 cascaded <strong>one</strong> target at a time. Real planning cascades many targets across many segments for many quarters. <code class="inline">cascade_many</code> wraps the whole loop: for each unique combination of <code class="inline">group_keys</code> it filters the frame, builds a validated hierarchy <strong>once</strong>, resolves weights, and cascades every matching target row against it — extra <code class="inline">target_df</code> columns (here <code class="inline">fiscal_quarter</code>) act as sub-targets that reuse the prepared combination.</p>
+
+  <h3>Code</h3>
+<pre class="code"><code>from b2b_revenue_forecasting import cascade_many
+
+regional_targets = pd.DataFrame([
+    {'Region': 'NA',   'fiscal_quarter': 1, 'q_target': 25_000_000.0},
+    {'Region': 'EMEA', 'fiscal_quarter': 1, 'q_target': 12_000_000.0},
+    {'Region': 'APAC', 'fiscal_quarter': 1, 'q_target': 13_000_000.0},
+    {'Region': 'NA',   'fiscal_quarter': 2, 'q_target': 27_500_000.0},
+    {'Region': 'EMEA', 'fiscal_quarter': 2, 'q_target': 13_200_000.0},
+    {'Region': 'APAC', 'fiscal_quarter': 2, 'q_target': 14_300_000.0},
+])
+
+quotas_long, weights_long = cascade_many(
+    df,                          # the SAME analyst CSV, unchanged
+    regional_targets,
+    group_keys=['Region'],       # 1 prepared hierarchy per region
+    target_col='q_target',
+    taxonomy=taxonomy,
+    metrics=cascade_metrics,     # Part A's blended slate
+    hedge_multiplier=1.05,
+)
+quotas_long.to_csv('output_batch_cascaded_quotas.csv', index=False)
+# Optional: suggest_config={...} + weights_mode='per_group' re-suggests
+# weights per combination; on_error='skip' (default) warns and continues
+# if a combination has no data.</code></pre>
+
+  <h3>Output</h3>
+<pre class="output">Cascades run:        6 (3 regions x 2 quarters)
+quotas_long rows:    438 (every node of every cascade, tagged with Region + quarter)
+weights_long rows:   15 (metric slate per region)
+
+Sample rows (NA, Q1, top of tree):
+Region  fiscal_quarter  depth  level     node_id  cascaded_quota  base_quota
+    NA               1      0 Global Global_Corp     25000000.00 25000000.00
+    NA               1      1 Region          NA     26250000.00 25000000.00
+    NA               1      2    RVP    RVP_NA_1     16852085.94 15285338.72
+    NA               1      2    RVP    RVP_NA_2     10710414.06  9714661.28
+
+Base layer reconciles per cascade (sum of IC base_quota == target):
+                           target    ic_base_sum
+Region fiscal_quarter
+APAC   1              $13,000,000 $13,000,000.00
+       2              $14,300,000 $14,300,000.00
+EMEA   1              $12,000,000 $11,999,999.99
+       2              $13,200,000 $13,200,000.01
+NA     1              $25,000,000 $25,000,000.02
+       2              $27,500,000 $27,499,999.98
+
+Wrote examples/data/output_batch_cascaded_quotas.csv</pre>
+
+  <div class="highlight"><strong>Prepare once, cascade many.</strong> Each region's hierarchy is built and validated once; Q1 and Q2 then cascade against the same prepared structure with identical shares (Q2 = Q1 × target ratio). With <code class="inline">group_keys</code> like <code class="inline">["st1_sales_type", "base_product_r4f", "regional"]</code> the same call scales to hundreds of combinations — replacing the ~150-line bespoke loop from issue #4.</div>
+
+  <div class="takeaway"><strong>Everything travels with the rows.</strong> The long output carries group keys, sub-target columns, the input target, <code class="inline">cascaded_quota</code>, <code class="inline">base_quota</code> (un-hedged), and the gate audit columns — ready for <code class="inline">.to_csv()</code>, <code class="inline">.to_sql()</code>, or a BI tool, no post-hoc tagging.</div>
+</section>
+
+<section class="step" id="step-20">
+  <h2><span class="badge">20</span>Summary report<a class="anchor" href="#step-20">#</a></h2>
+  <p>One CSV in → eight CSVs, one SQL DB, and one interactive dashboard out. Every major capability exercised — and every weight visible to stakeholders.</p>
 
 <pre class="output">--- Part A (earned planning) ---
 Hierarchy:              217 nodes (170 ICs across 3 regions)
@@ -878,7 +942,11 @@ Whole-team gate demo:   Mgr_Dir_RVP_APAC_1_1_1 + 4 ICs all $0 (no unmigrated sea
 Historical reconciler:  past-4Q-attainment vs new cascade
                         Healthy 167 · Moderate 5 · Critical 45
 
-Outputs written:        7 CSVs · 1 SQLite DB · 1 interactive HTML dashboard
+--- Part C (batch cascading, v0.7.0) ---
+cascade_many:           6 cascades (3 regions x 2 quarters) in one call
+Output:                 tidy long df, 438 rows, group-key tagged, base layer reconciled
+
+Outputs written:        8 CSVs · 1 SQLite DB · 1 interactive HTML dashboard
 
 Walkthrough complete.</pre>
 
