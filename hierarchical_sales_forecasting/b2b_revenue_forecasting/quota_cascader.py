@@ -1,11 +1,16 @@
 import json
 import datetime
+import warnings
 import networkx as nx
 import pandas as pd
 from typing import Dict, List, Optional, Union, Any
 
 from b2b_revenue_forecasting.metric_spec import MetricSpec
-from b2b_revenue_forecasting.hierarchy import HierarchyValidationError
+from b2b_revenue_forecasting.hierarchy import (
+    HierarchyValidationError,
+    coerce_metric_value,
+    _UNCOERCIBLE,
+)
 from b2b_revenue_forecasting._dashboard_template import DASHBOARD_HTML_TEMPLATE
 
 
@@ -59,6 +64,24 @@ class QuotaCascader:
         self.unallocated = 0.0
         self.unallocated_nodes = {}
         self.gate_relaxed_nodes = set()
+        # Columns already flagged for non-numeric values — so the issue-#3
+        # warning fires once per column, not once per node.
+        self._non_numeric_warned = set()
+
+    def _warn_non_numeric(self, column: str, value: Any) -> None:
+        """Warn (once per column) that a metric value was silently skipped
+        pre-v0.6.1; now it is skipped LOUDLY (issue #3)."""
+        if column in self._non_numeric_warned:
+            return
+        self._non_numeric_warned.add(column)
+        warnings.warn(
+            f"Metric column '{column}' holds non-numeric value(s) "
+            f"(e.g. {value!r}) that cannot be coerced; they are treated as "
+            f"MISSING and contribute nothing to cascades or gates. Clean "
+            f"the data if this column should carry signal.",
+            UserWarning,
+            stacklevel=4,
+        )
 
     # ------------------------------------------------------------------
     # Single-metric helpers (legacy path — kept for backward compatibility)
@@ -98,9 +121,18 @@ class QuotaCascader:
         # If it's a leaf node (IC), return its historical capacity
         if self.hierarchy.out_degree(node_id) == 0:
             attrs = self.hierarchy.nodes[node_id]
-            # Dynamically collect ALL attainment values (supports any number of quarters)
-            attainments = [v for k, v in attrs.items()
-                           if '_Attainment' in k and isinstance(v, (int, float))]
+            # Dynamically collect ALL attainment values (supports any number
+            # of quarters). Coercion (issue #3) accepts numpy scalars and
+            # numeric strings; uncoercible values warn once per column.
+            attainments = []
+            for k, v in attrs.items():
+                if '_Attainment' not in k or v is None:
+                    continue
+                coerced = coerce_metric_value(v)
+                if coerced is _UNCOERCIBLE:
+                    self._warn_non_numeric(k, v)
+                    continue
+                attainments.append(float(coerced))
 
             if not attainments:
                 return 0.0
@@ -171,10 +203,18 @@ class QuotaCascader:
             raw_values = []
             for col in spec.resolved_columns():
                 v = attrs.get(col)
-                # Accept any numeric — int, float, AND bool (Python bool is
-                # a subclass of int, so isinstance(True, int) is True).
-                if isinstance(v, (int, float)):
-                    raw_values.append(v)
+                if v is None:
+                    continue  # genuinely absent — silent skip is correct
+                # Coerce rather than type-check (issue #3): accepts int,
+                # float, bool, numpy scalars (np.int64 / np.bool_ / ...),
+                # and numeric/boolean strings. Values with no numeric
+                # interpretation are skipped LOUDLY (warn once per column)
+                # instead of silently aggregating to 0.
+                coerced = coerce_metric_value(v)
+                if coerced is _UNCOERCIBLE:
+                    self._warn_non_numeric(col, v)
+                    continue
+                raw_values.append(coerced)
 
             if not raw_values:
                 return 0.0

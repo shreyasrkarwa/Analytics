@@ -21,6 +21,10 @@ Unlike traditional bottom-up time-series libraries (which are strictly built for
 | **`CommitReconciler`** | Detect sandbagging and "happy ears" bias via historical Bias Quotients, then auto-correct forecasts |
 | **`PipelineAdjuster`** | Diagnose pipeline health with per-region thresholds and redistribute IC quotas using zero-sum logic |
 
+### What's New in v0.6.1 — non-numeric metrics can't silently zero a slice ([issue #3](https://github.com/shreyasrkarwa/Analytics/issues/3))
+
+A gate column holding `numpy.bool_` scalars or `"true"`/`"false"` strings used to aggregate to 0 for every leaf — gating entire slices to $0 with no traceback. Now every metric value is **coerced on ingest** (numpy scalars unboxed, boolean strings → bools, `"1,200"` / `"$500"` / `"12.5%"` → numbers), uncoercible cells **warn and are treated as missing**, and the cascader itself warns once per column if it ever meets a value it can't read. No API changes; the `MAX(CASE WHEN flag THEN 1 ELSE 0 END)` SQL workaround is no longer needed.
+
 ### What's New in v0.6.0 — dirty hierarchies can't crash the cascade ([issue #1](https://github.com/shreyasrkarwa/Analytics/issues/1))
 
 Previously, a row with the same value at two adjacent levels (e.g., team `T1` AND rep `T1`) silently built a self-loop, and `cascade_quota` crashed with a cryptic `RecursionError` deep inside networkx. v0.6.0 makes malformed hierarchies either self-heal or fail loudly with an actionable message.

@@ -27,6 +27,64 @@ def _is_missing_level(value: Any) -> bool:
     return False
 
 
+_TRUTHY_STRINGS = ("true", "yes", "y", "t")
+_FALSY_STRINGS = ("false", "no", "n", "f")
+
+# Sentinel: distinguishes "could not coerce" from a legitimate None.
+_UNCOERCIBLE = object()
+
+
+def coerce_metric_value(value: Any):
+    """
+    Coerce one metric/gate cell into a clean Python numeric (issue #3).
+
+    Returns
+    -------
+    bool | int | float — the coerced value, or the _UNCOERCIBLE sentinel
+    when the input has no numeric interpretation.
+
+    Rules (in order):
+      - bool                        -> kept as bool (the cascader's
+                                       boolean auto-detection relies on it)
+      - int / float                 -> unchanged
+      - numpy scalars (np.int64, np.float32, np.bool_, ...) -> unboxed via
+                                       .item(); np.bool_ becomes bool
+      - strings: "true"/"yes"/...   -> True, "false"/"no"/... -> False
+                 numeric text       -> float, tolerating thousands commas,
+                                       leading $/€/£ and trailing %
+      - anything else               -> _UNCOERCIBLE
+
+    Silent-zero behavior is what this replaces: pre-v0.6.1, a value like
+    numpy.bool_(True) or "true" was stored raw and aggregated as 0 by the
+    cascader — gating whole slices to $0 with no indication why.
+    """
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value
+    # numpy (and similar) scalars expose .item() -> native Python type
+    if hasattr(value, "item"):
+        try:
+            item = value.item()
+        except (ValueError, TypeError):
+            return _UNCOERCIBLE
+        if isinstance(item, bool) or isinstance(item, (int, float)):
+            return item
+        value = item  # e.g. np.str_ -> str; fall through to string parsing
+    if isinstance(value, str):
+        v = value.strip().lower()
+        if v in _TRUTHY_STRINGS:
+            return True
+        if v in _FALSY_STRINGS:
+            return False
+        cleaned = v.replace(",", "").lstrip("$€£").rstrip("%").strip()
+        try:
+            return float(cleaned)
+        except ValueError:
+            return _UNCOERCIBLE
+    return _UNCOERCIBLE
+
+
 class HierarchyValidationError(ValueError):
     """
     Raised when the built hierarchy is not a DAG (contains a cycle or
@@ -154,7 +212,8 @@ class SalesHierarchy:
                 f"got '{on_collision}'."
             )
 
-        collision_examples = []  # (row_index, value, level_col) for the warning
+        collision_examples = []    # (row_index, value, level_col) for the warning
+        non_numeric_examples = []  # (row_index, metric_col, raw_value)
 
         for idx, row in df.iterrows():
             # --- Resolve this row's path: stringify levels, drop missing ones
@@ -198,8 +257,17 @@ class SalesHierarchy:
                 if is_deepest:
                     attributes = {}
                     if metrics_cols:
-                        attributes = {c: row[c] for c in metrics_cols
-                                      if pd.notna(row[c])}
+                        for c in metrics_cols:
+                            raw = row[c]
+                            if pd.isna(raw):
+                                continue
+                            coerced = coerce_metric_value(raw)
+                            if coerced is _UNCOERCIBLE:
+                                # Warn + treat as missing (issue #3) — never
+                                # store a value the cascader would read as 0.
+                                non_numeric_examples.append((idx, c, raw))
+                                continue
+                            attributes[c] = coerced
                     if (brand_new_col and brand_new_col in row.index
                             and pd.notna(row[brand_new_col])):
                         attributes['_is_brand_new'] = _coerce_brand_new_flag(
@@ -220,6 +288,20 @@ class SalesHierarchy:
                 f"{len(collision_examples)} duplicate-level value(s) detected "
                 f"and {action} (on_collision='{on_collision}'). "
                 f"Examples: {sample}",
+                UserWarning,
+                stacklevel=2,
+            )
+
+        if non_numeric_examples:
+            sample = "; ".join(
+                f"row {i}, column '{c}': {v!r}"
+                for i, c, v in non_numeric_examples[:5]
+            )
+            warnings.warn(
+                f"{len(non_numeric_examples)} metric value(s) could not be "
+                f"coerced to a number and were treated as MISSING (they will "
+                f"not contribute to cascades or gates). Examples: {sample}. "
+                f"Clean these cells if they should carry signal.",
                 UserWarning,
                 stacklevel=2,
             )

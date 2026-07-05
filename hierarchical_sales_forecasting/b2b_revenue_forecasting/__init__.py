@@ -7,7 +7,7 @@ from b2b_revenue_forecasting.commit_reconciler import CommitReconciler
 from b2b_revenue_forecasting.pipeline_adjuster import PipelineAdjuster
 from b2b_revenue_forecasting.metric_spec import MetricSpec
 
-__version__ = "0.6.0"
+__version__ = "0.6.1"
 
 __all__ = [
     "SalesHierarchy",

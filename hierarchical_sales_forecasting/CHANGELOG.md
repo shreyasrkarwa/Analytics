@@ -3,6 +3,38 @@
 All notable changes to `b2b_revenue_forecasting` are documented here.
 This project loosely follows [Semantic Versioning](https://semver.org/).
 
+## [0.6.1] — 2026-07
+
+Fixes [issue #3](https://github.com/shreyasrkarwa/Analytics/issues/3):
+non-numeric metric/gate columns silently aggregated to 0. A gate column
+holding `numpy.bool_` scalars or `"true"`/`"false"` strings read as 0
+for every leaf, gating whole slices to $0 with no traceback — the
+worst kind of bug to diagnose.
+
+### Fixed
+- **Metric values are coerced on ingest.** `from_dataframe` now runs
+  every declared `metrics_cols` cell through a coercion layer:
+  numpy scalars are unboxed (`np.int64` → int, `np.bool_` → bool),
+  `"true"/"yes"/"false"/"no"` strings become bools, and numeric text
+  is parsed tolerating thousands commas, currency prefixes, and
+  trailing `%` (`"1,200"` → 1200.0, `"$500"` → 500.0, `"12.5%"` →
+  12.5). Bools stay bools so boolean auto-detection (no
+  zero-imputation) keeps working.
+- **Uncoercible values warn and become missing.** Cells with no
+  numeric interpretation (e.g. `"N/A - pending"`) are dropped like
+  NaN, with one summary warning listing row/column examples — never
+  stored where they'd read as 0.
+- **The cascader can no longer skip values silently.** Both
+  `_aggregate_node_metric` and the legacy `'_Attainment'` capacity
+  path coerce at read time (covering graphs built manually via
+  `add_node` with raw numpy/string values) and warn once per column
+  when they encounter an uncoercible value.
+
+### Notes
+- No API changes. Results are identical for clean numeric data.
+- The SQL-side workaround
+  (`MAX(CASE WHEN flag THEN 1 ELSE 0 END)`) is no longer needed.
+
 ## [0.6.0] — 2026-07
 
 Fixes [issue #1](https://github.com/shreyasrkarwa/Analytics/issues/1):
