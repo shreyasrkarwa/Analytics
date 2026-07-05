@@ -13,6 +13,7 @@ from b2b_revenue_forecasting import (
     QuotaCascader,
     PipelineAdjuster,
     MetricSpec,
+    GateAllocationError,
 )
 
 SEPARATOR = "=" * 90
@@ -710,6 +711,215 @@ def test_cro_override_wins_over_gate():
     assert abs(quotas['IC_Normal'] - 300_000.0) < 0.01
 
 
+# ----------------------------------------------------------------------
+# Issue #12 fixtures — 4-level hierarchy (regional > sub-region > team >
+# territory) mirroring the Enterprise_AMER report, with one fully-gated
+# team (West1: all territories have 0 DC seats).
+# ----------------------------------------------------------------------
+def _issue12_hierarchy(all_gated=False):
+    dc = 0 if all_gated else 1
+    df = pd.DataFrame({
+        'Regional':  ['Enterprise_AMER'] * 8,
+        'SubRegion': ['West'] * 5 + ['East'] * 3,
+        'Team':      ['West1', 'West1', 'West2', 'West3', 'West3',
+                      'East2', 'East2', 'East6'],
+        'Territory': ['West1_1', 'West1_2', 'West2_1', 'West3_1', 'West3_2',
+                      'East2_1', 'East2_6', 'East6_2'],
+        'Q1_Revenue': [100_000] * 8,
+        'Q2_Revenue': [100_000] * 8,
+        'DC_Seats':   [0, 0, 40 * dc, 25 * dc, 25 * dc,
+                       30 * dc, 30 * dc, 50 * dc],  # West1 fully gated
+    })
+    cols = ['Q1_Revenue', 'Q2_Revenue', 'DC_Seats']
+    return _build_simple_hierarchy(
+        df, ['Regional', 'SubRegion', 'Team', 'Territory'], cols)
+
+
+def _depth_sums(cascader, quotas):
+    depths = cascader._node_depths()
+    sums = {}
+    for node, q in quotas.items():
+        sums[depths[node]] = sums.get(depths[node], 0.0) + q
+    return sums
+
+
+_ISSUE12_METRICS = [MetricSpec('Revenue', direction='proportional',
+                               weight=1.0, lookback=2)]
+_ISSUE12_GATES = [MetricSpec('DC_Seats', columns=['DC_Seats'])]
+
+
+# ----------------------------------------------------------------------
+# 18. Issue #12: gated subtree redistributes; every depth sums to target
+# ----------------------------------------------------------------------
+def test_issue12_gated_subtree_reconciles_at_every_depth():
+    print(f"\n\n{SEPARATOR}")
+    print("TEST 18: Issue #12 — gated team's share redistributes; "
+          "sum(depth d) == target for all d")
+    print(SEPARATOR)
+    h = _issue12_hierarchy()
+    cascader = QuotaCascader(h)
+    target = 1_000_000.0
+    quotas = cascader.cascade_quota(
+        'Enterprise_AMER', target,
+        metrics=_ISSUE12_METRICS, gate_metrics=_ISSUE12_GATES,
+        verbose=False,
+    )
+    sums = _depth_sums(cascader, quotas)
+    for d in range(4):
+        print(f"  depth {d} sum: ${sums[d]:,.2f}")
+        assert abs(sums[d] - target) < 0.01, f"depth {d} does not reconcile"
+    # West1 (fully gated) gets $0; its share went to sibling teams
+    assert quotas['West1'] == 0.0
+    assert quotas['West1_1'] == 0.0 and quotas['West1_2'] == 0.0
+    assert quotas['West2'] > 0 and quotas['West3'] > 0
+    # reconciliation_report agrees (strict mode must not raise)
+    report = cascader.reconciliation_report(quotas, target=target, strict=True)
+    assert report['reconciles'].all()
+    print("  reconciliation_report: all depths reconcile")
+
+
+# ----------------------------------------------------------------------
+# 19. Issue #12: fully-gated ROOT no longer strands the target
+# ----------------------------------------------------------------------
+def test_issue12_fully_gated_root_redistributes():
+    print(f"\n\n{SEPARATOR}")
+    print("TEST 19: Issue #12 — fully-gated root (0 eligible reps anywhere) "
+          "still lands the target on ICs")
+    print(SEPARATOR)
+    h = _issue12_hierarchy(all_gated=True)  # NO territory has DC seats
+    cascader = QuotaCascader(h)
+    target = 100_000.0
+    quotas = cascader.cascade_quota(
+        'Enterprise_AMER', target,
+        metrics=_ISSUE12_METRICS, gate_metrics=_ISSUE12_GATES,
+        verbose=False,
+    )
+    sums = _depth_sums(cascader, quotas)
+    for d in range(4):
+        print(f"  depth {d} sum: ${sums[d]:,.2f}")
+        assert abs(sums[d] - target) < 0.01, f"depth {d} short (stranded target)"
+    # Root was gated but never zeroed
+    assert quotas['Enterprise_AMER'] == target
+    # Fallback was recorded — nothing silent
+    assert cascader.gate_relaxed_nodes
+    assert cascader.unallocated == 0.0
+    print(f"  gate_relaxed_nodes: {len(cascader.gate_relaxed_nodes)} node(s)")
+
+
+# ----------------------------------------------------------------------
+# 20. Issue #12: gate_fallback='strand_at_root' reports unallocated
+# ----------------------------------------------------------------------
+def test_issue12_strand_at_root_reports_unallocated():
+    print(f"\n\n{SEPARATOR}")
+    print("TEST 20: Issue #12 — gate_fallback='strand_at_root' keeps target "
+          "at root and exposes unallocated")
+    print(SEPARATOR)
+    h = _issue12_hierarchy(all_gated=True)
+    cascader = QuotaCascader(h)
+    target = 100_000.0
+    quotas = cascader.cascade_quota(
+        'Enterprise_AMER', target,
+        metrics=_ISSUE12_METRICS, gate_metrics=_ISSUE12_GATES,
+        gate_fallback='strand_at_root',
+        verbose=False,
+    )
+    # Root is never gated to $0 — it holds the target explicitly...
+    assert quotas['Enterprise_AMER'] == target
+    # ...and the stranded amount is reported, not silent.
+    assert abs(cascader.unallocated - target) < 0.01
+    assert cascader.unallocated_nodes == {'Enterprise_AMER': target}
+    df = cascader.quotas_to_dataframe(quotas)
+    assert bool(df.loc[df.node_id == 'Enterprise_AMER', 'is_unallocated'].iloc[0])
+    print(f"  unallocated: ${cascader.unallocated:,.2f} at root; "
+          f"is_unallocated flagged in DataFrame")
+
+
+# ----------------------------------------------------------------------
+# 21. Issue #12: gate_fallback='error' raises GateAllocationError
+# ----------------------------------------------------------------------
+def test_issue12_gate_fallback_error_raises():
+    print(f"\n\n{SEPARATOR}")
+    print("TEST 21: Issue #12 — gate_fallback='error' raises "
+          "GateAllocationError")
+    print(SEPARATOR)
+    h = _issue12_hierarchy(all_gated=True)
+    cascader = QuotaCascader(h)
+    try:
+        cascader.cascade_quota(
+            'Enterprise_AMER', 100_000.0,
+            metrics=_ISSUE12_METRICS, gate_metrics=_ISSUE12_GATES,
+            gate_fallback='error',
+            verbose=False,
+        )
+        raise AssertionError("expected GateAllocationError")
+    except GateAllocationError as e:
+        print(f"  Raised as expected: {e}")
+
+
+# ----------------------------------------------------------------------
+# 22. Issue #12: base_quotas — hedged = base x hedge, base reconciles
+# ----------------------------------------------------------------------
+def test_issue12_base_quotas_single_call():
+    print(f"\n\n{SEPARATOR}")
+    print("TEST 22: Issue #12 — single call yields base + hedged layers; "
+          "base reconciles at every depth")
+    print(SEPARATOR)
+    h = _issue12_hierarchy()
+    cascader = QuotaCascader(h)
+    target = 1_000_000.0
+    hedge = 1.05
+    quotas = cascader.cascade_quota(
+        'Enterprise_AMER', target,
+        hedge_multiplier=hedge,
+        metrics=_ISSUE12_METRICS, gate_metrics=_ISSUE12_GATES,
+        verbose=False,
+    )
+    base = cascader.base_quotas
+    # Base layer reconciles at every depth despite the gate + hedge
+    base_sums = _depth_sums(cascader, base)
+    for d in range(4):
+        print(f"  base depth {d} sum: ${base_sums[d]:,.2f}")
+        assert abs(base_sums[d] - target) < 0.01
+    # Hedge compounds per level: hedged / base == hedge**depth
+    depths = cascader._node_depths()
+    for node, q in quotas.items():
+        if base[node] > 0:
+            assert abs(q / base[node] - hedge ** depths[node]) < 1e-9
+    # quotas_to_dataframe(unhedged_quotas='auto') needs no second run
+    df = cascader.quotas_to_dataframe(quotas, unhedged_quotas='auto')
+    assert {'unhedged_quota', 'hedge_buffer', 'overassignment_pct'} <= set(df.columns)
+    print("  hedged = base x hedge^depth verified; 'auto' audit columns OK")
+
+
+# ----------------------------------------------------------------------
+# 23. Issue #12: reconciliation_report strict mode catches shortfalls
+# ----------------------------------------------------------------------
+def test_issue12_reconciliation_report_strict():
+    print(f"\n\n{SEPARATOR}")
+    print("TEST 23: Issue #12 — reconciliation_report(strict=True) catches "
+          "a stranded cascade")
+    print(SEPARATOR)
+    h = _issue12_hierarchy(all_gated=True)
+    cascader = QuotaCascader(h)
+    target = 100_000.0
+    quotas = cascader.cascade_quota(
+        'Enterprise_AMER', target,
+        metrics=_ISSUE12_METRICS, gate_metrics=_ISSUE12_GATES,
+        gate_fallback='strand_at_root',
+        verbose=False,
+    )
+    report = cascader.reconciliation_report(quotas, target=target)
+    assert bool(report.loc[report.depth == 0, 'reconciles'].iloc[0])
+    assert not bool(report.loc[report.depth == 1, 'reconciles'].iloc[0])
+    try:
+        cascader.reconciliation_report(quotas, target=target, strict=True)
+        raise AssertionError("expected AssertionError from strict mode")
+    except AssertionError as e:
+        if "does not reconcile" not in str(e):
+            raise
+        print(f"  strict mode raised as expected: {e}")
+
+
 if __name__ == '__main__':
     test_backward_compat()
     test_single_proportional_metric_matches_legacy()
@@ -728,6 +938,12 @@ if __name__ == '__main__':
     test_gate_propagates_upward()
     test_gates_compose_with_and()
     test_cro_override_wins_over_gate()
+    test_issue12_gated_subtree_reconciles_at_every_depth()
+    test_issue12_fully_gated_root_redistributes()
+    test_issue12_strand_at_root_reports_unallocated()
+    test_issue12_gate_fallback_error_raises()
+    test_issue12_base_quotas_single_call()
+    test_issue12_reconciliation_report_strict()
 
     print(f"\n\n{SEPARATOR}")
     print("ALL MULTI-METRIC TESTS PASSED")

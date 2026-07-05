@@ -13,6 +13,18 @@ from b2b_revenue_forecasting._dashboard_template import DASHBOARD_HTML_TEMPLATE
 # absorb 100% of the inverse weight via a 1/0 spike.
 _INVERSE_EPS = 0.01
 
+# Valid values for cascade_quota(gate_fallback=...)
+_GATE_FALLBACKS = ("redistribute", "strand_at_root", "error")
+
+
+class GateAllocationError(ValueError):
+    """
+    Raised by cascade_quota(gate_fallback="error") when a funded node's
+    children are ALL gated, so its target cannot be placed anywhere
+    below it without either relaxing the gate or stranding the money.
+    """
+    pass
+
 
 class QuotaCascader:
     def __init__(self, hierarchy):
@@ -28,6 +40,24 @@ class QuotaCascader:
         # Populated after each cascade with gates so quotas_to_dataframe
         # and stakeholder reports can show WHY a node has zero quota.
         self.gated_nodes = set()
+        # Base (un-hedged) quotas from the most recent cascade_quota call —
+        # the same cascade run with hedge_multiplier=1.0 everywhere. The
+        # invariant `sum(base_quotas at depth d) == macro_target` holds at
+        # every depth when gate_fallback="redistribute" (the default).
+        self.base_quotas = None
+        # Diagnostics for gate fallback handling (issue #12) — populated
+        # after every cascade_quota call:
+        #   unallocated       — total dollars that could NOT be placed below
+        #                       a funded node (only nonzero when
+        #                       gate_fallback="strand_at_root")
+        #   unallocated_nodes — {node_id: stranded_amount}
+        #   gate_relaxed_nodes— nodes that RECEIVED quota despite being
+        #                       gated, because every sibling was also gated
+        #                       and gate_fallback="redistribute" relaxed the
+        #                       gate as a last resort (no silent target loss)
+        self.unallocated = 0.0
+        self.unallocated_nodes = {}
+        self.gate_relaxed_nodes = set()
 
     # ------------------------------------------------------------------
     # Single-metric helpers (legacy path — kept for backward compatibility)
@@ -305,6 +335,7 @@ class QuotaCascader:
         new_ic_attr: Optional[str] = None,
         new_ic_rule: Optional[str] = None,
         gate_metrics: Optional[List[MetricSpec]] = None,
+        gate_fallback: str = "redistribute",
         verbose: bool = True,
     ) -> Dict[str, float]:
         """
@@ -384,6 +415,36 @@ class QuotaCascader:
 
             The set of gated nodes is stored on self.gated_nodes after
             each call.
+        gate_fallback : str
+            What to do when a funded node's children are ALL gated, so
+            its target has nowhere to go (issue #12 — "fully-gated
+            subtree strands the target"). Note the ROOT is never gated
+            to $0 in any mode; it always carries macro_target.
+
+            "redistribute" (default)
+                A fully-gated subtree's share first flows to its
+                nearest non-gated siblings (this already happens
+                naturally because gates roll up). If EVERY child of a
+                funded node is gated — including the case where the
+                whole tree fails the gate — the gate is relaxed at
+                that level as a last resort and the target is
+                distributed by the normal blend weights, so it still
+                reaches ICs. Guarantees the base (un-hedged) quota
+                sums to macro_target at EVERY depth; no silent target
+                loss. Nodes funded this way are recorded in
+                self.gate_relaxed_nodes (and flagged in
+                quotas_to_dataframe).
+            "strand_at_root"
+                Children stay $0; the undistributable amount remains
+                on the deepest non-gated ancestor and is reported via
+                self.unallocated / self.unallocated_nodes (and an
+                is_unallocated column in quotas_to_dataframe). Depth
+                sums below that node will NOT reconcile — this is the
+                explicit opt-in for "don't force money into gated
+                territory."
+            "error"
+                Raise GateAllocationError instead, forcing the caller
+                to decide.
         verbose : bool
             When True (default) in multi-metric mode, prints the normalized
             weights table before cascading so the analyst can see — and
@@ -407,7 +468,14 @@ class QuotaCascader:
 
         Returns
         -------
-        Dict[str, float]  node_id -> assigned quota
+        Dict[str, float]  node_id -> assigned quota (with hedging applied).
+
+        Side effects: self.base_quotas holds the SAME cascade with
+        hedge_multiplier=1.0 everywhere (computed in the same call — no
+        second run needed), so `quota = base + hedge buffer` decomposes
+        cleanly: pass unhedged_quotas="auto" to quotas_to_dataframe.
+        self.unallocated / self.unallocated_nodes / self.gate_relaxed_nodes
+        are refreshed per the gate_fallback docs above.
         """
         if new_ic_overrides is None:
             new_ic_overrides = {}
@@ -430,6 +498,12 @@ class QuotaCascader:
             raise ValueError(
                 f"new_ic_rule must be 'all_metrics_zero' or "
                 f"'primary_metric_zero', got '{effective_rule}'."
+            )
+
+        if gate_fallback not in _GATE_FALLBACKS:
+            raise ValueError(
+                f"gate_fallback must be one of {_GATE_FALLBACKS}, "
+                f"got '{gate_fallback}'."
             )
 
         # Choose which weight engine to use for THIS cascade.
@@ -490,90 +564,153 @@ class QuotaCascader:
             # Legacy path: capacity == 0
             return self._calculate_node_historical_capacity(node_id) == 0.0
 
-        # Dictionary to store dynamically calculated quotas
-        # If the root itself is gated, every node gets 0.
-        if root_node in self.gated_nodes:
-            quotas = {root_node: 0.0}
-        else:
+        def run_cascade(effective_hedge, track_diagnostics: bool) -> Dict[str, float]:
+            """
+            One full top-down distribution pass.
+
+            The ROOT always carries macro_target — it is never zeroed by a
+            gate (issue #12). Gated children get $0 and their share flows
+            to non-gated siblings; when EVERY child of a funded node is
+            gated, `gate_fallback` decides what happens.
+
+            When track_diagnostics is True (the primary/hedged pass), the
+            self.unallocated / self.unallocated_nodes /
+            self.gate_relaxed_nodes diagnostics are refreshed.
+            """
+            if track_diagnostics:
+                self.unallocated = 0.0
+                self.unallocated_nodes = {}
+                self.gate_relaxed_nodes = set()
+
+            # The root is NEVER gated to $0 — a fully-gated tree is handled
+            # per gate_fallback below, not by silently dropping the target.
             quotas = {root_node: macro_target}
 
-        # Traverse top-down through the organization
-        for node in nx.topological_sort(self.hierarchy):
-            if node not in quotas:
-                continue
+            # Traverse top-down through the organization
+            for node in nx.topological_sort(self.hierarchy):
+                if node not in quotas:
+                    continue
 
-            current_target = quotas[node]
-            children = list(self.hierarchy.successors(node))
+                current_target = quotas[node]
+                all_children = list(self.hierarchy.successors(node))
 
-            if not children:
-                continue  # Reached an IC (leaf node)
+                if not all_children:
+                    continue  # Reached an IC (leaf node)
 
-            # Gate filter — gated children always get quota 0, do NOT
-            # contribute to the blend, and are excluded from brand-new
-            # carve-out / override logic below. (Exception: CRO overrides
-            # win over gates — pinned ICs keep their pinned quota even if
-            # gated. Documented as explicit business override.)
-            gated_children = [c for c in children
-                              if c in self.gated_nodes
-                              and c not in new_ic_overrides]
-            for c in gated_children:
-                quotas[c] = 0.0
-            children = [c for c in children if c not in gated_children]
-            if not children:
-                continue  # All children gated (and no overrides) — node done
+                # Gate filter — gated children get quota 0, do NOT
+                # contribute to the blend, and are excluded from brand-new
+                # carve-out / override logic below. (Exception: CRO overrides
+                # win over gates — pinned ICs keep their pinned quota even if
+                # gated. Documented as explicit business override.)
+                gated_children = [c for c in all_children
+                                  if c in self.gated_nodes
+                                  and c not in new_ic_overrides]
+                children = [c for c in all_children if c not in gated_children]
 
-            # Determine the specific hedge for this manager node
-            if isinstance(hedge_multiplier, dict):
-                current_hedge = hedge_multiplier.get(node, 1.0)
-            else:
-                current_hedge = hedge_multiplier
+                if not children:
+                    # EVERY child is gated (and none has an override) — the
+                    # target would be stranded here. Apply the fallback.
+                    if gate_fallback == "redistribute":
+                        # Last resort: relax the gate at this level so the
+                        # target still reaches ICs and depth sums reconcile.
+                        children = all_children
+                        gated_children = []
+                        if track_diagnostics and current_target != 0:
+                            self.gate_relaxed_nodes.update(all_children)
+                    elif gate_fallback == "strand_at_root":
+                        for c in all_children:
+                            quotas[c] = 0.0
+                        if track_diagnostics and current_target != 0:
+                            self.unallocated += current_target
+                            self.unallocated_nodes[node] = current_target
+                        continue
+                    else:  # "error"
+                        raise GateAllocationError(
+                            f"All children of '{node}' are gated — its target "
+                            f"of {current_target:,.2f} cannot be distributed. "
+                            f"Use gate_fallback='redistribute' to relax the "
+                            f"gate as a last resort, or 'strand_at_root' to "
+                            f"keep the amount at '{node}' and report it via "
+                            f"self.unallocated."
+                        )
 
-            # Apply the hedge/overassignment buffer for this layer of management
-            target_to_distribute = current_target * current_hedge
+                for c in gated_children:
+                    quotas[c] = 0.0
 
-            # Check if we're at the leaf level (all children are ICs)
-            at_leaf_level = all(self.hierarchy.out_degree(c) == 0 for c in children)
-
-            if at_leaf_level:
-                # Handle CRO overrides — carve out fixed quotas first
-                override_ics = [c for c in children if c in new_ic_overrides]
-                override_total = sum(new_ic_overrides[c] for c in override_ics)
-
-                # Identify brand-new ICs (no override) — give them equal share
-                remaining_children = [c for c in children if c not in override_ics]
-                new_ics = [c for c in remaining_children if is_new_ic(c)]
-                experienced_ics = [c for c in remaining_children if c not in new_ics]
-
-                # Assign override quotas
-                for ic in override_ics:
-                    quotas[ic] = new_ic_overrides[ic]
-
-                if new_ics:
-                    # Equal share for brand-new ICs (from total pool, not remainder)
-                    equal_share = target_to_distribute / len(children)
-                    for ic in new_ics:
-                        quotas[ic] = equal_share
-
-                    # Distribute remainder proportionally among experienced ICs
-                    remaining = (target_to_distribute - override_total
-                                 - (equal_share * len(new_ics)))
-
-                    if experienced_ics:
-                        weights = child_weights(experienced_ics)
-                        for ic in experienced_ics:
-                            quotas[ic] = remaining * weights[ic]
+                # Determine the specific hedge for this manager node
+                if isinstance(effective_hedge, dict):
+                    current_hedge = effective_hedge.get(node, 1.0)
                 else:
-                    # No new ICs — standard distribution (minus overrides)
-                    remaining = target_to_distribute - override_total
-                    if experienced_ics:
-                        weights = child_weights(experienced_ics)
-                        for ic in experienced_ics:
-                            quotas[ic] = remaining * weights[ic]
-            else:
-                # Non-leaf level — standard proportional distribution
-                weights = child_weights(children)
-                for child in children:
-                    quotas[child] = target_to_distribute * weights[child]
+                    current_hedge = effective_hedge
+
+                # Apply the hedge/overassignment buffer for this layer of management
+                target_to_distribute = current_target * current_hedge
+
+                # Check if we're at the leaf level (all children are ICs)
+                at_leaf_level = all(self.hierarchy.out_degree(c) == 0 for c in children)
+
+                if at_leaf_level:
+                    # Handle CRO overrides — carve out fixed quotas first
+                    override_ics = [c for c in children if c in new_ic_overrides]
+                    override_total = sum(new_ic_overrides[c] for c in override_ics)
+
+                    # Identify brand-new ICs (no override) — give them equal share
+                    remaining_children = [c for c in children if c not in override_ics]
+                    new_ics = [c for c in remaining_children if is_new_ic(c)]
+                    experienced_ics = [c for c in remaining_children if c not in new_ics]
+
+                    # Assign override quotas
+                    for ic in override_ics:
+                        quotas[ic] = new_ic_overrides[ic]
+
+                    if new_ics:
+                        # Equal share for brand-new ICs (from total pool, not remainder)
+                        equal_share = target_to_distribute / len(children)
+                        for ic in new_ics:
+                            quotas[ic] = equal_share
+
+                        # Distribute remainder proportionally among experienced ICs
+                        remaining = (target_to_distribute - override_total
+                                     - (equal_share * len(new_ics)))
+
+                        if experienced_ics:
+                            weights = child_weights(experienced_ics)
+                            for ic in experienced_ics:
+                                quotas[ic] = remaining * weights[ic]
+                    else:
+                        # No new ICs — standard distribution (minus overrides)
+                        remaining = target_to_distribute - override_total
+                        if experienced_ics:
+                            weights = child_weights(experienced_ics)
+                            for ic in experienced_ics:
+                                quotas[ic] = remaining * weights[ic]
+                else:
+                    # Non-leaf level — standard proportional distribution
+                    weights = child_weights(children)
+                    for child in children:
+                        quotas[child] = target_to_distribute * weights[child]
+
+            return quotas
+
+        # Primary (hedged) pass — diagnostics reflect this pass.
+        quotas = run_cascade(hedge_multiplier, track_diagnostics=True)
+
+        # Base (un-hedged) pass, computed in the SAME call so
+        # hedged = base + hedge buffer decomposes without a second
+        # cascade_quota run. Skipped (aliased) when no hedge is in play.
+        if isinstance(hedge_multiplier, (int, float)) and float(hedge_multiplier) == 1.0:
+            self.base_quotas = dict(quotas)
+        else:
+            self.base_quotas = run_cascade(1.0, track_diagnostics=False)
+
+        if verbose and self.gate_relaxed_nodes:
+            print(f"Gate fallback: {len(self.gate_relaxed_nodes)} gated node(s) "
+                  f"received quota anyway because every sibling was also gated "
+                  f"(gate_fallback='redistribute'); see cascader.gate_relaxed_nodes.")
+        if verbose and self.unallocated:
+            print(f"Gate fallback: ${self.unallocated:,.2f} could not be "
+                  f"distributed below {len(self.unallocated_nodes)} node(s) "
+                  f"(gate_fallback='strand_at_root'); see cascader.unallocated_nodes.")
 
         return quotas
 
@@ -598,7 +735,7 @@ class QuotaCascader:
         self,
         quotas: Dict[str, float],
         level_names: Optional[List[str]] = None,
-        unhedged_quotas: Optional[Dict[str, float]] = None,
+        unhedged_quotas: Optional[Union[Dict[str, float], str]] = None,
     ) -> pd.DataFrame:
         """
         Convert a cascade_quota result dict into a tidy DataFrame ready to
@@ -633,22 +770,42 @@ class QuotaCascader:
             SalesHierarchy.from_dataframe(). When provided, each row gets
             a human-readable 'level' column (e.g., 'Global', 'Region',
             'RVP', 'Director', 'Manager', 'IC').
-        unhedged_quotas : Optional[Dict[str, float]]
-            A SECOND cascade_quota result computed with
-            hedge_multiplier=1.0 (no overassignment anywhere) but
-            otherwise identical inputs. When provided, adds the audit
-            columns above so stakeholders can see how much of each
-            quota is "real allocation" vs "hedge buffer."
+        unhedged_quotas : Optional[Dict[str, float]] or "auto"
+            Pass "auto" (recommended since v0.5.0) to use
+            self.base_quotas — the un-hedged cascade computed
+            automatically during the last cascade_quota call — so no
+            second run is needed:
 
-            Typical call pattern:
                 quotas = cascader.cascade_quota(..., hedge_multiplier=my_hedge)
-                quotas_raw = cascader.cascade_quota(..., hedge_multiplier=1.0,
-                                                     verbose=False)
                 df = cascader.quotas_to_dataframe(
-                    quotas, level_names=taxonomy,
-                    unhedged_quotas=quotas_raw,
-                )
+                    quotas, level_names=taxonomy, unhedged_quotas="auto")
+
+            Alternatively pass an explicit dict (a second cascade_quota
+            result computed with hedge_multiplier=1.0 but otherwise
+            identical inputs) — the pre-v0.5.0 pattern.
+
+        Since v0.5.0 two more audit columns appear when relevant:
+          gate_relaxed   — True for nodes that received quota despite
+                           being gated, because every sibling was also
+                           gated (gate_fallback="redistribute" last
+                           resort). Only added if any node was relaxed.
+          is_unallocated — True for nodes holding target dollars that
+                           could not be distributed below them
+                           (gate_fallback="strand_at_root"). Only added
+                           if any amount was stranded.
         """
+        if isinstance(unhedged_quotas, str):
+            if unhedged_quotas != "auto":
+                raise ValueError(
+                    "unhedged_quotas accepts a dict or the string 'auto' "
+                    f"(got '{unhedged_quotas}')."
+                )
+            if self.base_quotas is None:
+                raise ValueError(
+                    "unhedged_quotas='auto' requires a prior cascade_quota "
+                    "call (self.base_quotas is not populated yet)."
+                )
+            unhedged_quotas = self.base_quotas
         depths = self._node_depths()
         rows = []
         for node, quota in quotas.items():
@@ -678,6 +835,10 @@ class QuotaCascader:
             # cascade_quota call used gate_metrics.
             if self.gated_nodes:
                 row["is_gated"] = node in self.gated_nodes
+            if self.gate_relaxed_nodes:
+                row["gate_relaxed"] = node in self.gate_relaxed_nodes
+            if self.unallocated_nodes:
+                row["is_unallocated"] = node in self.unallocated_nodes
 
             rows.append(row)
 
@@ -689,10 +850,83 @@ class QuotaCascader:
         col_order += ["node_id", "parent", "is_leaf", "cascaded_quota"]
         if unhedged_quotas is not None:
             col_order += ["unhedged_quota", "hedge_buffer", "overassignment_pct"]
-        if "is_gated" in df.columns:
-            col_order.append("is_gated")
+        for optional_col in ("is_gated", "gate_relaxed", "is_unallocated"):
+            if optional_col in df.columns:
+                col_order.append(optional_col)
         df = df[col_order]
         return df.sort_values(["depth", "node_id"]).reset_index(drop=True)
+
+    def reconciliation_report(
+        self,
+        quotas: Dict[str, float],
+        target: Optional[float] = None,
+        tolerance: float = 0.01,
+        strict: bool = False,
+    ) -> pd.DataFrame:
+        """
+        Per-depth reconciliation: asserts the cascade conserves the target
+        at every level (issue #12 acceptance criterion).
+
+        For each depth d, sums the quotas of all nodes at that depth and
+        compares against `target`. For an UN-HEDGED cascade (pass
+        cascader.base_quotas, or any run with hedge_multiplier=1.0) with
+        gate_fallback="redistribute", every depth must reconcile exactly.
+        Hedged quotas legitimately grow with depth (compounded
+        overassignment) — run this on the base layer, not the hedged one.
+
+        Parameters
+        ----------
+        quotas : Dict[str, float]
+            A cascade result. Typically cascader.base_quotas.
+        target : Optional[float]
+            The macro target. Defaults to the depth-0 (root) sum of
+            `quotas`.
+        tolerance : float
+            Absolute dollar tolerance per depth (default 1 cent).
+        strict : bool
+            If True, raises AssertionError listing every non-reconciling
+            depth instead of just flagging them in the DataFrame.
+
+        Returns
+        -------
+        pd.DataFrame with columns:
+          depth, n_nodes, total_quota, target, delta, reconciles
+        """
+        depths = self._node_depths()
+        by_depth: Dict[int, List[float]] = {}
+        for node, q in quotas.items():
+            d = depths.get(node, -1)
+            if d < 0:
+                continue
+            by_depth.setdefault(d, []).append(float(q))
+
+        if target is None:
+            target = sum(by_depth.get(0, [0.0]))
+
+        rows = []
+        for d in sorted(by_depth):
+            total = sum(by_depth[d])
+            delta = total - target
+            rows.append({
+                "depth": d,
+                "n_nodes": len(by_depth[d]),
+                "total_quota": round(total, 2),
+                "target": round(float(target), 2),
+                "delta": round(delta, 2),
+                "reconciles": abs(delta) <= tolerance,
+            })
+        df = pd.DataFrame(rows)
+
+        if strict and not df["reconciles"].all():
+            bad = df[~df["reconciles"]]
+            details = "; ".join(
+                f"depth {int(r.depth)}: total {r.total_quota:,.2f} "
+                f"vs target {r.target:,.2f} (delta {r.delta:,.2f})"
+                for r in bad.itertuples()
+            )
+            raise AssertionError(f"Cascade does not reconcile — {details}")
+
+        return df
 
     def quotas_diff_to_dataframe(
         self,

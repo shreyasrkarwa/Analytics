@@ -3,6 +3,64 @@
 All notable changes to `b2b_revenue_forecasting` are documented here.
 This project loosely follows [Semantic Versioning](https://semver.org/).
 
+## [0.5.0] — 2026-07
+
+Fixes [issue #12](https://github.com/shreyasrkarwa/Analytics/issues/12):
+fully-gated subtrees no longer strand the target. Previously, when a
+gate zeroed an entire slice (e.g., a Migration combo where NO rep had
+DC entitlement), `cascade_quota` set the root to $0 and the target was
+silently lost — or, with the common depth-0 patch-back workaround,
+depth 1+ summed short of the target (the observed $52,869.30
+Enterprise_AMER depth-1 shortfall).
+
+### Fixed
+- **Fully-gated subtrees redistribute instead of stranding.** A gated
+  subtree's share flows to its nearest non-gated siblings (as before,
+  via upward gate rollup); when EVERY child of a funded node is gated —
+  including a fully-gated root — the gate is relaxed at that level as a
+  last resort so the target still reaches ICs. The base (un-hedged)
+  cascade now sums to the macro target at **every** depth. No silent
+  target loss.
+- **The root is never gated to $0** in any mode; it always carries the
+  macro target.
+
+### Added
+- **`gate_fallback` parameter on `cascade_quota`** —
+  `"redistribute"` (new default) | `"strand_at_root"` | `"error"`.
+  - `"strand_at_root"`: children stay $0; the undistributable amount
+    remains on the deepest non-gated ancestor and is reported via
+    `cascader.unallocated` (total) and `cascader.unallocated_nodes`
+    (per node), plus an `is_unallocated` column in
+    `quotas_to_dataframe`. Explicit opt-in for "don't force money into
+    gated territory" — depth sums below will not reconcile.
+  - `"error"`: raises the new `GateAllocationError` (exported at
+    package top level).
+- **`cascader.base_quotas`** — every `cascade_quota` call also computes
+  the un-hedged cascade (hedge_multiplier=1.0) in the same call, so
+  `hedged = base × hedge^depth` decomposes without a second run.
+- **`unhedged_quotas="auto"` in `quotas_to_dataframe`** — uses
+  `base_quotas` for the `unhedged_quota` / `hedge_buffer` /
+  `overassignment_pct` audit columns; no second cascade needed.
+- **`cascader.reconciliation_report(quotas, target=None, tolerance=0.01,
+  strict=False)`** — per-depth reconciliation DataFrame
+  (`depth, n_nodes, total_quota, target, delta, reconciles`);
+  `strict=True` raises `AssertionError` listing every non-reconciling
+  depth.
+- **`cascader.gate_relaxed_nodes`** + **`gate_relaxed` column** in
+  `quotas_to_dataframe` — nodes that received quota despite being gated
+  because every sibling was also gated (redistribute last resort), so
+  the fallback is always visible.
+- **`__version__`** exposed at package top level.
+
+### Changed
+- **Behavior change (intentional):** cascades whose gate previously
+  zeroed an entire tree returned all-$0; they now distribute the target
+  by blend weights (default `gate_fallback="redistribute"`). Restore
+  something like the old behavior — without the silent loss — via
+  `gate_fallback="strand_at_root"`.
+- Partial gating (some siblings pass) is unchanged: gated nodes still
+  get $0 and siblings absorb their share.
+
 ## [0.4.0] — 2026-05
 
 ### Added

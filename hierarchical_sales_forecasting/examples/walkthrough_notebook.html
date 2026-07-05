@@ -76,12 +76,12 @@
 <div class="container">
 
 <header>
-  <div class="eyebrow">b2b_revenue_forecasting · v0.4.0</div>
+  <div class="eyebrow">b2b_revenue_forecasting · v0.5.0</div>
   <h1>Multi-Metric Cascading &amp; Reconciliation — Walkthrough</h1>
   <p class="subtitle">End-to-end notebook: how an analyst takes one CSV of historical performance + pipeline data and produces a quota plan, a pipeline diagnosis, a redistributed plan, and a bias-corrected forecast — with full visibility into how each metric actually influences allocation.</p>
   <div class="meta">
     <span><strong>Package:</strong> b2b-revenue-forecasting</span>
-    <span><strong>Version:</strong> 0.4.0</span>
+    <span><strong>Version:</strong> 0.5.0</span>
     <span><strong>Dataset:</strong> 170 ICs · 217 hierarchy nodes</span>
     <span><strong>Macro target:</strong> $50,000,000</span>
   </div>
@@ -114,8 +114,9 @@ python examples/walkthrough.py</pre>
     <li><a href="#step-14">Write outputs to a SQL database</a></li>
     <li><a href="#step-15">Generate an interactive HTML dashboard</a></li>
     <li><a href="#step-16">PART B: White-space cascade with a gate</a></li>
-    <li><a href="#step-17">Reconcile against historical attainment</a></li>
-    <li><a href="#step-18">Summary report</a></li>
+    <li><a href="#step-17">Gate fallback + per-depth reconciliation (v0.5.0)</a></li>
+    <li><a href="#step-18">Reconcile against historical attainment</a></li>
+    <li><a href="#step-19">Summary report</a></li>
   </ol>
 </nav>
 
@@ -241,11 +242,13 @@ suggested, report = MetricSpec.suggest_weights(
   <h3>Output</h3>
 <pre class="output">Suggested weights:
   CloudSeats         direction=proportional  weight=0.980  corr=+0.980  (agrees)
-  DCSeats            direction=inverse       weight=0.067  corr=-0.067  (agrees)
-  ExpansionSpent     direction=inverse       weight=0.000  corr=+0.048  (DISAGREES — but user direction kept)
-  Has_Active_Cert    direction=proportional  weight=0.608  corr=+0.608  (agrees)</pre>
+  DCSeats            direction=inverse       weight=0.117  corr=-0.117  (agrees)
+  ExpansionSpent     direction=inverse       weight=0.095  corr=-0.095  (agrees)
+  Has_Active_Cert    direction=proportional  weight=0.624  corr=+0.624  (agrees)
 
-  <div class="takeaway"><strong>What you got.</strong> CloudSeats at +0.98 is the strongest secondary signal. Has_Active_Cert at +0.61 is a meaningful proportional pull. DCSeats came back weak (0.067) but in the expected direction. ExpansionSpent's data sign disagreed with the analyst's call AND magnitude was below the 0.05 threshold, so weight is set to 0 — no influence on the cascade.</div>
+No direction-mismatch warnings fired — data agrees with all directions.</pre>
+
+  <div class="takeaway"><strong>What you got.</strong> CloudSeats at +0.98 is the strongest secondary signal. Has_Active_Cert at +0.62 is a meaningful proportional pull. DCSeats (0.117) and ExpansionSpent (0.095) came back weak but in the expected directions, so they carry small data-driven weights. If a metric's data sign ever disagrees with the analyst's declared direction, the package warns loudly — but keeps the user's call.</div>
 </section>
 
 <section class="step" id="step-5">
@@ -267,14 +270,14 @@ cascade_metrics = [
 ]</code></pre>
 
   <h3>Output</h3>
-<pre class="output">DCSeats weight: 0.067 (suggested) -> 0.400 (overridden)
+<pre class="output">DCSeats weight: 0.117 (suggested) -> 0.400 (overridden)
 
 Final cascade metric set:
   NetNewACV          direction=proportional  weight=1.000
   CloudSeats         direction=proportional  weight=0.980
   DCSeats            direction=inverse       weight=0.400
-  ExpansionSpent     direction=inverse       weight=0.000
-  Has_Active_Cert    direction=proportional  weight=0.608</pre>
+  ExpansionSpent     direction=inverse       weight=0.095
+  Has_Active_Cert    direction=proportional  weight=0.624</pre>
 
   <div class="callout"><strong>Pattern B alternative.</strong> Instead of mutating, you can build the final list by hand: <code class="inline">by_name = {s.name: s for s in suggested}; cascade_metrics = [MetricSpec('NetNewACV', ...), by_name['CloudSeats'], MetricSpec('DCSeats', ..., weight=0.4), by_name['Has_Active_Cert']]</code>. Either pattern works — mix-and-match between data-driven and hand-picked weights freely.</div>
 </section>
@@ -293,21 +296,21 @@ print(weights_df.to_string(index=False))</code></pre>
   <h3>Output</h3>
 <pre class="output">Multi-metric cascade — normalized weights:
   metric           direction     input_weight   normalized_share  active
-  NetNewACV        proportional         1.000             33.47%  yes
-  CloudSeats       proportional         0.980             32.79%  yes
-  DCSeats          inverse              0.400             13.39%  yes
-  ExpansionSpent   inverse              0.000                  —  no
-  Has_Active_Cert  proportional         0.608             20.36%  yes
+  NetNewACV        proportional         1.000             32.26%  yes
+  CloudSeats       proportional         0.980             31.62%  yes
+  DCSeats          inverse              0.400             12.90%  yes
+  ExpansionSpent   inverse              0.095              3.07%  yes
+  Has_Active_Cert  proportional         0.624             20.15%  yes
 
 Available programmatically as a DataFrame:
          metric    direction  input_weight  normalized_share  active
-      NetNewACV proportional      1.000000          0.334682    True
-     CloudSeats proportional      0.979618          0.327860    True
-        DCSeats      inverse      0.400000          0.133873    True
- ExpansionSpent      inverse      0.000000          0.000000   False
-Has_Active_Cert proportional      0.608295          0.203585    True</pre>
+      NetNewACV proportional      1.000000          0.322619    True
+     CloudSeats proportional      0.980063          0.316187    True
+        DCSeats      inverse      0.400000          0.129048    True
+ ExpansionSpent      inverse      0.095085          0.030676    True
+Has_Active_Cert proportional      0.624482          0.201470    True</pre>
 
-  <div class="highlight"><strong>This is the table to put in your planning deck.</strong> "NetNewACV drives 33.5% of the allocation, CloudSeats 32.8%, Has_Active_Cert 20.4%, DCSeats 13.4% (inverse), and ExpansionSpent is inactive." Every input weight is also shown so reviewers can see your judgment vs. the data-driven values.</div>
+  <div class="highlight"><strong>This is the table to put in your planning deck.</strong> "NetNewACV drives 32.3% of the allocation, CloudSeats 31.6%, Has_Active_Cert 20.1%, DCSeats 12.9% (inverse), and ExpansionSpent a light 3.1% dampener." Every input weight is also shown so reviewers can see your judgment vs. the data-driven values.</div>
 
   <div class="takeaway"><strong>Auto-printed on every cascade.</strong> The cascader prints this same table before running, so analysts never have to remember to call it. Also accessible afterward via <code class="inline">cascader.weights_report</code>. Pass <code class="inline">verbose=False</code> to suppress in batch / test runs.</div>
 </section>
@@ -324,11 +327,11 @@ Has_Active_Cert proportional      0.608295          0.203585    True</pre>
 
   <h3>Output</h3>
 <pre class="output">CloudSeats         inferred=proportional  weight=0.980  (corr=+0.980)
-DCSeats            inferred=inverse       weight=0.067  (corr=-0.067)
-ExpansionSpent     inferred=proportional  weight=0.000  (corr=+0.048)
-Has_Active_Cert    inferred=proportional  weight=0.608  (corr=+0.608)</pre>
+DCSeats            inferred=inverse       weight=0.117  (corr=-0.117)
+ExpansionSpent     inferred=inverse       weight=0.095  (corr=-0.095)
+Has_Active_Cert    inferred=proportional  weight=0.624  (corr=+0.624)</pre>
 
-  <div class="callout"><strong>Useful for catching surprises.</strong> Data signs lean: CloudSeats proportional ✓, DCSeats inverse ✓, ExpansionSpent <em>proportional</em> ✗ (contradicts the domain "inverse" call), Has_Active_Cert proportional ✓. Worth a RevOps conversation about ExpansionSpent — but the cascader still respects the user's call.</div>
+  <div class="callout"><strong>Useful for catching surprises.</strong> On this dataset every inferred direction matches the analyst's domain call — CloudSeats proportional ✓, DCSeats inverse ✓, ExpansionSpent inverse ✓, Has_Active_Cert proportional ✓. When a sign ever flips (data says proportional, domain says inverse), that's the cue for a RevOps conversation — but the cascader always respects the user's declared direction.</div>
 </section>
 
 <section class="step" id="step-8">
@@ -346,36 +349,42 @@ quotas = cascader.cascade_quota(
     metrics=cascade_metrics,
     new_ic_attr='_is_brand_new',
 )
-# cascader.weights_report -> the same DataFrame for later access</code></pre>
+# cascader.weights_report -> the same DataFrame for later access
+
+# NEW in v0.5.0: the UN-HEDGED base layer is computed in the SAME call —
+# no second cascade needed. hedged = base x hedge^depth, always.
+quotas_unhedged = dict(cascader.base_quotas)</code></pre>
 
   <h3>Output</h3>
 <pre class="output">Multi-metric cascade — normalized weights:
   metric           direction     input_weight   normalized_share  active
-  NetNewACV        proportional         1.000             33.47%  yes
-  CloudSeats       proportional         0.980             32.79%  yes
-  DCSeats          inverse              0.400             13.39%  yes
-  ExpansionSpent   inverse              0.000                  —  no
-  Has_Active_Cert  proportional         0.608             20.36%  yes
+  NetNewACV        proportional         1.000             32.26%  yes
+  CloudSeats       proportional         0.980             31.62%  yes
+  DCSeats          inverse              0.400             12.90%  yes
+  ExpansionSpent   inverse              0.095              3.07%  yes
+  Has_Active_Cert  proportional         0.624             20.15%  yes
 
 Macro target:                $  50,000,000.00
-Sum of all IC quotas:        $  56,440,452.40
-Compounded overassignment:            12.88%
+Sum of all IC quotas:        $  56,436,423.65
+Compounded overassignment:            12.87%
 Number of ICs:                           170
 
 Per-region totals at the RVP layer:
-  NA     cascaded quota: $26,309,048.07
-  EMEA   cascaded quota: $11,992,214.32
-  APAC   cascaded quota: $14,198,737.60
+  NA     cascaded quota: $26,228,473.10
+  EMEA   cascaded quota: $12,121,621.43
+  APAC   cascaded quota: $14,149,905.47
 
 Sample IC quotas (3 veteran + 3 brand-new):
-  IC_Mgr_Dir_RVP_NA_1_2_2_4                          $  134,821.55
-  IC_Mgr_Dir_RVP_NA_2_1_1_4                          $  279,345.05
-  IC_Mgr_Dir_RVP_NA_1_1_3_2                          $  404,417.04
-  IC_Mgr_Dir_RVP_APAC_1_2_2_5                        $  334,725.21 (BRAND-NEW)
-  IC_Mgr_Dir_RVP_APAC_1_3_2_4                        $  284,519.90 (BRAND-NEW)
-  IC_Mgr_Dir_RVP_NA_2_2_1_2                          $  285,153.60 (BRAND-NEW)</pre>
+  IC_Mgr_Dir_RVP_NA_2_2_1_3                          $  340,167.63
+  IC_Mgr_Dir_RVP_NA_2_2_2_6                          $  449,322.28
+  IC_Mgr_Dir_RVP_APAC_1_1_1_1                        $  310,848.19
+  IC_Mgr_Dir_RVP_NA_1_3_1_7                          $  384,040.08 (BRAND-NEW)
+  IC_Mgr_Dir_RVP_NA_2_2_3_1                          $  258,041.09 (BRAND-NEW)
+  IC_Mgr_Dir_RVP_APAC_1_2_2_5                        $  358,419.47 (BRAND-NEW)</pre>
 
   <div class="takeaway"><strong>What happened mathematically.</strong> At every parent node, each child's share = weighted sum of (per-metric share-of-siblings), with weights normalized to 1. Inverse metrics flip via reciprocal-then-normalize. The 29 brand-new ICs each got equal-share carve-out before veterans split the remainder.</div>
+
+  <div class="callout"><strong>New in v0.5.0 — the base layer comes free.</strong> Every <code class="inline">cascade_quota</code> call now also computes the un-hedged cascade internally and stores it on <code class="inline">cascader.base_quotas</code>. The base layer is the reconciliation currency: it sums to the macro target at <em>every</em> depth, while the hedged layer legitimately compounds overassignment down the tree. Snapshot it right after the cascade you care about — a later cascade call (like the CRO-override re-run in Step 9) overwrites it.</div>
 </section>
 
 <section class="step" id="step-9">
@@ -383,7 +392,7 @@ Sample IC quotas (3 veteran + 3 brand-new):
   <p>The CRO decides one IC must carry exactly $1.2M. The cascader carves that out first and lets the algorithm distribute the remainder among siblings.</p>
 
   <h3>Code</h3>
-<pre class="code"><code>strategic_ic = 'IC_Mgr_Dir_RVP_NA_1_2_2_4'
+<pre class="code"><code>strategic_ic = 'IC_Mgr_Dir_RVP_NA_2_2_1_3'
 quotas_with_override = cascader.cascade_quota(
     'Global_Corp', 50_000_000.0,
     hedge_multiplier=per_node_hedge,
@@ -395,9 +404,9 @@ quotas_with_override = cascader.cascade_quota(
   <h3>Output</h3>
 <pre class="output">[Normalized-weights table reprints — see Step 8]
 
-IC_Mgr_Dir_RVP_NA_1_2_2_4 algorithmic quota:   $  134,821.55
-IC_Mgr_Dir_RVP_NA_1_2_2_4 CRO-locked quota:    $1,200,000.00
-Manager total still preserved? Sum of that manager's ICs = $1,378,521.24</pre>
+IC_Mgr_Dir_RVP_NA_2_2_1_3 algorithmic quota:   $  340,167.63
+IC_Mgr_Dir_RVP_NA_2_2_1_3 CRO-locked quota:    $1,200,000.00
+Manager total still preserved? Sum of that manager's ICs = $2,058,408.58</pre>
 
   <div class="takeaway"><strong>How it interacts.</strong> Override is carved out first; remainder within the manager's team is split by the multi-metric algorithm. Brand-new IC carve-outs never stack on top of overrides.</div>
 </section>
@@ -424,20 +433,17 @@ diagnosis = adjuster.diagnose(coverage_thresholds)</code></pre>
   <h3>Output</h3>
 <pre class="output">Risk-status summary across ALL hierarchy nodes:
 Risk_Status  Nodes  Total_Quota Total_Pipeline
-    Healthy    121 $193,784,252   $515,640,223
-   Moderate     69 $125,957,442   $276,853,296
-   Critical     25   $7,956,830     $4,580,481
-    At Risk      2     $563,286       $753,401
+    Healthy    122 $193,673,776   $548,606,850
+   Moderate     66 $125,384,144   $271,746,636
+   Critical     22   $7,184,766     $3,598,844
+    At Risk      7   $2,003,009     $2,400,971
 
-IC-level coverage under Mgr_Dir_RVP_NA_1_2_2:
-                     Node Cascaded_Quota   Pipeline Coverage_Ratio Risk_Status
-IC_Mgr_Dir_RVP_NA_1_2_2_1       $196,932   $145,644          0.74x    Critical
-IC_Mgr_Dir_RVP_NA_1_2_2_2       $182,390   $728,115          3.99x     Healthy
-IC_Mgr_Dir_RVP_NA_1_2_2_3       $129,802   $625,465          4.82x     Healthy
-IC_Mgr_Dir_RVP_NA_1_2_2_4       $134,822   $579,547          4.30x     Healthy
-IC_Mgr_Dir_RVP_NA_1_2_2_5       $369,082 $1,700,815          4.61x     Healthy
-IC_Mgr_Dir_RVP_NA_1_2_2_6       $168,563   $670,432          3.98x     Healthy
-IC_Mgr_Dir_RVP_NA_1_2_2_7       $196,932   $198,341          1.01x    Moderate</pre>
+IC-level coverage under Mgr_Dir_RVP_APAC_1_1_1:
+                       Node Cascaded_Quota   Pipeline Coverage_Ratio Risk_Status
+IC_Mgr_Dir_RVP_APAC_1_1_1_1       $310,848   $551,973          1.78x    Moderate
+IC_Mgr_Dir_RVP_APAC_1_1_1_2       $362,111 $1,044,317          2.88x    Moderate
+IC_Mgr_Dir_RVP_APAC_1_1_1_3       $280,917   $967,456          3.44x     Healthy
+IC_Mgr_Dir_RVP_APAC_1_1_1_4       $576,525 $1,512,061          2.62x    Moderate</pre>
 
   <div class="takeaway"><strong>Why multi-column matters.</strong> Pipeline isn't just open opportunities — it's open + late-stage commit + best-case adds. Summing per IC gives a more realistic coverage picture without forcing the analyst to pre-aggregate in their spreadsheet.</div>
 </section>
@@ -455,16 +461,16 @@ IC_Mgr_Dir_RVP_NA_1_2_2_7       $196,932   $198,341          1.01x    Moderate</
 )</code></pre>
 
   <h3>Output</h3>
-<pre class="output">ICs whose quota was adjusted: 86 of 170
-Largest manager-level drift (should be ~$0): $0.00 at Mgr_Dir_RVP_APAC_1_2_1
+<pre class="output">ICs whose quota was adjusted: 70 of 170
+Largest manager-level drift (should be ~$0): $0.00 at Mgr_Dir_RVP_NA_1_3_1
 
 Top 5 ICs by absolute redistribution:
   IC                                                       Original       Adjusted        Delta
-  IC_Mgr_Dir_RVP_EMEA_1_1_1_5                        $     478,100 $     382,480 $   -95,620
-  IC_Mgr_Dir_RVP_EMEA_1_1_1_7                        $     769,310 $     864,930 +$    95,620
-  IC_Mgr_Dir_RVP_EMEA_1_2_1_4                        $     465,052 $     372,041 $   -93,010
-  IC_Mgr_Dir_RVP_NA_2_1_2_2                          $     336,660 $     269,328 $   -67,332
-  IC_Mgr_Dir_RVP_APAC_1_1_2_5                        $     335,512 $     268,410 $   -67,102</pre>
+  IC_Mgr_Dir_RVP_EMEA_1_2_1_1                        $     629,972 $     742,260 +$   112,288
+  IC_Mgr_Dir_RVP_EMEA_1_2_1_4                        $     561,440 $     449,152 $  -112,288
+  IC_Mgr_Dir_RVP_EMEA_1_2_2_5                        $     542,495 $     433,996 $  -108,499
+  IC_Mgr_Dir_RVP_EMEA_1_2_2_2                        $     578,526 $     687,024 +$   108,499
+  IC_Mgr_Dir_RVP_APAC_1_2_1_1                        $     441,159 $     529,390 +$    88,232</pre>
 
   <div class="takeaway"><strong>Zero-sum, exactly.</strong> Largest drift across all managers was $0.00. Every dollar a donor gave up was absorbed by a sibling. Manager and above quotas are never touched.</div>
 </section>
@@ -509,20 +515,14 @@ Reconciling Q1 commits ($300K per manager) with ML baseline of $320K:
 
 <section class="step" id="step-13">
   <h2><span class="badge">13</span>Export all outputs to CSV (with hedge audit)<a class="anchor" href="#step-13">#</a></h2>
-  <p>Run the cascade <strong>twice</strong> — once with the per-region hedge and once with <code class="inline">hedge_multiplier=1.0</code> (no overassignment anywhere). The CSV gets both columns plus the dollar buffer and overassignment percentage per node, giving stakeholders a clean audit trail of where the hedging dollars went.</p>
+  <p>Since v0.5.0 there's <strong>no second cascade</strong>: the un-hedged baseline was captured from <code class="inline">cascader.base_quotas</code> back in Step 8. The CSV gets both columns plus the dollar buffer and overassignment percentage per node, giving stakeholders a clean audit trail of where the hedging dollars went. (If the quotas dict you're exporting came from the <em>most recent</em> cascade call, you can skip the snapshot entirely and pass <code class="inline">unhedged_quotas='auto'</code>.)</p>
 
   <h3>Code</h3>
 <pre class="code"><code>import os
 OUT_DIR = 'examples/data'
 
-# Run the cascade a second time with no hedging — same inputs otherwise
-quotas_unhedged = cascader.cascade_quota(
-    'Global_Corp', 50_000_000.0,
-    hedge_multiplier=1.0,           # exact $50M at root, no overassignment
-    metrics=cascade_metrics,
-    new_ic_attr='_is_brand_new',
-    verbose=False,
-)
+# quotas_unhedged was snapshotted from cascader.base_quotas at Step 8 —
+# no second cascade run needed since v0.5.0.
 
 # 1) Cascaded quotas — every node at every level, BOTH columns + audit
 cascaded_df = cascader.quotas_to_dataframe(
@@ -564,38 +564,38 @@ recon_df.to_csv(f'{OUT_DIR}/output_commit_reconciliation.csv', index=False)</cod
                 'overassignment_pct']
  depth  level     node_id      parent  is_leaf  cascaded_quota  unhedged_quota  hedge_buffer  overassignment_pct
      0 Global Global_Corp        None    False     50000000.00     50000000.00          0.00              0.0000
-     1 Region        APAC Global_Corp    False     14198737.60     13522607.24     676130.36              0.0500
-     1 Region        EMEA Global_Corp    False     11992214.32     11421156.50     571057.82              0.0500
-     1 Region          NA Global_Corp    False     26309048.07     25056236.26    1252811.81              0.0500
-     2    RVP  RVP_APAC_1        APAC    False     14908674.48     13522607.24    1386067.24              0.1025
-     2    RVP  RVP_EMEA_1        EMEA    False     12591825.04     11421156.50    1170668.54              0.1025
-     2    RVP    RVP_NA_1          NA    False     18560067.27     16069322.31    2490744.96              0.1550
-     2    RVP    RVP_NA_2          NA    False     10379885.61      8986913.95    1392971.66              0.1550
+     1 Region        APAC Global_Corp    False     14149905.47     13476100.45     673805.02              0.0500
+     1 Region        EMEA Global_Corp    False     12121621.43     11544401.36     577220.07              0.0500
+     1 Region          NA Global_Corp    False     26228473.10     24979498.19    1248974.91              0.0500
+     2    RVP  RVP_APAC_1        APAC    False     14857400.74     13476100.45    1381300.30              0.1025
+     2    RVP  RVP_EMEA_1        EMEA    False     12727702.50     11544401.36    1183301.14              0.1025
+     2    RVP    RVP_NA_1          NA    False     17640088.20     15272803.63    2367284.56              0.1550
+     2    RVP    RVP_NA_2          NA    False     11211232.21      9706694.56    1504537.66              0.1550
 
 [2/5] examples/data/output_normalized_weights.csv
          metric    direction  input_weight  normalized_share  active
-      NetNewACV proportional      1.000000          0.334682    True
-     CloudSeats proportional      0.979618          0.327860    True
-        DCSeats      inverse      0.400000          0.133873    True
- ExpansionSpent      inverse      0.000000          0.000000   False
-Has_Active_Cert proportional      0.608295          0.203585    True
+      NetNewACV proportional      1.000000          0.322619    True
+     CloudSeats proportional      0.980063          0.316187    True
+        DCSeats      inverse      0.400000          0.129048    True
+ ExpansionSpent      inverse      0.095085          0.030676    True
+Has_Active_Cert proportional      0.624482          0.201470    True
 
 [3/5] examples/data/output_pipeline_diagnosis.csv
       rows: 217 (every node)
        Node  Level  Cascaded_Quota     Pipeline  Coverage_Ratio  Healthy_Threshold  At_Risk_Threshold Risk_Status
-Global_Corp      0     50000000.00 132971233.60          2.6594                2.0                1.0     Healthy
-       APAC      1     14198737.60  34977351.28          2.4634                3.0                1.5    Moderate
-       EMEA      1     11992214.32  24975973.69          2.0827                2.5                1.2    Moderate
-         NA      1     26309048.07  73017908.63          2.7754                1.5                0.8     Healthy
+Global_Corp      0     50000000.00 137725550.23          2.7545                2.0                1.0     Healthy
+       APAC      1     14149905.47  34550004.79          2.4417                3.0                1.5    Moderate
+       EMEA      1     12121621.43  24944220.70          2.0578                2.5                1.2    Moderate
+         NA      1     26228473.10  78231324.74          2.9827                1.5                0.8     Healthy
 
 [4/5] examples/data/output_redistributed_quotas.csv
       rows: 170 (IC level)
- depth level                     node_id                 parent  is_leaf  original_quota  adjusted_quota     delta  delta_pct
-     5    IC IC_Mgr_Dir_RVP_EMEA_1_1_1_7 Mgr_Dir_RVP_EMEA_1_1_1     True       769309.99       864930.05  95620.07     0.1243
-     5    IC IC_Mgr_Dir_RVP_EMEA_1_1_1_5 Mgr_Dir_RVP_EMEA_1_1_1     True       478100.35       382480.28 -95620.07    -0.2000
-     5    IC IC_Mgr_Dir_RVP_EMEA_1_2_1_4 Mgr_Dir_RVP_EMEA_1_2_1     True       465051.85       372041.48 -93010.37    -0.2000
-     5    IC   IC_Mgr_Dir_RVP_NA_2_1_2_2   Mgr_Dir_RVP_NA_2_1_2     True       336660.20       269328.16 -67332.04    -0.2000
-     5    IC IC_Mgr_Dir_RVP_APAC_1_1_2_5 Mgr_Dir_RVP_APAC_1_1_2     True       335512.17       268409.73 -67102.43    -0.2000
+ depth level                     node_id                 parent  is_leaf  original_quota  adjusted_quota      delta  delta_pct
+     5    IC IC_Mgr_Dir_RVP_EMEA_1_2_1_4 Mgr_Dir_RVP_EMEA_1_2_1     True       561439.96       449151.97 -112287.99    -0.2000
+     5    IC IC_Mgr_Dir_RVP_EMEA_1_2_1_1 Mgr_Dir_RVP_EMEA_1_2_1     True       629971.59       742259.58  112287.99     0.1782
+     5    IC IC_Mgr_Dir_RVP_EMEA_1_2_2_5 Mgr_Dir_RVP_EMEA_1_2_2     True       542494.98       433995.98 -108499.00    -0.2000
+     5    IC IC_Mgr_Dir_RVP_EMEA_1_2_2_2 Mgr_Dir_RVP_EMEA_1_2_2     True       578525.50       687024.50  108499.00     0.1875
+     5    IC IC_Mgr_Dir_RVP_APAC_1_2_1_1 Mgr_Dir_RVP_APAC_1_2_1     True       441158.63       529390.35   88231.73     0.2000
 
 [5/5] examples/data/output_commit_reconciliation.csv
             manager_id  current_commit  bias_quotient   bias_label  bias_adjusted_commit  machine_forecast  blended_forecast
@@ -649,9 +649,9 @@ wrote  170 rows to table `redistributed_quotas`
 wrote    3 rows to table `commit_reconciliation`
 
 Smoke-test query — region totals from cascaded_quotas:
-  Region   NA     cascaded $ 26,309,048.07  unhedged $ 25,056,236.26
-  Region   APAC   cascaded $ 14,198,737.60  unhedged $ 13,522,607.24
-  Region   EMEA   cascaded $ 11,992,214.32  unhedged $ 11,421,156.50</pre>
+  Region   NA     cascaded $ 26,228,473.10  unhedged $ 24,979,498.19
+  Region   APAC   cascaded $ 14,149,905.47  unhedged $ 13,476,100.45
+  Region   EMEA   cascaded $ 12,121,621.43  unhedged $ 11,544,401.36</pre>
 
   <div class="callout"><strong>For Postgres / Snowflake / etc</strong>, swap the sqlite3 connection for a SQLAlchemy engine and the same <code class="inline">to_sql()</code> calls work unchanged:
 <pre class="code" style="margin-top: 6px;"><code>from sqlalchemy import create_engine
@@ -679,12 +679,12 @@ cascaded_df.to_sql('cascaded_quotas', engine, if_exists='replace')</code></pre>
 
   <h3>Output</h3>
 <pre class="output">Wrote dashboard: examples/data/cascade_dashboard.html
-  size: 13,997 bytes
+  size: 13,984 bytes
   charts: Region totals · Top 20 ICs · Top redistributions · Risk status
 
 Summary stats embedded:
-  Cascaded total (ICs): $56,440,452 across 170 ICs
-  Hedge buffer (IC total): $6,440,452 (12.88% overassignment)
+  Cascaded total (ICs): $56,436,424 across 170 ICs
+  Hedge buffer (IC total): $6,436,424 (12.87% overassignment)
   Redistributed ICs: 86 (zero-sum per manager)
   Critical-risk nodes: 25 (from pipeline diagnose)</pre>
 
@@ -761,7 +761,67 @@ Sample gated IC rows (is_gated=True, cascaded_quota=0):
 </section>
 
 <section class="step" id="step-17">
-  <h2><span class="badge">17</span>Reconcile the white-space cascade against historical attainment<a class="anchor" href="#step-17">#</a></h2>
+  <h2><span class="badge">17</span>Gate fallback + per-depth reconciliation — v0.5.0, issue #12<a class="anchor" href="#step-17">#</a></h2>
+  <p><strong>The bug this fixes:</strong> pre-v0.5.0, if <em>every</em> leaf under the cascade root failed the gate (e.g., a Migration cascade where no rep in the whole slice had DC entitlement), the root was gated to $0 and the target silently vanished. Consumers who patched depth 0 back to the target got a depth-1 shortfall equal to the fully-gated slice's target. Now: <strong>the root is never gated to $0</strong>, and the base (un-hedged) layer sums to the target at <em>every</em> depth.</p>
+
+  <div class="callout"><strong>The <code class="inline">gate_fallback</code> preference order.</strong> A fully-gated subtree's share first flows to its nearest non-gated <em>siblings</em> — that's the normal gate rollup, unchanged (a fully-gated team's quota goes to its sibling teams within the same sub-region, keeping the sub-region split consistent). Only when EVERY child of a funded node is gated does the fallback kick in: <code class="inline">'redistribute'</code> (default) relaxes the gate at that level as a last resort so the target still reaches ICs; <code class="inline">'strand_at_root'</code> keeps the money visible on the deepest non-gated ancestor and reports it via <code class="inline">cascader.unallocated</code>; <code class="inline">'error'</code> raises <code class="inline">GateAllocationError</code>.</div>
+
+  <h3>Code</h3>
+<pre class="code"><code># (a) Per-depth reconciliation of the Step-8 base layer — the invariant
+recon = cascader.reconciliation_report(
+    quotas_unhedged, target=50_000_000.0, strict=True,
+)
+
+# (b) The issue-#12 scenario: cascade into a slice whose leaves are ALL
+#     gated (Mgr_Dir_RVP_APAC_1_1_1 — zero unmigrated seats anywhere).
+slice_quotas = cascader_ws.cascade_quota(
+    'Mgr_Dir_RVP_APAC_1_1_1', 1_000_000.0,
+    metrics=forward_metrics,
+    gate_metrics=gate_metrics,      # gate_fallback='redistribute' is default
+)
+
+# (c) The explicit opt-out — keep the money visible instead:
+strand_quotas = cascader_ws.cascade_quota(
+    'Mgr_Dir_RVP_APAC_1_1_1', 1_000_000.0,
+    metrics=forward_metrics,
+    gate_metrics=gate_metrics,
+    gate_fallback='strand_at_root',
+)
+# cascader_ws.unallocated / .unallocated_nodes -> stranded dollars
+# gate_fallback='error' would raise GateAllocationError instead</code></pre>
+
+  <h3>Output</h3>
+<pre class="output">(a) reconciliation_report on the Step-8 base layer ($50M):
+ depth  n_nodes  total_quota     target  delta  reconciles
+     0        1   50000000.0 50000000.0    0.0        True
+     1        3   50000000.0 50000000.0   -0.0        True
+     2        4   50000000.0 50000000.0   -0.0        True
+     3       10   50000000.0 50000000.0    0.0        True
+     4       29   50000000.0 50000000.0   -0.0        True
+     5      170   50000000.0 50000000.0   -0.0        True
+    strict=True raises AssertionError if any depth is short.
+
+(b) Cascade $1M into fully-gated subtree Mgr_Dir_RVP_APAC_1_1_1:
+    Root keeps target:  $1,000,000.00 (never gated to $0)
+      └─ IC_Mgr_Dir_RVP_APAC_1_1_1_1: $314,744.03 (gate relaxed — last resort)
+      └─ IC_Mgr_Dir_RVP_APAC_1_1_1_2: $272,224.95 (gate relaxed — last resort)
+      └─ IC_Mgr_Dir_RVP_APAC_1_1_1_3: $228,586.11 (gate relaxed — last resort)
+      └─ IC_Mgr_Dir_RVP_APAC_1_1_1_4: $184,444.91 (gate relaxed — last resort)
+    IC sum = $1,000,000.00 == target — nothing stranded
+
+(c) gate_fallback='strand_at_root' — keep the money visible instead:
+    Root holds $1,000,000.00; ICs get $0
+    cascader.unallocated       = $1,000,000.00
+    cascader.unallocated_nodes = {'Mgr_Dir_RVP_APAC_1_1_1': 1000000.0}
+    (quotas_to_dataframe adds an is_unallocated column)</pre>
+
+  <div class="highlight"><strong>Sibling redistribution is unchanged — and preferred.</strong> In the full Part-B cascade, <code class="inline">Mgr_Dir_RVP_APAC_1_1_1</code> still gets $0 because its <em>siblings</em> can absorb its share (same sub-region split preserved). The last-resort gate relaxation above only fires when there are no non-gated siblings anywhere below the funded node — exactly the case that used to lose the money.</div>
+
+  <div class="takeaway"><strong>Audit trail for every path.</strong> Redistributed-anyway nodes are flagged in <code class="inline">cascader.gate_relaxed_nodes</code> and a <code class="inline">gate_relaxed</code> CSV column; stranded dollars appear in <code class="inline">cascader.unallocated_nodes</code> and an <code class="inline">is_unallocated</code> column. Nothing is silent — the $52,869.30 class of discrepancy can't happen again.</div>
+</section>
+
+<section class="step" id="step-18">
+  <h2><span class="badge">18</span>Reconcile the white-space cascade against historical attainment<a class="anchor" href="#step-18">#</a></h2>
   <p>In white-space planning the reconciliation flips: instead of comparing the new quota to <strong>forward</strong> pipeline, compare it to <strong>historical</strong> attainment. The question becomes "have they hit targets at this size before?" Reps flagged Critical or At Risk are those the forward-looking plan asks for a significant step-up from.</p>
 
   <h3>Code</h3>
@@ -794,20 +854,21 @@ i.e., the forward-looking plan asks them to step up significantly.</pre>
   <div class="takeaway"><strong>Same PipelineAdjuster, semantically different signal.</strong> The framework doesn't know whether you're feeding it pipeline or historical attainment — both are "dollar amounts to compare against quota." The reconciler's classification logic is identical; only the columns and the thresholds change. That's how the same package supports both planning philosophies without duplicate code.</div>
 </section>
 
-<section class="step" id="step-18">
-  <h2><span class="badge">18</span>Summary report<a class="anchor" href="#step-18">#</a></h2>
+<section class="step" id="step-19">
+  <h2><span class="badge">19</span>Summary report<a class="anchor" href="#step-19">#</a></h2>
   <p>One CSV in → five CSVs, one SQL DB, and one interactive dashboard out. Every major capability exercised — and every weight visible to stakeholders.</p>
 
 <pre class="output">--- Part A (earned planning) ---
 Hierarchy:              217 nodes (170 ICs across 3 regions)
-Multi-metric cascade:   5 metrics blended ($50M -> $56,440,452 with hedging)
-Hedge buffer:           $6,440,452 (12.88% overassignment, full audit in CSV)
-Normalized weights:     NetNewACV 33.5% · CloudSeats 32.8% · Has_Active_Cert 20.4%
-                        DCSeats 13.4% · ExpansionSpent inactive
+Multi-metric cascade:   5 metrics blended ($50M -> $56,436,424 with hedging)
+Hedge buffer:           $6,436,424 (12.87% overassignment, full audit in CSV)
+Base-layer invariant:   sum(base_quotas at depth d) == $50M for ALL d (v0.5.0)
+Normalized weights:     NetNewACV 32.3% · CloudSeats 31.6% · Has_Active_Cert 20.1%
+                        DCSeats 12.9% · ExpansionSpent 3.1%
 Brand-new ICs handled:  29 reps got equal-share carve-out
 CRO overrides applied:  1 (pinned at $1,200,000)
 Pipeline diagnosis:     ran on multi-column sum across 3 columns
-Pipeline adjustments:   86 ICs redistributed within managers (zero-sum)
+Pipeline adjustments:   70 ICs redistributed within managers (zero-sum)
 Commit reconciliation:  3 managers bias-corrected and blended with ML baseline
 
 --- Part B (white-space planning) ---

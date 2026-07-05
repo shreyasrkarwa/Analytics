@@ -21,6 +21,33 @@ Unlike traditional bottom-up time-series libraries (which are strictly built for
 | **`CommitReconciler`** | Detect sandbagging and "happy ears" bias via historical Bias Quotients, then auto-correct forecasts |
 | **`PipelineAdjuster`** | Diagnose pipeline health with per-region thresholds and redistribute IC quotas using zero-sum logic |
 
+### What's New in v0.5.0 — no more stranded targets ([issue #12](https://github.com/shreyasrkarwa/Analytics/issues/12))
+
+Previously, when a gate zeroed an **entire subtree** (e.g., a Migration cascade where no rep in the whole slice had DC entitlement), the target for that slice was silently dropped — depth-0 held the target while depth 1+ summed short. v0.5.0 guarantees **the base (un-hedged) quota sums to the macro target at every depth**.
+
+- **`gate_fallback` parameter on `cascade_quota`** controls what happens when every child of a funded node is gated:
+  - `"redistribute"` *(default)* — a fully-gated subtree's share flows to its nearest non-gated siblings (gates still roll up as before); if the *entire* level — even the whole tree — is gated, the gate is relaxed at that level as a last resort so the target still reaches ICs. No silent target loss, ever.
+  - `"strand_at_root"` — children stay $0; the undistributable amount stays on the deepest non-gated ancestor and is reported via `cascader.unallocated` / `cascader.unallocated_nodes` plus an `is_unallocated` column in `quotas_to_dataframe`.
+  - `"error"` — raises `GateAllocationError` so the caller decides.
+- **The root is never gated to $0.** It always carries the macro target in every mode.
+- **`cascader.base_quotas`** — every `cascade_quota` call now also computes the un-hedged cascade in the same pass, so `hedged_quota = base_quota × hedge^depth` decomposes without a second run. Pass `unhedged_quotas="auto"` to `quotas_to_dataframe` to get the audit columns for free.
+- **`cascader.reconciliation_report(quotas, target=..., strict=True)`** — per-depth reconciliation DataFrame (`depth, n_nodes, total_quota, target, delta, reconciles`); `strict=True` raises listing every non-reconciling depth. Run it on `cascader.base_quotas` (hedged quotas legitimately grow with depth).
+- **`gate_relaxed` column in `quotas_to_dataframe`** flags nodes that received quota despite being gated because every sibling was also gated — so the last-resort fallback is always visible in the CSV.
+
+```python
+quotas = cascader.cascade_quota(
+    'Enterprise_AMER', 1_000_000.0,
+    hedge_multiplier=1.05,
+    metrics=forward_metrics,
+    gate_metrics=[MetricSpec('DC_Seats', columns=['DC_Seats'])],
+    gate_fallback='redistribute',   # default — shown for clarity
+)
+# Base layer reconciles at EVERY depth, even with fully-gated teams:
+cascader.reconciliation_report(cascader.base_quotas,
+                               target=1_000_000.0, strict=True)
+df = cascader.quotas_to_dataframe(quotas, unhedged_quotas='auto')
+```
+
 ### What's New in v0.4.0
 
 - **Gate metrics — hard kill-switches.** `cascade_quota(..., gate_metrics=[...])` excludes any node whose rolled-up gate value is at or below a threshold from the cascade entirely (quota = 0), redistributing its share among non-gated siblings. Designed for white-space planning: e.g., gating "migration NetNewACV" on `Unmigrated_Seats` zeros out territories with nothing left to migrate. Gates propagate upward naturally — a manager whose whole team fails the gate gets $0 too. Composes with AND across multiple gates. CRO overrides win over gates.
