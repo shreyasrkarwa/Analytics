@@ -50,6 +50,14 @@ import numpy as np
 # Allowed values, kept as constants so callers can introspect them.
 DIRECTIONS = ("proportional", "inverse")
 AGGREGATIONS = ("sum", "mean", "last")
+# Gate PASS predicates (issue #9). A node is GATED when it fails its
+# gate's predicate against the aggregated (leaf-summed) value:
+#   "gt"     pass iff value >  gate_threshold   (default; pre-0.9.0 behavior)
+#   "ge"     pass iff value >= gate_threshold
+#   "lt"     pass iff value <  gate_threshold   (gate values that are TOO HIGH)
+#   "le"     pass iff value <= gate_threshold
+#   "truthy" pass iff bool(value)               (threshold ignored)
+GATE_MODES = ("gt", "ge", "lt", "le", "truthy")
 
 
 @dataclass
@@ -115,12 +123,31 @@ class MetricSpec:
     aggregation: str = "sum"
     impute_zeros: bool = True
     # Only meaningful when this spec is passed to cascade_quota(gate_metrics=...).
-    # A node is gated (excluded from cascade — quota = 0) when its aggregated
-    # value for this metric is <= gate_threshold. Default 0.0 matches the
-    # "must have at least some of this" semantics ("0 unmigrated seats =>
-    # 0 migration quota"). Set higher to require a minimum (e.g., 5 means
-    # "must have at least 5 seats").
+    #
+    # The exact gate predicate (issue #9): a node PASSES the gate iff
+    #
+    #     gate_mode == "gt":     aggregated_value >  gate_threshold
+    #     gate_mode == "ge":     aggregated_value >= gate_threshold
+    #     gate_mode == "lt":     aggregated_value <  gate_threshold
+    #     gate_mode == "le":     aggregated_value <= gate_threshold
+    #     gate_mode == "truthy": bool(aggregated_value)   (threshold ignored)
+    #
+    # where aggregated_value is the metric rolled up from leaves (sum for
+    # non-leaf nodes). Nodes that FAIL are gated: excluded from the cascade
+    # with quota = 0 (subject to cascade_quota's gate_fallback).
+    #
+    # Defaults (gate_mode="gt", gate_threshold=0.0) reproduce the original
+    # "must have at least some of this" semantics exactly ("0 unmigrated
+    # seats => 0 migration quota"). Examples:
+    #   at least 5 seats:            gate_threshold=5, gate_mode="ge"
+    #   boolean entitlement flag:    gate_mode="truthy"
+    #   exclude churn-heavy (>100):  gate_threshold=100, gate_mode="le"
+    #
+    # Note for "lt"/"le" gates: leaf sums GROW as you go up the tree, so a
+    # parent can fail while its children pass — the v0.5.0 gate_fallback
+    # machinery handles any resulting fully-gated levels.
     gate_threshold: float = 0.0
+    gate_mode: str = "gt"
 
     def __post_init__(self):
         if self.direction not in DIRECTIONS:
@@ -140,6 +167,11 @@ class MetricSpec:
         if self.lookback < 1:
             raise ValueError(
                 f"MetricSpec.lookback must be >= 1, got {self.lookback}"
+            )
+        if self.gate_mode not in GATE_MODES:
+            raise ValueError(
+                f"MetricSpec.gate_mode must be one of {GATE_MODES}, "
+                f"got '{self.gate_mode}'"
             )
 
     def resolved_columns(self) -> List[str]:

@@ -76,12 +76,12 @@
 <div class="container">
 
 <header>
-  <div class="eyebrow">b2b_revenue_forecasting · v0.8.0</div>
+  <div class="eyebrow">b2b_revenue_forecasting · v0.9.0</div>
   <h1>Multi-Metric Cascading &amp; Reconciliation — Walkthrough</h1>
   <p class="subtitle">End-to-end notebook: how an analyst takes one CSV of historical performance + pipeline data and produces a quota plan, a pipeline diagnosis, a redistributed plan, and a bias-corrected forecast — with full visibility into how each metric actually influences allocation.</p>
   <div class="meta">
     <span><strong>Package:</strong> b2b-revenue-forecasting</span>
-    <span><strong>Version:</strong> 0.8.0</span>
+    <span><strong>Version:</strong> 0.9.0</span>
     <span><strong>Dataset:</strong> 170 ICs · 217 hierarchy nodes</span>
     <span><strong>Macro target:</strong> $50,000,000</span>
   </div>
@@ -735,7 +735,8 @@ forward_metrics = [
 # Hard gate: territories with zero unmigrated seats get $0
 gate_metrics = [
     MetricSpec('Unmigrated_Seats', columns=['Unmigrated_Seats']),
-    #  gate_threshold defaults to 0.0 — node is gated when value <= 0
+    #  defaults: gate_threshold=0.0, gate_mode='gt'
+    #  -> node PASSES iff rolled-up value > 0
 ]
 
 ws_quotas = cascader_ws.cascade_quota(
@@ -778,6 +779,8 @@ Sample gated IC rows (is_gated=True, cascaded_quota=0):
      5    IC IC_Mgr_Dir_RVP_APAC_1_1_1_3 Mgr_Dir_RVP_APAC_1_1_1     True             0.0      True</pre>
 
   <div class="highlight"><strong>How gates work mathematically.</strong> Before the weighted blend runs at each level, the cascader checks every child against every gate. Gated children get quota = 0 and are removed from the blend pool — the non-gated siblings absorb the full target_to_distribute via the existing share-of-siblings math. Because gate values aggregate from leaves upward, a non-leaf is automatically gated iff <em>all</em> its descendants fail the gate. No extra propagation logic needed. Multiple gates compose with AND. CRO overrides win over gates.</div>
+
+  <div class="callout"><strong>Configurable gate semantics (v0.9.0).</strong> The PASS predicate is now a knob: <code class="inline">gate_mode='gt'</code> (default — pass iff <code class="inline">value &gt; gate_threshold</code>, exactly the behavior above), <code class="inline">'ge'</code> ("at least N seats": <code class="inline">gate_threshold=5, gate_mode='ge'</code> lets a rep with exactly 5 pass), <code class="inline">'lt'</code>/<code class="inline">'le'</code> (gate reps with <em>too much</em> of a signal — e.g. <code class="inline">gate_threshold=100, gate_mode='le'</code> zeroes churn-heavy territories), and <code class="inline">'truthy'</code> (boolean entitlement flags, threshold ignored). Every mode inherits the <code class="inline">gate_fallback</code> no-stranding guarantees.</div>
 
   <div class="takeaway"><strong>The <code class="inline">is_gated</code> column matters for audit.</strong> It distinguishes "$0 because gated" (a deliberate exclusion the planner chose) from "$0 because the metric signals were weak" (algorithmic outcome). Stakeholders should see this distinction.</div>
 </section>

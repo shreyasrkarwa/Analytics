@@ -21,6 +21,10 @@ Unlike traditional bottom-up time-series libraries (which are strictly built for
 | **`CommitReconciler`** | Detect sandbagging and "happy ears" bias via historical Bias Quotients, then auto-correct forecasts |
 | **`PipelineAdjuster`** | Diagnose pipeline health with per-region thresholds and redistribute IC quotas using zero-sum logic |
 
+### What's New in v0.9.0 — gate semantics you can configure ([issue #9](https://github.com/shreyasrkarwa/Analytics/issues/9))
+
+Gates are no longer hardwired to "gated iff `value <= threshold`". `MetricSpec.gate_mode` picks the PASS predicate: `"gt"` (default — unchanged behavior), `"ge"` ("at least N seats": `MetricSpec('Seats', columns=['Seats'], gate_threshold=5, gate_mode='ge')`), `"lt"`/`"le"` (gate territories with *too much* of a signal, e.g. `gate_threshold=100, gate_mode='le'` to exclude churn-heavy reps), and `"truthy"` (boolean entitlement flags, threshold ignored). The exact predicate is documented on `MetricSpec`; all modes compose with AND across multiple gates and inherit the `gate_fallback` no-stranding guarantees.
+
 ### What's New in v0.8.0 — analysis-ready outputs ([issue #7](https://github.com/shreyasrkarwa/Analytics/issues/7))
 
 Exports now carry your source attributes — no more manual merges. Declare descriptive columns once (`from_dataframe(metadata_cols=['Rep_Name', 'Segment', 'Geo'])`; they're stored raw and never treated as signal), then emit them with `quotas_to_dataframe(metadata_cols=[...])`. Or skip storage entirely and left-join any frame onto the leaf rows: `quotas_to_dataframe(source_df=df, source_join_col='node_5_rep_no')` — the join is keyed on **original** ids via the new `hierarchy.id_map`, so it survives collision renames, and an `original_id` column appears automatically whenever a node was renamed. `cascade_many` accepts `metadata_cols=` too.

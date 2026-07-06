@@ -401,21 +401,47 @@ class QuotaCascader:
         """True iff the node has a truthy value under the given attribute."""
         return bool(self.graph.nodes[node_id].get(attr, False))
 
+    @staticmethod
+    def _passes_gate(value: float, gate: MetricSpec) -> bool:
+        """
+        The exact gate predicate (issue #9). A node PASSES iff:
+
+          gate_mode "gt":     value >  gate_threshold   (default)
+          gate_mode "ge":     value >= gate_threshold
+          gate_mode "lt":     value <  gate_threshold
+          gate_mode "le":     value <= gate_threshold
+          gate_mode "truthy": bool(value)               (threshold ignored)
+        """
+        threshold = getattr(gate, "gate_threshold", 0.0)
+        mode = getattr(gate, "gate_mode", "gt")
+        if mode == "gt":
+            return value > threshold
+        if mode == "ge":
+            return value >= threshold
+        if mode == "lt":
+            return value < threshold
+        if mode == "le":
+            return value <= threshold
+        if mode == "truthy":
+            return bool(value)
+        raise ValueError(f"Unknown gate_mode '{mode}'")  # pragma: no cover
+
     def _compute_gated_set(self, gate_metrics: List[MetricSpec]) -> set:
         """
         Return the set of node_ids that fail at least one gate.
 
         For each gate metric, every node's aggregated value (rolled up
         from leaves via _aggregate_node_metric, same as cascade signals)
-        is compared against the gate's gate_threshold. If value <=
-        threshold, the node fails this gate. Gates compose with AND —
-        any failing gate marks the node as gated.
+        is checked against the gate's predicate — see _passes_gate for
+        the exact semantics per gate_mode. A node that fails ANY gate is
+        gated (AND composition).
 
         Because _aggregate_node_metric sums child values for non-leaves,
-        a non-leaf is automatically gated iff ALL its descendants
-        contribute zero to the metric — which means white-space-style
-        gates ("no unmigrated seats anywhere in this subtree") propagate
-        upward naturally without extra logic.
+        "gt"/"ge"/"truthy" gates propagate upward naturally: a non-leaf
+        is gated iff its whole subtree lacks the signal. For "lt"/"le"
+        gates the rollup grows with subtree size, so parents can fail
+        while children pass — any resulting fully-gated level is handled
+        by cascade_quota's gate_fallback.
         """
         gated = set()
         if not gate_metrics:
@@ -424,8 +450,7 @@ class QuotaCascader:
         for node in self.graph.nodes:
             for gate in gate_metrics:
                 value = self._aggregate_node_metric(node, gate)
-                threshold = getattr(gate, "gate_threshold", 0.0)
-                if value <= threshold:
+                if not self._passes_gate(value, gate):
                     gated.add(node)
                     break  # AND logic: first failure is enough
         return gated

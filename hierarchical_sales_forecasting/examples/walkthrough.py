@@ -688,7 +688,12 @@ forward_metrics = [
     MetricSpec('LTM_ExpansionSpent',      direction='inverse',
                weight=0.5, columns=['LTM_ExpansionSpent']),  # dampener
 ]
-# Gate: territories with zero unmigrated seats must get $0
+# Gate: territories with zero unmigrated seats must get $0.
+# v0.9.0: the PASS predicate is configurable via gate_mode —
+#   default 'gt'  : pass iff value >  gate_threshold  (used here)
+#   'ge'          : pass iff value >= threshold ("at least N seats")
+#   'lt' / 'le'   : pass iff value BELOW threshold (gate churn-heavy reps)
+#   'truthy'      : pass iff bool(value) (boolean entitlement flags)
 gate_metrics = [
     MetricSpec('Unmigrated_Seats', columns=['Unmigrated_Seats']),
 ]

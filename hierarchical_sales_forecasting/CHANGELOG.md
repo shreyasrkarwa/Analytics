@@ -3,6 +3,36 @@
 All notable changes to `b2b_revenue_forecasting` are documented here.
 This project loosely follows [Semantic Versioning](https://semver.org/).
 
+## [0.9.0] — 2026-07
+
+Implements [issue #9](https://github.com/shreyasrkarwa/Analytics/issues/9):
+configurable gate threshold & semantics. Gating was hardcoded to
+"gated iff value <= gate_threshold"; boolean flags and
+"too-much-of-X" signals needed SQL-side contortions.
+
+### Added
+- **`MetricSpec.gate_mode`** — defines when a node PASSES its gate
+  (checked against the leaf-summed aggregate; failing ANY gate =
+  gated):
+  - `"gt"` *(default)* — pass iff `value > gate_threshold`
+    (byte-for-byte the pre-0.9.0 behavior).
+  - `"ge"` — pass iff `value >= gate_threshold` ("at least N seats",
+    boundary counts).
+  - `"lt"` / `"le"` — pass iff value is BELOW the threshold: gate
+    reps/subtrees with too much of a signal (churn tickets, backlog).
+  - `"truthy"` — pass iff `bool(value)`; threshold ignored (boolean
+    entitlement flags).
+  Invalid modes raise `ValueError` at construction. The exact
+  predicate is documented on `MetricSpec` and in
+  `QuotaCascader._passes_gate`.
+
+### Notes
+- For `"lt"`/`"le"` gates the leaf-summed rollup grows with subtree
+  size, so a parent can fail while its children pass; any resulting
+  fully-gated level is absorbed by the v0.5.0 `gate_fallback`
+  machinery — reconciliation invariants hold for every mode.
+- Defaults unchanged; existing cascades are unaffected.
+
 ## [0.8.0] — 2026-07
 
 Implements [issue #7](https://github.com/shreyasrkarwa/Analytics/issues/7):
