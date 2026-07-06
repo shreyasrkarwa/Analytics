@@ -200,8 +200,21 @@ class QuotaCascader:
 
         if self.hierarchy.out_degree(node_id) == 0:
             attrs = self.hierarchy.nodes[node_id]
+
+            candidate_cols = spec.resolved_columns()
+            # Issue #6 fallback: when no explicit columns were configured
+            # and NONE of the Qi_<name> convention columns exist on this
+            # leaf, read the attribute named exactly <name>. This makes
+            # specs returned by suggest_weights directly usable when the
+            # metric name IS the data column (the common single-column
+            # case) — no more `spec.columns = [spec.name]` boilerplate.
+            if (spec.columns is None
+                    and spec.name in attrs
+                    and not any(c in attrs for c in candidate_cols)):
+                candidate_cols = [spec.name]
+
             raw_values = []
-            for col in spec.resolved_columns():
+            for col in candidate_cols:
                 v = attrs.get(col)
                 if v is None:
                     continue  # genuinely absent — silent skip is correct
@@ -616,6 +629,25 @@ class QuotaCascader:
                 print(MetricSpec.format_normalized_weights(metrics))
         else:
             self.weights_report = None
+
+        # Issue #6: a metric that reads zero signal across the WHOLE tree
+        # is almost always a column-resolution mistake (wrong name, missing
+        # columns=). It silently degraded allocations pre-v0.7.1; now it
+        # warns loudly, naming the columns that were tried.
+        if use_metrics:
+            for m in metrics:
+                if m.weight > 0 and self._aggregate_node_metric(root_node, m) == 0.0:
+                    tried = m.resolved_columns()
+                    if m.columns is None:
+                        tried = tried + [m.name]
+                    warnings.warn(
+                        f"Metric '{m.name}' has ZERO signal across the entire "
+                        f"tree under '{root_node}' — it will not influence "
+                        f"this cascade. Columns tried: {tried}. If the data "
+                        f"lives elsewhere, set MetricSpec(columns=[...]).",
+                        UserWarning,
+                        stacklevel=2,
+                    )
 
         # Precompute the gated set (nodes whose any gate fails). Stored on
         # self so analysts can inspect it and so quotas_to_dataframe can

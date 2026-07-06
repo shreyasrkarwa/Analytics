@@ -3,6 +3,40 @@
 All notable changes to `b2b_revenue_forecasting` are documented here.
 This project loosely follows [Semantic Versioning](https://semver.org/).
 
+## [0.7.1] — 2026-07
+
+Fixes [issue #6](https://github.com/shreyasrkarwa/Analytics/issues/6):
+the `MetricSpec.name` / `columns` coupling. Specs returned by
+`suggest_weights` (which carry `columns=None`) resolved to the
+`Q1_<name>...Q4_<name>` convention; when the data actually lives in a
+single column named exactly `<name>`, the metric silently read nothing
+and contributed 0 — forcing the
+`for s in suggested: s.columns = [s.name]` workaround.
+
+### Fixed
+- **Plain-`<name>` runtime fallback.** When `columns` is unset and NONE
+  of the `Qi_<name>` convention columns exist on a leaf, the cascader
+  now reads the attribute named exactly `<name>`. Specs from
+  `suggest_weights` are directly usable; the workaround is obsolete.
+  Resolution order: explicit `columns=` always wins → `Qi_<name>`
+  convention → plain `<name>` fallback. Applies to cascade metrics,
+  gate metrics, and brand-new-IC detection alike.
+- **Tree-wide zero-signal warning.** `cascade_quota` now warns when an
+  active metric aggregates to zero across the entire tree, naming the
+  columns it tried — a mis-resolved column can no longer silently
+  degrade an allocation.
+
+### Docs
+- The `name`/`columns`/`resolved_columns()` contract is now documented
+  on the `MetricSpec` dataclass (including the note that
+  `suggest_weights`' `column=` field is correlation-only and is never
+  copied into `columns`).
+
+### Notes
+- No API changes. Cascades whose metrics already resolved correctly
+  are byte-for-byte unchanged; the fallback only activates where the
+  package previously read silent zeros.
+
 ## [0.7.0] — 2026-07
 
 Implements [issue #4](https://github.com/shreyasrkarwa/Analytics/issues/4):

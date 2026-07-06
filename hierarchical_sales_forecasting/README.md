@@ -21,6 +21,10 @@ Unlike traditional bottom-up time-series libraries (which are strictly built for
 | **`CommitReconciler`** | Detect sandbagging and "happy ears" bias via historical Bias Quotients, then auto-correct forecasts |
 | **`PipelineAdjuster`** | Diagnose pipeline health with per-region thresholds and redistribute IC quotas using zero-sum logic |
 
+### What's New in v0.7.1 — `MetricSpec` columns resolve intuitively ([issue #6](https://github.com/shreyasrkarwa/Analytics/issues/6))
+
+Specs returned by `suggest_weights` are now directly usable — no more `for s in suggested: s.columns = [s.name]`. Column resolution order: explicit `columns=` always wins → the `Q1_<name>…Q<lookback>_<name>` convention → **new**: the plain attribute named exactly `<name>` (so a spec called `knowledge_workers` finds your `knowledge_workers` column automatically). And if an active metric ends up with zero signal across the whole tree, `cascade_quota` warns and names the columns it tried — silent no-op metrics are gone. The full `name`/`columns` contract is documented on the `MetricSpec` dataclass.
+
 ### What's New in v0.7.0 — batch cascading with `cascade_many` ([issue #4](https://github.com/shreyasrkarwa/Analytics/issues/4))
 
 Real planning cascades many targets across many segments — every `(sales_type, product, regional)` combination, for every quarter. `cascade_many` replaces the hand-rolled loop with one call: it prepares each combination once (filter → validated hierarchy → weights) and cascades every matching target row against it, returning tidy long frames tagged with your group keys.

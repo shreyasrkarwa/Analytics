@@ -76,12 +76,12 @@
 <div class="container">
 
 <header>
-  <div class="eyebrow">b2b_revenue_forecasting · v0.7.0</div>
+  <div class="eyebrow">b2b_revenue_forecasting · v0.7.1</div>
   <h1>Multi-Metric Cascading &amp; Reconciliation — Walkthrough</h1>
   <p class="subtitle">End-to-end notebook: how an analyst takes one CSV of historical performance + pipeline data and produces a quota plan, a pipeline diagnosis, a redistributed plan, and a bias-corrected forecast — with full visibility into how each metric actually influences allocation.</p>
   <div class="meta">
     <span><strong>Package:</strong> b2b-revenue-forecasting</span>
-    <span><strong>Version:</strong> 0.7.0</span>
+    <span><strong>Version:</strong> 0.7.1</span>
     <span><strong>Dataset:</strong> 170 ICs · 217 hierarchy nodes</span>
     <span><strong>Macro target:</strong> $50,000,000</span>
   </div>
@@ -254,6 +254,8 @@ suggested, report = MetricSpec.suggest_weights(
 No direction-mismatch warnings fired — data agrees with all directions.</pre>
 
   <div class="takeaway"><strong>What you got.</strong> CloudSeats at +0.98 is the strongest secondary signal. Has_Active_Cert at +0.62 is a meaningful proportional pull. DCSeats (0.117) and ExpansionSpent (0.095) came back weak but in the expected directions, so they carry small data-driven weights. If a metric's data sign ever disagrees with the analyst's declared direction, the package warns loudly — but keeps the user's call.</div>
+
+  <div class="callout"><strong>Suggested specs are directly usable (v0.7.1).</strong> How a spec finds its data, in order: explicit <code class="inline">columns=[...]</code> always wins → the <code class="inline">Q1_&lt;name&gt;…Q&lt;lookback&gt;_&lt;name&gt;</code> convention (what this walkthrough's quarterly columns use) → <strong>new:</strong> the plain column named exactly <code class="inline">&lt;name&gt;</code>. So if your data has one flat column per metric (<code class="inline">knowledge_workers</code>, <code class="inline">dc_seats</code>), specs from <code class="inline">suggest_weights</code> just work — the old <code class="inline">for s in suggested: s.columns = [s.name]</code> boilerplate is obsolete. The <code class="inline">column=</code> field above is used only for the correlation math and is never copied into the spec. And if an active metric resolves to zero signal across the whole tree (e.g., a typo'd name), <code class="inline">cascade_quota</code> now warns and lists the columns it tried.</div>
 </section>
 
 <section class="step" id="step-5">

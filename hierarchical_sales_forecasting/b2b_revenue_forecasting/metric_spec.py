@@ -78,6 +78,24 @@ class MetricSpec:
         metric. If None, defaults to [f"Q{i}_{name}" for i in 1..lookback].
         Use this when your column naming doesn't follow the Qi_<name>
         convention (e.g., a single LTM column).
+
+        The name/columns contract (issue #6)
+        ------------------------------------
+        `name` is the metric's identity; `columns` is where its VALUES
+        live. `resolved_columns()` is what the cascader actually reads:
+          1. `columns` if you set it — always wins, end to end
+             (including on specs returned by suggest_weights).
+          2. Otherwise the Qi_<name> convention
+             (Q1_<name> ... Q<lookback>_<name>).
+          3. Since v0.7.1 the CASCADER adds a runtime fallback: if
+             `columns` is unset and none of the Qi_<name> attributes
+             exist on a leaf, it reads the attribute named exactly
+             `<name>`. So a spec named "knowledge_workers" finds a
+             plain `knowledge_workers` column with no extra code.
+        Note: the `column=` field accepted by suggest_weights is the
+        CORRELATION column (often an analysis-only helper like
+        "CloudSeats_4Q_sum") and is intentionally never copied into
+        `columns`.
     aggregation : str
         How to fold the lookback columns: "sum" (default), "mean", or "last".
     impute_zeros : bool
@@ -125,7 +143,15 @@ class MetricSpec:
             )
 
     def resolved_columns(self) -> List[str]:
-        """Return the actual column names this spec reads from."""
+        """
+        Return the column names this spec reads from: `columns` when set,
+        else the Qi_<name> convention (Q1_<name> ... Q<lookback>_<name>).
+
+        The cascader additionally falls back to the attribute named
+        exactly `<name>` when `columns` is unset and none of these
+        conventional columns exist on a leaf (issue #6) — see the class
+        docstring for the full name/columns contract.
+        """
         if self.columns is not None:
             return list(self.columns)
         return [f"Q{i}_{self.name}" for i in range(1, self.lookback + 1)]
