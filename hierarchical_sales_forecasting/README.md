@@ -21,6 +21,10 @@ Unlike traditional bottom-up time-series libraries (which are strictly built for
 | **`CommitReconciler`** | Detect sandbagging and "happy ears" bias via historical Bias Quotients, then auto-correct forecasts |
 | **`PipelineAdjuster`** | Diagnose pipeline health with per-region thresholds and redistribute IC quotas using zero-sum logic |
 
+### What's New in v0.10.2 — degenerate slices warn before equal-splitting ([issue #8](https://github.com/shreyasrkarwa/Analytics/issues/8))
+
+`suggest_weights` has long degraded gracefully on thin data (single row, zero variance, all-null columns → weight 0 + rationale, never an exception, batch runs shielded by `cascade_many`'s skip mode). Now it also *tells you*: when every candidate comes back with weight 0, one `UserWarning` explains that the slice carries no usable correlation signal and that cascading will fall back to an equal split among siblings — so the fallback is never a silent surprise. Missing `target_column` still raises (typos should be loud).
+
 ### What's New in v0.10.1 — weight-normalization semantics at point of use ([issue #11](https://github.com/shreyasrkarwa/Analytics/issues/11))
 
 Docs release. The "raw weight ≠ influence" nuance is now explained where you actually set weights — on `MetricSpec.weight`, in the `cascade_quota(metrics=)` docstring, and in a new "How Weights Become Influence" section below, all with the same worked example (`[1.0, 0.5, 0.0]` → `[66.7%, 33.3%, 0%]`; a raw `0.067` alongside `[1.0, 0.98, 0.4]` is **2.7%** of the influence, not 6.7%). The documented examples are pinned by a unit test so they can't drift from the implementation.

@@ -450,7 +450,31 @@ class MetricSpec:
             }
             suggestions.append(spec)
 
+        cls._warn_if_all_zero(suggestions, report, "suggest_weights")
         return suggestions, report
+
+    @staticmethod
+    def _warn_if_all_zero(suggestions, report, caller: str) -> None:
+        """
+        Courtesy heads-up (issue #8): when EVERY candidate degrades to
+        weight 0 (tiny/degenerate slice, no variation, sub-threshold
+        correlations), cascading with these specs falls back to an EQUAL
+        SPLIT among siblings. That fallback is correct — but it should
+        never be a silent surprise.
+        """
+        if suggestions and all(s.weight == 0 for s in suggestions):
+            reasons = "; ".join(
+                f"{name}: {info.get('rationale', '')}"
+                for name, info in list(report.items())[:4]
+            )
+            warnings.warn(
+                f"{caller}: ALL suggested weights are 0 — the data slice "
+                f"carries no usable correlation signal. Cascading with these "
+                f"specs will fall back to an EQUAL SPLIT among siblings. "
+                f"Details: {reasons}",
+                UserWarning,
+                stacklevel=3,
+            )
 
     # ------------------------------------------------------------------
     # Exploratory: infer BOTH direction and weight (sanity-check helper)
@@ -531,6 +555,8 @@ class MetricSpec:
             }
             suggestions.append(spec)
 
+        cls._warn_if_all_zero(suggestions, report,
+                              "suggest_directions_and_weights")
         return suggestions, report
 
 

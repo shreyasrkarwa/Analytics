@@ -3,6 +3,29 @@
 All notable changes to `b2b_revenue_forecasting` are documented here.
 This project loosely follows [Semantic Versioning](https://semver.org/).
 
+## [0.10.2] — 2026-07
+
+Closes [issue #8](https://github.com/shreyasrkarwa/Analytics/issues/8):
+`suggest_weights` on small / degenerate slices. Verification showed the
+feared crashes no longer exist — every degenerate input (single row,
+zero variance, all-null target/candidate, empty frame) already degrades
+to weight 0 with a written rationale, batch runs are shielded by
+`cascade_many(on_error='skip')`, and all-zero weights cascade as an
+equal split. What was missing was a heads-up.
+
+### Added
+- **All-zero weights warning.** `suggest_weights` and
+  `suggest_directions_and_weights` now emit one `UserWarning` when
+  EVERY candidate degrades to weight 0, stating that cascading with
+  these specs will fall back to an EQUAL SPLIT among siblings and
+  including the per-metric rationales. Partial degradation (some
+  candidates survive) stays silent, as does healthy data.
+
+### Notes
+- A missing `target_column` still raises `ValueError` — that's a
+  configuration typo, not degenerate data, and should be loud.
+- No behavior changes to weights or cascades.
+
 ## [0.10.1] — 2026-07
 
 Implements [issue #11](https://github.com/shreyasrkarwa/Analytics/issues/11):
