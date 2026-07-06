@@ -3,6 +3,30 @@
 All notable changes to `b2b_revenue_forecasting` are documented here.
 This project loosely follows [Semantic Versioning](https://semver.org/).
 
+## [0.10.0] — 2026-07
+
+Implements [issue #10](https://github.com/shreyasrkarwa/Analytics/issues/10):
+a consolidated gating report. The pieces existed since v0.5.0
+(`gated_nodes`, `gate_relaxed_nodes`, `unallocated`,
+`is_gated`/`gate_relaxed`/`is_unallocated` columns,
+`reconciliation_report`) but had to be assembled by hand.
+
+### Added
+- **`QuotaCascader.gating_report(tolerance=0.01)`** — one dict
+  summarizing the most recent cascade:
+  `target`, `gated_count`, `gated_node_ids`, `gated_leaf_ids`,
+  `gate_relaxed_node_ids`, `unallocated_amount`, `unallocated_nodes`,
+  `leaf_quota_sum` (hedged), `leaf_base_sum` (un-hedged),
+  `base_gap` (= target − leaf_base_sum − unallocated_amount), and
+  `reconciles` — True iff every input dollar is either on an IC (base
+  layer) or explicitly reported as unallocated. Raises `RuntimeError`
+  if called before any cascade.
+- `cascade_quota` now remembers its inputs/outputs
+  (`cascader.last_target`, `cascader.last_quotas`) to power the report.
+
+### Notes
+- Purely additive; no behavior changes.
+
 ## [0.9.0] — 2026-07
 
 Implements [issue #9](https://github.com/shreyasrkarwa/Analytics/issues/9):

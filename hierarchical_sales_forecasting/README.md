@@ -21,6 +21,10 @@ Unlike traditional bottom-up time-series libraries (which are strictly built for
 | **`CommitReconciler`** | Detect sandbagging and "happy ears" bias via historical Bias Quotients, then auto-correct forecasts |
 | **`PipelineAdjuster`** | Diagnose pipeline health with per-region thresholds and redistribute IC quotas using zero-sum logic |
 
+### What's New in v0.10.0 — one-call gating report ([issue #10](https://github.com/shreyasrkarwa/Analytics/issues/10))
+
+`cascader.gating_report()` consolidates the whole gating story of the last cascade into one dict: which nodes were gated (`gated_node_ids`, with `gated_leaf_ids` split out), which were funded anyway as a last resort (`gate_relaxed_node_ids`), how much target is explicitly unallocated (`unallocated_amount` / `unallocated_nodes`), and the per-cascade reconciliation numbers — `leaf_quota_sum` (hedged), `leaf_base_sum` (un-hedged), `base_gap`, and a single `reconciles` boolean asserting every input dollar is either on an IC or reported as unallocated. No more manual diagnostics comparing root target to leaf sums.
+
 ### What's New in v0.9.0 — gate semantics you can configure ([issue #9](https://github.com/shreyasrkarwa/Analytics/issues/9))
 
 Gates are no longer hardwired to "gated iff `value <= threshold`". `MetricSpec.gate_mode` picks the PASS predicate: `"gt"` (default — unchanged behavior), `"ge"` ("at least N seats": `MetricSpec('Seats', columns=['Seats'], gate_threshold=5, gate_mode='ge')`), `"lt"`/`"le"` (gate territories with *too much* of a signal, e.g. `gate_threshold=100, gate_mode='le'` to exclude churn-heavy reps), and `"truthy"` (boolean entitlement flags, threshold ignored). The exact predicate is documented on `MetricSpec`; all modes compose with AND across multiple gates and inherit the `gate_fallback` no-stranding guarantees.

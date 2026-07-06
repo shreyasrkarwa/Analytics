@@ -795,6 +795,17 @@ print(f"    cascader.unallocated_nodes = {cascader_ws.unallocated_nodes}")
 print(f"    (quotas_to_dataframe adds an is_unallocated column)")
 print(f"    gate_fallback='error' would raise GateAllocationError instead.")
 
+# NEW in v0.10.0 (issue #10): the whole gating story in ONE call.
+grep_ = cascader_ws.gating_report()
+print(f"\n    gating_report() for the strand run:")
+print(f"      gated_count:        {grep_['gated_count']}")
+print(f"      gated_leaf_ids:     {grep_['gated_leaf_ids']}")
+print(f"      unallocated_amount: ${grep_['unallocated_amount']:,.2f}")
+print(f"      leaf_base_sum:      ${grep_['leaf_base_sum']:,.2f}")
+print(f"      base_gap:           ${grep_['base_gap']:,.2f}")
+print(f"      reconciles:         {grep_['reconciles']} "
+      f"(every dollar on an IC or explicitly unallocated)")
+
 # Restore the Part-B full cascade state for the steps below (the slice
 # cascades above overwrote cascader_ws diagnostics/base_quotas).
 ws_quotas = cascader_ws.cascade_quota(

@@ -76,12 +76,12 @@
 <div class="container">
 
 <header>
-  <div class="eyebrow">b2b_revenue_forecasting · v0.9.0</div>
+  <div class="eyebrow">b2b_revenue_forecasting · v0.10.0</div>
   <h1>Multi-Metric Cascading &amp; Reconciliation — Walkthrough</h1>
   <p class="subtitle">End-to-end notebook: how an analyst takes one CSV of historical performance + pipeline data and produces a quota plan, a pipeline diagnosis, a redistributed plan, and a bias-corrected forecast — with full visibility into how each metric actually influences allocation.</p>
   <div class="meta">
     <span><strong>Package:</strong> b2b-revenue-forecasting</span>
-    <span><strong>Version:</strong> 0.9.0</span>
+    <span><strong>Version:</strong> 0.10.0</span>
     <span><strong>Dataset:</strong> 170 ICs · 217 hierarchy nodes</span>
     <span><strong>Macro target:</strong> $50,000,000</span>
   </div>
@@ -838,11 +838,19 @@ strand_quotas = cascader_ws.cascade_quota(
     Root holds $1,000,000.00; ICs get $0
     cascader.unallocated       = $1,000,000.00
     cascader.unallocated_nodes = {'Mgr_Dir_RVP_APAC_1_1_1': 1000000.0}
-    (quotas_to_dataframe adds an is_unallocated column)</pre>
+    (quotas_to_dataframe adds an is_unallocated column)
+
+    gating_report() for the strand run:              # v0.10.0, issue #10
+      gated_count:        18
+      gated_leaf_ids:     ['IC_Mgr_Dir_RVP_APAC_1_1_1_1', ... 17 total]
+      unallocated_amount: $1,000,000.00
+      leaf_base_sum:      $0.00
+      base_gap:           $0.00
+      reconciles:         True (every dollar on an IC or explicitly unallocated)</pre>
 
   <div class="highlight"><strong>Sibling redistribution is unchanged — and preferred.</strong> In the full Part-B cascade, <code class="inline">Mgr_Dir_RVP_APAC_1_1_1</code> still gets $0 because its <em>siblings</em> can absorb its share (same sub-region split preserved). The last-resort gate relaxation above only fires when there are no non-gated siblings anywhere below the funded node — exactly the case that used to lose the money.</div>
 
-  <div class="takeaway"><strong>Audit trail for every path.</strong> Redistributed-anyway nodes are flagged in <code class="inline">cascader.gate_relaxed_nodes</code> and a <code class="inline">gate_relaxed</code> CSV column; stranded dollars appear in <code class="inline">cascader.unallocated_nodes</code> and an <code class="inline">is_unallocated</code> column. Nothing is silent — the $52,869.30 class of discrepancy can't happen again.</div>
+  <div class="takeaway"><strong>Audit trail for every path.</strong> Redistributed-anyway nodes are flagged in <code class="inline">cascader.gate_relaxed_nodes</code> and a <code class="inline">gate_relaxed</code> CSV column; stranded dollars appear in <code class="inline">cascader.unallocated_nodes</code> and an <code class="inline">is_unallocated</code> column. Nothing is silent — the $52,869.30 class of discrepancy can't happen again. And since v0.10.0 the whole story comes from one call: <code class="inline">cascader.gating_report()</code> returns gated ids/counts (leaves split out), relaxed nodes, unallocated dollars, hedged and base leaf sums, and a single <code class="inline">reconciles</code> boolean asserting every input dollar is either on an IC or explicitly reported as unallocated.</div>
 </section>
 
 <section class="step" id="step-18">

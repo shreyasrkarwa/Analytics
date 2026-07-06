@@ -69,6 +69,10 @@ class QuotaCascader:
         self.unallocated = 0.0
         self.unallocated_nodes = {}
         self.gate_relaxed_nodes = set()
+        # Inputs/outputs of the most recent cascade_quota call, kept so
+        # gating_report() (issue #10) can reconcile without re-running.
+        self.last_target = None
+        self.last_quotas = None
         # Columns already flagged for non-numeric values — so the issue-#3
         # warning fires once per column, not once per node.
         self._non_numeric_warned = set()
@@ -871,6 +875,10 @@ class QuotaCascader:
         else:
             self.base_quotas = run_cascade(1.0, track_diagnostics=False)
 
+        # Remembered for gating_report() (issue #10)
+        self.last_target = float(macro_target)
+        self.last_quotas = dict(quotas)
+
         if verbose and self.gate_relaxed_nodes:
             print(f"Gate fallback: {len(self.gate_relaxed_nodes)} gated node(s) "
                   f"received quota anyway because every sibling was also gated "
@@ -1091,6 +1099,62 @@ class QuotaCascader:
             df = df.drop(columns=[join_key])
 
         return df.sort_values(["depth", "node_id"]).reset_index(drop=True)
+
+    def gating_report(self, tolerance: float = 0.01) -> Dict[str, Any]:
+        """
+        One consolidated view of the most recent cascade's gating outcome
+        (issue #10) — instead of assembling it from gated_nodes /
+        gate_relaxed_nodes / unallocated / reconciliation_report by hand.
+
+        Returns
+        -------
+        dict with:
+          target                 — the macro target passed to cascade_quota
+          gated_count            — number of gated nodes (all levels)
+          gated_node_ids         — sorted list of ALL gated node ids
+          gated_leaf_ids         — the gated ICs only
+          gate_relaxed_node_ids  — nodes funded despite being gated
+                                   (gate_fallback='redistribute' last resort)
+          unallocated_amount     — dollars stranded above gated levels
+                                   (nonzero only with
+                                   gate_fallback='strand_at_root')
+          unallocated_nodes      — {node_id: stranded amount}
+          leaf_quota_sum         — sum of IC quotas (hedged layer)
+          leaf_base_sum          — sum of IC quotas (un-hedged base layer)
+          base_gap               — target − leaf_base_sum − unallocated_amount
+          reconciles             — True iff |base_gap| <= tolerance, i.e.
+                                   every input dollar is either on an IC
+                                   (base layer) or explicitly reported as
+                                   unallocated. The issue-#12 invariant.
+
+        Raises RuntimeError if no cascade has been run yet.
+        """
+        if self.last_quotas is None:
+            raise RuntimeError(
+                "gating_report() requires a prior cascade_quota call."
+            )
+        leaves = [n for n in self.last_quotas
+                  if self.graph.out_degree(n) == 0]
+        leaf_quota_sum = float(sum(self.last_quotas[n] for n in leaves))
+        base = self.base_quotas or {}
+        leaf_base_sum = float(sum(base.get(n, 0.0) for n in leaves))
+        base_gap = self.last_target - leaf_base_sum - self.unallocated
+        return {
+            "target": self.last_target,
+            "gated_count": len(self.gated_nodes),
+            "gated_node_ids": sorted(self.gated_nodes),
+            "gated_leaf_ids": sorted(
+                n for n in self.gated_nodes
+                if self.graph.has_node(n) and self.graph.out_degree(n) == 0
+            ),
+            "gate_relaxed_node_ids": sorted(self.gate_relaxed_nodes),
+            "unallocated_amount": float(self.unallocated),
+            "unallocated_nodes": dict(self.unallocated_nodes),
+            "leaf_quota_sum": leaf_quota_sum,
+            "leaf_base_sum": leaf_base_sum,
+            "base_gap": float(base_gap),
+            "reconciles": abs(base_gap) <= tolerance,
+        }
 
     def reconciliation_report(
         self,
