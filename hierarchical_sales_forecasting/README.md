@@ -21,6 +21,10 @@ Unlike traditional bottom-up time-series libraries (which are strictly built for
 | **`CommitReconciler`** | Detect sandbagging and "happy ears" bias via historical Bias Quotients, then auto-correct forecasts |
 | **`PipelineAdjuster`** | Diagnose pipeline health with per-region thresholds and redistribute IC quotas using zero-sum logic |
 
+### What's New in v0.8.0 — analysis-ready outputs ([issue #7](https://github.com/shreyasrkarwa/Analytics/issues/7))
+
+Exports now carry your source attributes — no more manual merges. Declare descriptive columns once (`from_dataframe(metadata_cols=['Rep_Name', 'Segment', 'Geo'])`; they're stored raw and never treated as signal), then emit them with `quotas_to_dataframe(metadata_cols=[...])`. Or skip storage entirely and left-join any frame onto the leaf rows: `quotas_to_dataframe(source_df=df, source_join_col='node_5_rep_no')` — the join is keyed on **original** ids via the new `hierarchy.id_map`, so it survives collision renames, and an `original_id` column appears automatically whenever a node was renamed. `cascade_many` accepts `metadata_cols=` too.
+
 ### What's New in v0.7.2 — one graph accessor, plus hierarchy helpers ([issue #5](https://github.com/shreyasrkarwa/Analytics/issues/5))
 
 `.graph` is now the canonical name for the underlying `nx.DiGraph` on every class (`SalesHierarchy`, `QuotaCascader`, `PipelineAdjuster`), with `.hierarchy` kept as a working alias on both `SalesHierarchy` and `QuotaCascader` — no more `AttributeError` whichever one you reach for. New read-only helpers mean you rarely need the raw graph at all: `hierarchy.roots()`, `hierarchy.leaves(root=None)`, `hierarchy.managers(root=None)`, and `hierarchy.node_depths()` (handy for building per-level hedge dicts).

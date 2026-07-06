@@ -122,6 +122,10 @@ class SalesHierarchy:
     """
     def __init__(self):
         self.graph = nx.DiGraph()
+        # sanitized_id -> original value, populated when the on_collision
+        # policy renames a duplicate-level node (issue #7). Lets outputs
+        # carry an `original_id` column so analysis joins don't break.
+        self.id_map: Dict[str, str] = {}
         
     def add_node(self, node_id: str, attributes: Dict[str, Any] = None):
         """Adds an entity (e.g., IC, Manager, or Region) to the reporting DAG."""
@@ -140,7 +144,8 @@ class SalesHierarchy:
     def from_dataframe(self, df: pd.DataFrame, path_cols: List[str],
                        metrics_cols: List[str] = None,
                        brand_new_col: str = None,
-                       on_collision: str = "suffix"):
+                       on_collision: str = "suffix",
+                       metadata_cols: List[str] = None):
         """
         Builds the hierarchy flexibly from a flattened organizational DataFrame.
         `path_cols` should outline the hierarchy from root to IC, e.g.,
@@ -166,6 +171,12 @@ class SalesHierarchy:
             keep all configuration in the same CSV instead of passing a
             separate Python list. Cells parsed as truthy
             (True / 1 / "true" / "yes") flag the IC as brand-new.
+        metadata_cols : List[str], optional
+            Descriptive (non-metric) columns — segment, geo, rep name,
+            employee id, etc. — attached to the deepest node of each row
+            AS-IS (no numeric coercion, never aggregated, never read by
+            MetricSpecs). Retrieve them in outputs via
+            quotas_to_dataframe(metadata_cols=[...]) (issue #7).
         on_collision : str
             What to do when a row repeats the same value at two levels
             (e.g., team 'T1' AND rep 'T1'). Pre-v0.6.0 this silently
@@ -247,6 +258,7 @@ class SalesHierarchy:
                     while new_id in seen_ids:  # pathological repeats
                         new_id += "_"
                     collision_examples.append((idx, node_id, col))
+                    self.id_map[new_id] = node_id  # sanitized -> original
                     node_id = new_id
                 seen_ids.add(node_id)
                 resolved.append((node_id, col))
@@ -268,6 +280,11 @@ class SalesHierarchy:
                                 non_numeric_examples.append((idx, c, raw))
                                 continue
                             attributes[c] = coerced
+                    if metadata_cols:
+                        for c in metadata_cols:
+                            if c in row.index and pd.notna(row[c]):
+                                # Stored raw — descriptive data, not signal
+                                attributes[c] = row[c]
                     if (brand_new_col and brand_new_col in row.index
                             and pd.notna(row[brand_new_col])):
                         attributes['_is_brand_new'] = _coerce_brand_new_flag(

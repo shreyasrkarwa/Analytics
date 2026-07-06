@@ -36,6 +36,7 @@ def cascade_many(
     weights_mode: str = "global",
     level_names: Optional[List[str]] = None,
     brand_new_col: Optional[str] = None,
+    metadata_cols: Optional[List[str]] = None,
     on_error: str = "skip",
     on_collision: str = "suffix",
     verbose: bool = False,
@@ -102,6 +103,10 @@ def cascade_many(
     brand_new_col : str, optional
         Passed to from_dataframe for each slice; combine with
         new_ic_attr='_is_brand_new' in **cascade_kwargs.
+    metadata_cols : list[str], optional
+        Descriptive columns (rep name, segment, geo, ...) carried
+        through to the leaf rows of quotas_long_df (issue #7). They are
+        excluded from metric aggregation.
     on_error : str
         "skip" (default) — a failing combination emits a warning and is
         excluded from the outputs; a summary warning lists all failures
@@ -208,11 +213,13 @@ def cascade_many(
             h = SalesHierarchy()
             metric_cols = [c for c in hierarchy_df.columns
                            if c not in taxonomy and c not in group_keys
-                           and c != target_col]
+                           and c != target_col
+                           and c not in (metadata_cols or [])]
             h.from_dataframe(df_slice, path_cols=taxonomy,
                              metrics_cols=metric_cols,
                              brand_new_col=brand_new_col,
-                             on_collision=on_collision)
+                             on_collision=on_collision,
+                             metadata_cols=metadata_cols)
             cascader = QuotaCascader(h)
 
             # 4. Resolve weights for this combination
@@ -242,6 +249,7 @@ def cascade_many(
                 qdf = cascader.quotas_to_dataframe(
                     quotas, level_names=level_names,
                     unhedged_quotas="auto",
+                    metadata_cols=metadata_cols,
                 )
                 qdf = qdf.rename(columns={"unhedged_quota": "base_quota"})
                 # Tag with group keys + sub-target identifiers + the target

@@ -76,12 +76,12 @@
 <div class="container">
 
 <header>
-  <div class="eyebrow">b2b_revenue_forecasting · v0.7.2</div>
+  <div class="eyebrow">b2b_revenue_forecasting · v0.8.0</div>
   <h1>Multi-Metric Cascading &amp; Reconciliation — Walkthrough</h1>
   <p class="subtitle">End-to-end notebook: how an analyst takes one CSV of historical performance + pipeline data and produces a quota plan, a pipeline diagnosis, a redistributed plan, and a bias-corrected forecast — with full visibility into how each metric actually influences allocation.</p>
   <div class="meta">
     <span><strong>Package:</strong> b2b-revenue-forecasting</span>
-    <span><strong>Version:</strong> 0.7.2</span>
+    <span><strong>Version:</strong> 0.8.0</span>
     <span><strong>Dataset:</strong> 170 ICs · 217 hierarchy nodes</span>
     <span><strong>Macro target:</strong> $50,000,000</span>
   </div>
@@ -618,6 +618,20 @@ Mgr_Dir_RVP_EMEA_1_1_1        300000.0            0.7   happy_ears              
     <br>· <strong>output_redistributed_quotas.csv</strong> — 170 rows: IC-level before/after with delta + delta_pct columns showing exactly who moved how much
     <br>· <strong>output_commit_reconciliation.csv</strong> — 1 row per manager: bias quotient, label (sandbagger / happy_ears / truth_teller), adjusted commit, blended with ML forecast
   </div>
+
+  <div class="callout"><strong>Analysis-ready exports (v0.8.0).</strong> Exports can carry your source attributes without a manual merge. Either declare descriptive columns up front — <code class="inline">from_dataframe(metadata_cols=['Rep_Name', 'Segment'])</code> (stored raw, never treated as signal) then <code class="inline">quotas_to_dataframe(metadata_cols=[...])</code> — or left-join any frame onto the leaf rows:
+
+<pre class="code" style="margin-top:8px;"><code>rep_directory = pd.DataFrame({'IC': leaves, 'Rep_Name': [...]})
+cascaded_with_meta = cascader.quotas_to_dataframe(
+    quotas, level_names=taxonomy,
+    source_df=rep_directory, source_join_col='IC',
+)</code></pre>
+<pre class="output" style="margin-top:8px;">v0.8.0 metadata join — IC rows now carry Rep_Name:
+                    node_id Rep_Name  cascaded_quota
+IC_Mgr_Dir_RVP_APAC_1_1_1_1  Rep 048       310848.19
+IC_Mgr_Dir_RVP_APAC_1_1_1_2  Rep 169       362111.39
+IC_Mgr_Dir_RVP_APAC_1_1_1_3  Rep 039       280916.75</pre>
+The join is keyed on <strong>original</strong> ids via <code class="inline">hierarchy.id_map</code>, so it survives <code class="inline">on_collision</code> renames — and an <code class="inline">original_id</code> column appears automatically whenever any node was renamed. <code class="inline">cascade_many</code> accepts <code class="inline">metadata_cols=</code> too.</div>
 
   <div class="takeaway"><strong>Helpers used.</strong> <code class="inline">cascader.quotas_to_dataframe(quotas, level_names=taxonomy)</code> for the hierarchy-aware quota table, <code class="inline">cascader.quotas_diff_to_dataframe(original, adjusted, level_names=taxonomy)</code> for the redistribution comparison, <code class="inline">reconciler.reconcile_all(commits_df, ...)</code> for batch reconciliation. <code class="inline">cascader.weights_report</code> and <code class="inline">PipelineAdjuster.diagnose(...)</code> already return DataFrames, so just call <code class="inline">.to_csv()</code> directly.</div>
 </section>

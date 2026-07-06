@@ -3,6 +3,35 @@
 All notable changes to `b2b_revenue_forecasting` are documented here.
 This project loosely follows [Semantic Versioning](https://semver.org/).
 
+## [0.8.0] — 2026-07
+
+Implements [issue #7](https://github.com/shreyasrkarwa/Analytics/issues/7):
+`quotas_to_dataframe` can now carry source hierarchy attributes and a
+sanitized→original id mapping, so exports are analysis-ready without a
+manual merge (or un-sanitizing step).
+
+### Added
+- **`metadata_cols` on `from_dataframe`** — descriptive columns (rep
+  name, segment, geo, employee id, ...) attached to leaf nodes AS-IS:
+  never coerced, never aggregated, never read as metric signal.
+- **`metadata_cols` on `quotas_to_dataframe`** — emits stored node
+  attributes as output columns (NaN on nodes without them).
+- **`source_df` + `source_join_col` on `quotas_to_dataframe`** —
+  LEFT-JOINs the original source frame onto leaf rows. The join is
+  keyed on ORIGINAL ids, so it works even for nodes renamed by the
+  v0.6.0 collision policy. Overlapping columns get a `_source` suffix.
+- **`SalesHierarchy.id_map`** — `{sanitized_id: original_value}`
+  recorded whenever `on_collision='suffix'` renames a node; an
+  **`original_id` column** appears automatically in
+  `quotas_to_dataframe` output whenever any rename occurred.
+- **`cascade_many(metadata_cols=...)`** — passthrough: metadata rides
+  along on every combination's leaf rows and is excluded from metric
+  aggregation.
+
+### Notes
+- No behavior changes for existing calls; all new parameters are
+  optional and off by default.
+
 ## [0.7.2] — 2026-07
 
 Fixes [issue #5](https://github.com/shreyasrkarwa/Analytics/issues/5):

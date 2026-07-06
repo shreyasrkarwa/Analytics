@@ -502,6 +502,24 @@ print(f"      rows: {len(cascaded_df)} (every node at every level)")
 print(f"      columns: {list(cascaded_df.columns)}")
 print(cascaded_df.head(8).to_string(index=False))
 
+# NEW in v0.8.0 (issue #7): carry source attributes into the export —
+# no manual merge. Join ANY frame onto the leaf rows (keyed on original
+# ids, so it survives on_collision renames):
+rep_directory = pd.DataFrame({
+    'IC': leaves,
+    'Rep_Name': [f"Rep {i + 1:03d}" for i in range(len(leaves))],
+})
+cascaded_with_meta = cascader.quotas_to_dataframe(
+    quotas, level_names=taxonomy,
+    source_df=rep_directory, source_join_col='IC',
+)
+ic_rows = cascaded_with_meta[cascaded_with_meta.is_leaf]
+print(f"\n      v0.8.0 metadata join — IC rows now carry Rep_Name:")
+print(ic_rows[['node_id', 'Rep_Name', 'cascaded_quota']]
+      .head(3).to_string(index=False))
+# (from_dataframe(metadata_cols=[...]) + quotas_to_dataframe(
+#  metadata_cols=[...]) does the same for columns in the analyst CSV)
+
 # 2) Normalized weights — what stakeholders see
 weights_path = os.path.join(OUT_DIR, 'output_normalized_weights.csv')
 cascader.weights_report.to_csv(weights_path, index=False)

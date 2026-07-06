@@ -41,6 +41,9 @@ class QuotaCascader:
         # across the whole package (SalesHierarchy.graph,
         # PipelineAdjuster.graph, QuotaCascader.graph) — issue #5.
         self.graph = hierarchy.graph
+        # sanitized -> original node ids from the collision policy
+        # (issue #7); used by quotas_to_dataframe's original_id column.
+        self._id_map = dict(getattr(hierarchy, "id_map", {}) or {})
         # Populated after each multi-metric cascade_quota call so analysts
         # can inspect the normalized-weight contributions later (e.g., to
         # paste into a stakeholder report).
@@ -876,6 +879,9 @@ class QuotaCascader:
         quotas: Dict[str, float],
         level_names: Optional[List[str]] = None,
         unhedged_quotas: Optional[Union[Dict[str, float], str]] = None,
+        metadata_cols: Optional[List[str]] = None,
+        source_df: Optional[pd.DataFrame] = None,
+        source_join_col: Optional[str] = None,
     ) -> pd.DataFrame:
         """
         Convert a cascade_quota result dict into a tidy DataFrame ready to
@@ -933,7 +939,35 @@ class QuotaCascader:
                            could not be distributed below them
                            (gate_fallback="strand_at_root"). Only added
                            if any amount was stranded.
+
+        Metadata carry-through (issue #7, v0.8.0)
+        -----------------------------------------
+        metadata_cols : Optional[List[str]]
+            Node-attribute names to emit as columns (populate them via
+            from_dataframe(metadata_cols=[...]) — or any metric column
+            works too). Nodes without the attribute get NaN.
+        source_df : Optional[pd.DataFrame]
+            Original source frame to LEFT-JOIN onto leaf rows, so the
+            CSV is analysis-ready without a manual merge. Requires
+            source_join_col. The join uses ORIGINAL ids (see below), so
+            it works even when the collision policy renamed nodes.
+            Overlapping column names get a '_source' suffix.
+        source_join_col : Optional[str]
+            Column in source_df holding the leaf id — typically your
+            deepest taxonomy column (e.g. 'node_5_rep_no').
+
+        original_id column
+            Added automatically whenever the hierarchy's collision
+            policy renamed any node (SalesHierarchy.id_map non-empty):
+            the pre-sanitization value for renamed nodes, and the
+            node_id itself for everything else.
         """
+        if source_df is not None and not source_join_col:
+            raise ValueError(
+                "source_df requires source_join_col (the column in "
+                "source_df holding the leaf id, e.g. your deepest "
+                "taxonomy column)."
+            )
         if isinstance(unhedged_quotas, str):
             if unhedged_quotas != "auto":
                 raise ValueError(
@@ -962,6 +996,16 @@ class QuotaCascader:
             if level_names and 0 <= depth < len(level_names):
                 row["level"] = level_names[depth]
 
+            # original_id: pre-sanitization value for renamed nodes
+            if self._id_map:
+                row["original_id"] = self._id_map.get(node, node)
+
+            # Metadata carry-through from node attributes (issue #7)
+            if metadata_cols:
+                attrs = self.graph.nodes[node]
+                for mc in metadata_cols:
+                    row[mc] = attrs.get(mc)
+
             if unhedged_quotas is not None:
                 unhedged = float(unhedged_quotas.get(node, 0.0))
                 buffer = float(quota) - unhedged
@@ -987,13 +1031,40 @@ class QuotaCascader:
         col_order = ["depth"]
         if "level" in df.columns:
             col_order.append("level")
-        col_order += ["node_id", "parent", "is_leaf", "cascaded_quota"]
+        col_order.append("node_id")
+        if "original_id" in df.columns:
+            col_order.append("original_id")
+        col_order += ["parent", "is_leaf", "cascaded_quota"]
         if unhedged_quotas is not None:
             col_order += ["unhedged_quota", "hedge_buffer", "overassignment_pct"]
         for optional_col in ("is_gated", "gate_relaxed", "is_unallocated"):
             if optional_col in df.columns:
                 col_order.append(optional_col)
+        if metadata_cols:
+            col_order += [c for c in metadata_cols if c in df.columns]
         df = df[col_order]
+
+        # Optional left-join of the ORIGINAL source frame onto leaf rows,
+        # keyed on original ids so it survives collision renames (issue #7).
+        if source_df is not None:
+            if source_join_col not in source_df.columns:
+                raise ValueError(
+                    f"source_join_col '{source_join_col}' not found in "
+                    f"source_df columns: {list(source_df.columns)}"
+                )
+            join_key = "__join_id__"
+            df[join_key] = df.apply(
+                lambda r: (self._id_map.get(r["node_id"], r["node_id"])
+                           if r["is_leaf"] else None),
+                axis=1,
+            )
+            right = source_df.drop_duplicates(subset=[source_join_col]).copy()
+            right[join_key] = right[source_join_col].astype(str)
+            right = right.drop(columns=[source_join_col])
+            df = df.merge(right, on=join_key, how="left",
+                          suffixes=("", "_source"))
+            df = df.drop(columns=[join_key])
+
         return df.sort_values(["depth", "node_id"]).reset_index(drop=True)
 
     def reconciliation_report(
