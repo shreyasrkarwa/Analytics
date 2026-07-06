@@ -21,6 +21,25 @@ Unlike traditional bottom-up time-series libraries (which are strictly built for
 | **`CommitReconciler`** | Detect sandbagging and "happy ears" bias via historical Bias Quotients, then auto-correct forecasts |
 | **`PipelineAdjuster`** | Diagnose pipeline health with per-region thresholds and redistribute IC quotas using zero-sum logic |
 
+### What's New in v0.11.0 — per-depth hedging with `HedgeByDepth` ([issue #13](https://github.com/shreyasrkarwa/Analytics/issues/13))
+
+Hedge policies are usually stated by *level*, not by node: "front-line managers carry 10%, their directors 5%." `HedgeByDepth` expresses exactly that and works everywhere `hedge_multiplier` does — including `cascade_many`, where per-node dicts were structurally impossible:
+
+```python
+from b2b_revenue_forecasting import cascade_many, HedgeByDepth
+
+quotas_long, _ = cascade_many(
+    hierarchy_df, target_df, group_keys=[...], target_col=..., taxonomy=[...],
+    metrics=[...],
+    hedge_multiplier=HedgeByDepth(
+        from_leaves={1: 1.10, 2: 1.05},   # deepest mgr 10%, next level 5%
+        default=1.0,
+    ),
+)
+```
+
+`from_leaves` counts distance to the farthest descendant IC (correct in jagged hierarchies); `from_root` uses `node_depths()`-style depth; both can combine (multiplying). The spec resolves against each hierarchy at cascade time, so `base_quota` reconciliation and all audit columns behave exactly as with a hand-built dict.
+
 ### What's New in v0.10.2 — degenerate slices warn before equal-splitting ([issue #8](https://github.com/shreyasrkarwa/Analytics/issues/8))
 
 `suggest_weights` has long degraded gracefully on thin data (single row, zero variance, all-null columns → weight 0 + rationale, never an exception, batch runs shielded by `cascade_many`'s skip mode). Now it also *tells you*: when every candidate comes back with weight 0, one `UserWarning` explains that the slice carries no usable correlation signal and that cascading will fall back to an equal split among siblings — so the fallback is never a silent surprise. Missing `target_column` still raises (typos should be loud).

@@ -84,9 +84,14 @@ def cascade_many(
         Gate metrics, passed straight to cascade_quota. All
         gate_fallback semantics (v0.5.0) apply; override the fallback
         via **cascade_kwargs (e.g. gate_fallback="strand_at_root").
-    hedge_multiplier : float | dict
-        Passed to cascade_quota. The un-hedged base layer is always
-        included in the output (base_quota column).
+    hedge_multiplier : float | dict | HedgeByDepth
+        Passed to cascade_quota. A HedgeByDepth spec (issue #13) is
+        resolved against EACH combination's freshly built hierarchy —
+        the only way to express a per-level hedge here, since node ids
+        are never visible to the caller. E.g.
+        HedgeByDepth(from_leaves={1: 1.10, 2: 1.05}). The un-hedged
+        base layer is always included in the output (base_quota
+        column).
     suggest_config : dict, optional
         Enables data-driven weights via MetricSpec.suggest_weights.
         Shape: {"target_column": str, "candidate_metrics": [...],

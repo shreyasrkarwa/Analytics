@@ -76,12 +76,12 @@
 <div class="container">
 
 <header>
-  <div class="eyebrow">b2b_revenue_forecasting · v0.10.2</div>
+  <div class="eyebrow">b2b_revenue_forecasting · v0.11.0</div>
   <h1>Multi-Metric Cascading &amp; Reconciliation — Walkthrough</h1>
   <p class="subtitle">End-to-end notebook: how an analyst takes one CSV of historical performance + pipeline data and produces a quota plan, a pipeline diagnosis, a redistributed plan, and a bias-corrected forecast — with full visibility into how each metric actually influences allocation.</p>
   <div class="meta">
     <span><strong>Package:</strong> b2b-revenue-forecasting</span>
-    <span><strong>Version:</strong> 0.10.2</span>
+    <span><strong>Version:</strong> 0.11.0</span>
     <span><strong>Dataset:</strong> 170 ICs · 217 hierarchy nodes</span>
     <span><strong>Macro target:</strong> $50,000,000</span>
   </div>
@@ -903,6 +903,8 @@ regional_targets = pd.DataFrame([
     {'Region': 'APAC', 'fiscal_quarter': 2, 'q_target': 14_300_000.0},
 ])
 
+from b2b_revenue_forecasting import HedgeByDepth
+
 quotas_long, weights_long = cascade_many(
     df,                          # the SAME analyst CSV, unchanged
     regional_targets,
@@ -910,7 +912,10 @@ quotas_long, weights_long = cascade_many(
     target_col='q_target',
     taxonomy=taxonomy,
     metrics=cascade_metrics,     # Part A's blended slate
-    hedge_multiplier=1.05,
+    # v0.11.0: per-DEPTH hedge — deepest managers 10%, next level 5%.
+    # (A per-node dict is impossible here: cascade_many builds each
+    #  hierarchy internally, so node ids are never visible.)
+    hedge_multiplier=HedgeByDepth(from_leaves={1: 1.10, 2: 1.05}),
 )
 quotas_long.to_csv('output_batch_cascaded_quotas.csv', index=False)
 # Optional: suggest_config={...} + weights_mode='per_group' re-suggests
@@ -922,12 +927,13 @@ quotas_long.to_csv('output_batch_cascaded_quotas.csv', index=False)
 quotas_long rows:    438 (every node of every cascade, tagged with Region + quarter)
 weights_long rows:   15 (metric slate per region)
 
-Sample rows (NA, Q1, top of tree):
+Sample rows (NA, Q1, top of tree — note: NO hedge at the top under the
+per-depth policy; the buffer now sits with front-line management):
 Region  fiscal_quarter  depth  level     node_id  cascaded_quota  base_quota
     NA               1      0 Global Global_Corp     25000000.00 25000000.00
-    NA               1      1 Region          NA     26250000.00 25000000.00
-    NA               1      2    RVP    RVP_NA_1     16852085.94 15285338.72
-    NA               1      2    RVP    RVP_NA_2     10710414.06  9714661.28
+    NA               1      1 Region          NA     25000000.00 25000000.00
+    NA               1      2    RVP    RVP_NA_1     15285338.72 15285338.72
+    NA               1      2    RVP    RVP_NA_2      9714661.28  9714661.28
 
 Base layer reconciles per cascade (sum of IC base_quota == target):
                            target    ic_base_sum
@@ -944,6 +950,8 @@ Wrote examples/data/output_batch_cascaded_quotas.csv</pre>
   <div class="highlight"><strong>Prepare once, cascade many.</strong> Each region's hierarchy is built and validated once; Q1 and Q2 then cascade against the same prepared structure with identical shares (Q2 = Q1 × target ratio). With <code class="inline">group_keys</code> like <code class="inline">["st1_sales_type", "base_product_r4f", "regional"]</code> the same call scales to hundreds of combinations — replacing the ~150-line bespoke loop from issue #4.</div>
 
   <div class="takeaway"><strong>Everything travels with the rows.</strong> The long output carries group keys, sub-target columns, the input target, <code class="inline">cascaded_quota</code>, <code class="inline">base_quota</code> (un-hedged), and the gate audit columns — ready for <code class="inline">.to_csv()</code>, <code class="inline">.to_sql()</code>, or a BI tool, no post-hoc tagging.</div>
+
+  <div class="callout"><strong>Per-depth hedging (v0.11.0).</strong> <code class="inline">HedgeByDepth</code> expresses level-based policies anywhere <code class="inline">hedge_multiplier</code> is accepted: <code class="inline">from_leaves={1: 1.10, 2: 1.05}</code> keys by distance to the farthest descendant IC (1 = deepest manager — correct even in jagged hierarchies where root-depth would lie), <code class="inline">from_root={...}</code> keys by <code class="inline">node_depths()</code>-style depth, and both compose multiplicatively. The spec resolves against each combination's freshly built hierarchy at cascade time, so <code class="inline">base_quota</code> reconciliation and all audit columns behave exactly as with a hand-built per-node dict. Inspect what a graph would get via <code class="inline">HedgeByDepth(...).resolve(hierarchy.graph)</code>.</div>
 </section>
 
 <section class="step" id="step-20">

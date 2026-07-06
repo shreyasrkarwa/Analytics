@@ -3,6 +3,41 @@
 All notable changes to `b2b_revenue_forecasting` are documented here.
 This project loosely follows [Semantic Versioning](https://semver.org/).
 
+## [0.11.0] — 2026-07
+
+Implements [issue #13](https://github.com/shreyasrkarwa/Analytics/issues/13):
+per-DEPTH hedging. `hedge_multiplier` accepted a flat float or a
+per-node dict — but depth-based policies ("deepest managers 1.10, the
+level above 1.05") were impossible through `cascade_many`, which builds
+each combination's hierarchy internally so node ids are never visible
+to the caller.
+
+### Added
+- **`HedgeByDepth(from_leaves=None, from_root=None, default=1.0)`** —
+  a depth-keyed hedge spec accepted anywhere `hedge_multiplier` is
+  (exported at package root). Resolved at cascade time against the
+  cascader's own graph into an ordinary per-node dict, so all
+  downstream behavior (base layer, audit columns, reconciliation) is
+  identical to passing that dict by hand — and it flows through
+  `cascade_many` per combination automatically.
+  - `from_leaves`: keyed by distance to the FARTHEST descendant leaf
+    (1 = deepest manager whose children are ICs) — the natural basis
+    for front-line-manager policies; correct in jagged hierarchies
+    where root-depth is not equivalent.
+  - `from_root`: keyed by `node_depths()`-style distance from the root.
+  - Both bases may be combined; a node matched by both gets the
+    PRODUCT. Leaves never carry a hedge. Invalid specs raise
+    `ValueError` at construction.
+  - `HedgeByDepth.resolve(graph)` is public for inspection.
+
+### Notes
+- The issue's worked example (`from_leaves={1: 1.10, 2: 1.05}`) is
+  pinned by tests, including a jagged-hierarchy case, a
+  spec-vs-hand-built-dict equality check, and a `cascade_many`
+  end-to-end run asserting the base layer still reconciles at every
+  depth.
+- Float and per-node-dict behavior unchanged.
+
 ## [0.10.2] — 2026-07
 
 Closes [issue #8](https://github.com/shreyasrkarwa/Analytics/issues/8):

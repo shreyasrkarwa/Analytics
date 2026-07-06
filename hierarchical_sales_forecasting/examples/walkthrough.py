@@ -57,6 +57,7 @@ from b2b_revenue_forecasting import (
     CommitReconciler,
     MetricSpec,
     cascade_many,
+    HedgeByDepth,
 )
 
 # Pretty separators for the printed walkthrough
@@ -897,7 +898,10 @@ quotas_long, weights_long = cascade_many(
     target_col='q_target',
     taxonomy=taxonomy,
     metrics=cascade_metrics,             # Part A's blended slate
-    hedge_multiplier=1.05,
+    # v0.11.0 (issue #13): per-DEPTH hedge — impossible with a per-node
+    # dict here, since cascade_many builds each hierarchy internally.
+    # Deepest managers (children are ICs) carry 10%, the level above 5%.
+    hedge_multiplier=HedgeByDepth(from_leaves={1: 1.10, 2: 1.05}),
 )
 
 n_cascades = quotas_long.groupby(['Region', 'fiscal_quarter']).ngroups

@@ -32,6 +32,115 @@ class GateAllocationError(ValueError):
     pass
 
 
+class HedgeByDepth:
+    """
+    Depth-keyed hedge specification (issue #13). Pass as
+    cascade_quota(hedge_multiplier=...) — or through cascade_many, where
+    it is the ONLY way to express a per-level hedge, because the batch
+    API builds each combination's hierarchy internally and node ids are
+    never visible to the caller.
+
+    The spec is resolved against whatever graph the cascader holds, at
+    cascade time, into an ordinary per-node dict — so all downstream
+    behavior (base layer, audit columns, reconciliation) is identical
+    to passing that dict yourself.
+
+    Parameters
+    ----------
+    from_leaves : Optional[Dict[int, float]]
+        Keyed by a manager's distance to its FARTHEST descendant leaf:
+        1 = deepest manager (all/some children are ICs), 2 = one level
+        above, ... This is the natural basis for policies like
+        "front-line managers hedge 10%, their directors 5%":
+        {1: 1.10, 2: 1.05}. Leaves themselves never carry a hedge
+        (hedges apply when a node distributes to its children).
+    from_root : Optional[Dict[int, float]]
+        Keyed by distance from the root (root = 0), i.e. the same
+        numbers SalesHierarchy.node_depths() returns. In jagged
+        hierarchies (ICs at different depths) this is NOT equivalent to
+        from_leaves — pick the basis that matches your policy.
+    default : float
+        Multiplier for nodes matched by neither mapping. Default 1.0
+        (no hedge).
+
+    If a node is matched by BOTH mappings, the two multipliers COMPOSE
+    (multiply) — they are independent policies. At least one mapping
+    must be provided; all multipliers must be > 0.
+
+    Example
+    -------
+    >>> cascade_many(..., hedge_multiplier=HedgeByDepth(
+    ...     from_leaves={1: 1.10, 2: 1.05},   # deepest mgr 10%, next 5%
+    ... ))
+    """
+
+    def __init__(self,
+                 from_leaves: Optional[Dict[int, float]] = None,
+                 from_root: Optional[Dict[int, float]] = None,
+                 default: float = 1.0):
+        if not from_leaves and not from_root:
+            raise ValueError(
+                "HedgeByDepth requires at least one of from_leaves= or "
+                "from_root= (a {depth: multiplier} mapping)."
+            )
+        for label, mapping in (("from_leaves", from_leaves),
+                               ("from_root", from_root)):
+            for k, v in (mapping or {}).items():
+                if not isinstance(k, int) or isinstance(k, bool) or k < 0:
+                    raise ValueError(
+                        f"HedgeByDepth.{label} keys must be non-negative "
+                        f"ints (depths), got {k!r}."
+                    )
+                if not isinstance(v, (int, float)) or v <= 0:
+                    raise ValueError(
+                        f"HedgeByDepth.{label}[{k}] must be a positive "
+                        f"multiplier, got {v!r}."
+                    )
+        if not isinstance(default, (int, float)) or default <= 0:
+            raise ValueError(
+                f"HedgeByDepth.default must be a positive multiplier, "
+                f"got {default!r}."
+            )
+        self.from_leaves = dict(from_leaves or {})
+        self.from_root = dict(from_root or {})
+        self.default = float(default)
+
+    def resolve(self, graph: nx.DiGraph) -> Dict[str, float]:
+        """
+        Materialize this spec into a per-node {node_id: multiplier} dict
+        for the given DAG. Called automatically by cascade_quota; public
+        so consumers can inspect the mapping a given graph would get.
+        """
+        # Distance from root(s): shortest path, roots at 0 (matches
+        # SalesHierarchy.node_depths()).
+        root_depth: Dict[str, int] = {}
+        for root in (n for n in graph.nodes if graph.in_degree(n) == 0):
+            for node, d in nx.shortest_path_length(graph, source=root).items():
+                if node not in root_depth or d < root_depth[node]:
+                    root_depth[node] = d
+
+        # Distance to farthest descendant leaf: leaves at 0, computed in
+        # reverse topological order so children resolve before parents.
+        leaf_dist: Dict[str, int] = {}
+        for node in reversed(list(nx.topological_sort(graph))):
+            children = list(graph.successors(node))
+            leaf_dist[node] = (0 if not children
+                               else 1 + max(leaf_dist[c] for c in children))
+
+        resolved: Dict[str, float] = {}
+        for node in graph.nodes:
+            mult = None
+            fr = self.from_root.get(root_depth.get(node))
+            if fr is not None:
+                mult = fr
+            if graph.out_degree(node) > 0:          # managers only
+                fl = self.from_leaves.get(leaf_dist[node])
+                if fl is not None:
+                    mult = fl if mult is None else mult * fl
+            resolved[node] = self.default if mult is None else mult
+        return resolved
+
+
 class QuotaCascader:
     def __init__(self, hierarchy):
         """
@@ -466,7 +575,7 @@ class QuotaCascader:
         self,
         root_node: str,
         macro_target: float,
-        hedge_multiplier: Union[float, Dict[str, float]] = 1.0,
+        hedge_multiplier: Union[float, Dict[str, float], "HedgeByDepth"] = 1.0,
         new_ic_overrides: Optional[Dict[str, float]] = None,
         metrics: Optional[List[MetricSpec]] = None,
         new_ic_ids: Optional[List[str]] = None,
@@ -499,9 +608,15 @@ class QuotaCascader:
             The top node whose quota we're distributing.
         macro_target : float
             The total target dollar amount at the root.
-        hedge_multiplier : float | Dict[str, float]
+        hedge_multiplier : float | Dict[str, float] | HedgeByDepth
             Single float -> 5% buffer at EVERY manager level (e.g., 1.05).
             Dict -> per-node hedge mapping (e.g., {'RVP_NA_1': 1.10}).
+            HedgeByDepth -> per-DEPTH policy (issue #13), resolved
+            against this cascader's graph at call time; e.g.
+            HedgeByDepth(from_leaves={1: 1.10, 2: 1.05}) gives the
+            deepest managers 10%, the level above 5%, everyone else
+            the default. Works through cascade_many, where per-node
+            dicts are impossible (node ids aren't visible).
             Defaults to 1.0 (no hedge).
         new_ic_overrides : Optional[Dict[str, float]]
             IC IDs mapped to fixed quota amounts that bypass the algorithm.
@@ -667,6 +782,16 @@ class QuotaCascader:
                 f"SalesHierarchy.from_dataframe's on_collision parameter) "
                 f"before cascading."
             )
+
+        # ---- Per-depth hedge resolution (issue #13) ---------------------
+        # A HedgeByDepth spec is materialized into an ordinary per-node
+        # dict against THIS graph, so everything downstream (base layer,
+        # audit columns, reconciliation) behaves exactly as if the caller
+        # had built the dict by hand. This is what makes depth-based
+        # hedging work through cascade_many, which owns hierarchy
+        # construction per combination.
+        if isinstance(hedge_multiplier, HedgeByDepth):
+            hedge_multiplier = hedge_multiplier.resolve(self.graph)
 
         # Choose which weight engine to use for THIS cascade.
         # In multi-metric mode we close over `metrics`; in legacy mode we use
