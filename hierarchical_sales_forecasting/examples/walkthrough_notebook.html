@@ -76,12 +76,12 @@
 <div class="container">
 
 <header>
-  <div class="eyebrow">b2b_revenue_forecasting · v0.7.1</div>
+  <div class="eyebrow">b2b_revenue_forecasting · v0.7.2</div>
   <h1>Multi-Metric Cascading &amp; Reconciliation — Walkthrough</h1>
   <p class="subtitle">End-to-end notebook: how an analyst takes one CSV of historical performance + pipeline data and produces a quota plan, a pipeline diagnosis, a redistributed plan, and a bias-corrected forecast — with full visibility into how each metric actually influences allocation.</p>
   <div class="meta">
     <span><strong>Package:</strong> b2b-revenue-forecasting</span>
-    <span><strong>Version:</strong> 0.7.1</span>
+    <span><strong>Version:</strong> 0.7.2</span>
     <span><strong>Dataset:</strong> 170 ICs · 217 hierarchy nodes</span>
     <span><strong>Macro target:</strong> $50,000,000</span>
   </div>
@@ -181,11 +181,12 @@ Regions:  ['NA', 'EMEA', 'APAC']
 ICs flagged brand-new via CSV: 29
 Examples: ['IC_Mgr_Dir_RVP_NA_1_1_2_3', 'IC_Mgr_Dir_RVP_NA_1_1_3_5', 'IC_Mgr_Dir_RVP_NA_1_1_4_4']
 
+roots(): ['Global_Corp'] · leaves(): 170 ICs · managers(): 47 · max depth: 5
 Graph validated as a DAG: True</pre>
 
   <div class="takeaway"><strong>Key idea.</strong> The brand-new IC list lives in the CSV, not in Python. Analysts mark new reps directly in their spreadsheet.</div>
 
-  <div class="callout"><strong>Data hygiene is automatic since v0.6.x.</strong> <code class="inline">from_dataframe</code> now heals or flags the classic dirty-CSV traps: a row repeating the same value at two levels is auto-renamed instead of creating a self-loop (<code class="inline">on_collision='suffix'</code>, also <code class="inline">'skip'</code>/<code class="inline">'error'</code>); blank or literal <code class="inline">"nan"</code> cells are treated as missing instead of collapsing branches; metric cells are coerced (<code class="inline">numpy</code> scalars, <code class="inline">"true"/"false"</code>, <code class="inline">"$1,200"</code>, <code class="inline">"12.5%"</code>) with uncoercible values warned and dropped — never a silent 0; and the finished graph is DAG-validated, so a cycle raises <code class="inline">HierarchyValidationError</code> naming the path instead of a <code class="inline">RecursionError</code> at cascade time. <code class="inline">hierarchy.validate()</code> re-checks on demand.</div>
+  <div class="callout"><strong>Data hygiene is automatic since v0.6.x.</strong> <code class="inline">from_dataframe</code> now heals or flags the classic dirty-CSV traps: a row repeating the same value at two levels is auto-renamed instead of creating a self-loop (<code class="inline">on_collision='suffix'</code>, also <code class="inline">'skip'</code>/<code class="inline">'error'</code>); blank or literal <code class="inline">"nan"</code> cells are treated as missing instead of collapsing branches; metric cells are coerced (<code class="inline">numpy</code> scalars, <code class="inline">"true"/"false"</code>, <code class="inline">"$1,200"</code>, <code class="inline">"12.5%"</code>) with uncoercible values warned and dropped — never a silent 0; and the finished graph is DAG-validated, so a cycle raises <code class="inline">HierarchyValidationError</code> naming the path instead of a <code class="inline">RecursionError</code> at cascade time. <code class="inline">hierarchy.validate()</code> re-checks on demand. And since v0.7.2 you rarely need the raw graph: <code class="inline">roots()</code>, <code class="inline">leaves(root=None)</code>, <code class="inline">managers(root=None)</code>, and <code class="inline">node_depths()</code> answer the common questions, while <code class="inline">.graph</code> is the one canonical accessor on every class (<code class="inline">.hierarchy</code> works too, as an alias).</div>
 </section>
 
 <section class="step" id="step-3">

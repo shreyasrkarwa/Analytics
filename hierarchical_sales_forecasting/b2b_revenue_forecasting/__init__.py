@@ -8,7 +8,7 @@ from b2b_revenue_forecasting.pipeline_adjuster import PipelineAdjuster
 from b2b_revenue_forecasting.metric_spec import MetricSpec
 from b2b_revenue_forecasting.batch import cascade_many
 
-__version__ = "0.7.1"
+__version__ = "0.7.2"
 
 __all__ = [
     "SalesHierarchy",

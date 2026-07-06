@@ -37,8 +37,10 @@ class QuotaCascader:
         """
         Initializes the cascader with a SalesHierarchy object.
         """
-        # Exposes the underlying nx.DiGraph
-        self.hierarchy = hierarchy.graph
+        # The underlying nx.DiGraph. `.graph` is the canonical accessor
+        # across the whole package (SalesHierarchy.graph,
+        # PipelineAdjuster.graph, QuotaCascader.graph) — issue #5.
+        self.graph = hierarchy.graph
         # Populated after each multi-metric cascade_quota call so analysts
         # can inspect the normalized-weight contributions later (e.g., to
         # paste into a stakeholder report).
@@ -83,6 +85,15 @@ class QuotaCascader:
             stacklevel=4,
         )
 
+    @property
+    def hierarchy(self):
+        """
+        Backward-compatible alias for `.graph` (issue #5). `.graph` is the
+        canonical name across the package; pre-v0.7.2 code that read
+        `cascader.hierarchy` keeps working.
+        """
+        return self.graph
+
     # ------------------------------------------------------------------
     # Single-metric helpers (legacy path — kept for backward compatibility)
     # ------------------------------------------------------------------
@@ -119,8 +130,8 @@ class QuotaCascader:
             )
 
         # If it's a leaf node (IC), return its historical capacity
-        if self.hierarchy.out_degree(node_id) == 0:
-            attrs = self.hierarchy.nodes[node_id]
+        if self.graph.out_degree(node_id) == 0:
+            attrs = self.graph.nodes[node_id]
             # Dynamically collect ALL attainment values (supports any number
             # of quarters). Coercion (issue #3) accepts numpy scalars and
             # numeric strings; uncoercible values warn once per column.
@@ -153,7 +164,7 @@ class QuotaCascader:
         _visited.add(node_id)
         try:
             total_capacity = 0.0
-            for child in self.hierarchy.successors(node_id):
+            for child in self.graph.successors(node_id):
                 total_capacity += self._calculate_node_historical_capacity(
                     child, _visited)
         finally:
@@ -198,8 +209,8 @@ class QuotaCascader:
                 f"SalesHierarchy.validate() to locate the cycle."
             )
 
-        if self.hierarchy.out_degree(node_id) == 0:
-            attrs = self.hierarchy.nodes[node_id]
+        if self.graph.out_degree(node_id) == 0:
+            attrs = self.graph.nodes[node_id]
 
             candidate_cols = spec.resolved_columns()
             # Issue #6 fallback: when no explicit columns were configured
@@ -265,7 +276,7 @@ class QuotaCascader:
         _visited.add(node_id)
         try:
             total = 0.0
-            for child in self.hierarchy.successors(node_id):
+            for child in self.graph.successors(node_id):
                 total += self._aggregate_node_metric(child, spec, _visited)
         finally:
             _visited.discard(node_id)
@@ -385,7 +396,7 @@ class QuotaCascader:
 
     def _node_has_brand_new_flag(self, node_id: str, attr: str) -> bool:
         """True iff the node has a truthy value under the given attribute."""
-        return bool(self.hierarchy.nodes[node_id].get(attr, False))
+        return bool(self.graph.nodes[node_id].get(attr, False))
 
     def _compute_gated_set(self, gate_metrics: List[MetricSpec]) -> set:
         """
@@ -407,7 +418,7 @@ class QuotaCascader:
         if not gate_metrics:
             return gated
 
-        for node in self.hierarchy.nodes:
+        for node in self.graph.nodes:
             for gate in gate_metrics:
                 value = self._aggregate_node_metric(node, gate)
                 threshold = getattr(gate, "gate_threshold", 0.0)
@@ -606,8 +617,8 @@ class QuotaCascader:
         # but a graph assembled manually with add_edge() could contain a
         # cycle — which previously surfaced as a RecursionError deep inside
         # networkx. Raise a clear, actionable error instead.
-        if not nx.is_directed_acyclic_graph(self.hierarchy):
-            cycle = nx.find_cycle(self.hierarchy)
+        if not nx.is_directed_acyclic_graph(self.graph):
+            cycle = nx.find_cycle(self.graph)
             path = " -> ".join([cycle[0][0]] + [e[1] for e in cycle])
             raise HierarchyValidationError(
                 f"cascade_quota requires a DAG, but the hierarchy contains "
@@ -716,12 +727,12 @@ class QuotaCascader:
             quotas = {root_node: macro_target}
 
             # Traverse top-down through the organization
-            for node in nx.topological_sort(self.hierarchy):
+            for node in nx.topological_sort(self.graph):
                 if node not in quotas:
                     continue
 
                 current_target = quotas[node]
-                all_children = list(self.hierarchy.successors(node))
+                all_children = list(self.graph.successors(node))
 
                 if not all_children:
                     continue  # Reached an IC (leaf node)
@@ -776,7 +787,7 @@ class QuotaCascader:
                 target_to_distribute = current_target * current_hedge
 
                 # Check if we're at the leaf level (all children are ICs)
-                at_leaf_level = all(self.hierarchy.out_degree(c) == 0 for c in children)
+                at_leaf_level = all(self.graph.out_degree(c) == 0 for c in children)
 
                 if at_leaf_level:
                     # Handle CRO overrides — carve out fixed quotas first
@@ -849,10 +860,10 @@ class QuotaCascader:
     def _node_depths(self) -> Dict[str, int]:
         """Compute depth of every node from the root(s). Roots are at 0."""
         depths: Dict[str, int] = {}
-        roots = [n for n in self.hierarchy.nodes
-                 if self.hierarchy.in_degree(n) == 0]
+        roots = [n for n in self.graph.nodes
+                 if self.graph.in_degree(n) == 0]
         for root in roots:
-            lengths = nx.shortest_path_length(self.hierarchy, source=root)
+            lengths = nx.shortest_path_length(self.graph, source=root)
             for node, d in lengths.items():
                 # If a node is reachable from multiple roots, keep the
                 # shallowest depth.
@@ -938,14 +949,14 @@ class QuotaCascader:
         depths = self._node_depths()
         rows = []
         for node, quota in quotas.items():
-            parents = list(self.hierarchy.predecessors(node))
+            parents = list(self.graph.predecessors(node))
             parent = parents[0] if parents else None
             depth = depths.get(node, -1)
             row = {
                 "node_id": node,
                 "parent": parent,
                 "depth": depth,
-                "is_leaf": self.hierarchy.out_degree(node) == 0,
+                "is_leaf": self.graph.out_degree(node) == 0,
                 "cascaded_quota": round(float(quota), 2),
             }
             if level_names and 0 <= depth < len(level_names):
@@ -1090,14 +1101,14 @@ class QuotaCascader:
         rows = []
         all_nodes = set(original) | set(adjusted)
         for node in all_nodes:
-            is_leaf = self.hierarchy.out_degree(node) == 0
+            is_leaf = self.graph.out_degree(node) == 0
             if leaf_only and not is_leaf:
                 continue
             orig = float(original.get(node, 0.0))
             adj = float(adjusted.get(node, 0.0))
             delta = adj - orig
             pct = (delta / orig) if orig != 0 else 0.0
-            parents = list(self.hierarchy.predecessors(node))
+            parents = list(self.graph.predecessors(node))
             parent = parents[0] if parents else None
             depth = depths.get(node, -1)
             row = {
@@ -1179,8 +1190,8 @@ class QuotaCascader:
         depths = self._node_depths()
 
         # --- Roots & macro target inference
-        roots = [n for n in self.hierarchy.nodes
-                 if self.hierarchy.in_degree(n) == 0]
+        roots = [n for n in self.graph.nodes
+                 if self.graph.in_degree(n) == 0]
         root_quota = quotas[roots[0]] if roots and roots[0] in quotas else None
         if macro_target is None and root_quota is not None:
             # If hedging was applied at the root, the root quota already
@@ -1205,7 +1216,7 @@ class QuotaCascader:
 
         # --- Leaves & top ICs
         leaves = [(n, float(q)) for n, q in quotas.items()
-                  if self.hierarchy.out_degree(n) == 0]
+                  if self.graph.out_degree(n) == 0]
         leaves.sort(key=lambda t: -t[1])
         top_ics = [{"node_id": n, "cascaded_quota": q}
                    for n, q in leaves[:top_n_ics]]

@@ -117,6 +117,12 @@ flagged = [n for n in hierarchy.graph.nodes
 print(f"\nICs flagged brand-new via CSV: {len(flagged)}")
 print(f"Examples: {flagged[:3]}")
 
+# v0.7.2: read-only helpers — no need to touch hierarchy.graph directly
+# (.graph is the canonical accessor everywhere; .hierarchy also works)
+print(f"roots(): {hierarchy.roots()} · leaves(): {len(hierarchy.leaves())} ICs "
+      f"· managers(): {len(hierarchy.managers())} "
+      f"· max depth: {max(hierarchy.node_depths().values())}")
+
 # Since v0.6.x, from_dataframe also hardens the build automatically:
 #   - duplicate adjacent levels auto-rename (on_collision='suffix')
 #   - blank / 'nan'-string levels are treated as missing

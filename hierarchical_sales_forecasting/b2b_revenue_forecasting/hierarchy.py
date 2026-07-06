@@ -331,10 +331,62 @@ class SalesHierarchy:
             )
         return self
 
+    # ------------------------------------------------------------------
+    # Read-only accessors (issue #5) — `.graph` is the canonical name for
+    # the underlying nx.DiGraph across the whole package; the helpers
+    # below cover the common questions so consumers rarely need to touch
+    # the raw graph at all.
+    # ------------------------------------------------------------------
+    @property
+    def hierarchy(self):
+        """
+        Alias for `.graph` (issue #5). Some consumers naturally reach for
+        `hierarchy.hierarchy` because QuotaCascader historically used that
+        name internally — both now work, `.graph` is canonical.
+        """
+        return self.graph
+
+    def roots(self) -> List[str]:
+        """Nodes with no parent (usually exactly one: the global root)."""
+        return [n for n in self.graph.nodes if self.graph.in_degree(n) == 0]
+
+    def leaves(self, root: str = None) -> List[str]:
+        """
+        All leaf (IC) nodes. With `root`, only leaves under that node
+        (same as get_leaves); without, every leaf in the hierarchy.
+        """
+        if root is not None:
+            return self.get_leaves(root)
+        return [n for n in self.graph.nodes if self.graph.out_degree(n) == 0]
+
+    def managers(self, root: str = None) -> List[str]:
+        """
+        All non-leaf nodes (anyone with at least one direct report).
+        With `root`, only managers strictly under that node.
+        """
+        if root is not None:
+            return [n for n in nx.descendants(self.graph, root)
+                    if self.graph.out_degree(n) > 0]
+        return [n for n in self.graph.nodes if self.graph.out_degree(n) > 0]
+
+    def node_depths(self) -> Dict[str, int]:
+        """
+        Depth of every node from the root(s); roots are depth 0. Nodes
+        reachable from multiple roots keep their shallowest depth.
+        Handy for per-level hedging or custom per-depth reports.
+        """
+        depths: Dict[str, int] = {}
+        for root in self.roots():
+            for node, d in nx.shortest_path_length(self.graph,
+                                                   source=root).items():
+                if node not in depths or d < depths[node]:
+                    depths[node] = d
+        return depths
+
     def get_children(self, node_id: str) -> List[str]:
         """Returns direct reports of a given node."""
         return list(self.graph.successors(node_id))
-        
+
     def get_leaves(self, node_id: str) -> List[str]:
         """Returns all ICs (leaf nodes) reporting up under this node."""
         return [n for n in nx.descendants(self.graph, node_id) if self.graph.out_degree(n) == 0]

@@ -21,6 +21,10 @@ Unlike traditional bottom-up time-series libraries (which are strictly built for
 | **`CommitReconciler`** | Detect sandbagging and "happy ears" bias via historical Bias Quotients, then auto-correct forecasts |
 | **`PipelineAdjuster`** | Diagnose pipeline health with per-region thresholds and redistribute IC quotas using zero-sum logic |
 
+### What's New in v0.7.2 — one graph accessor, plus hierarchy helpers ([issue #5](https://github.com/shreyasrkarwa/Analytics/issues/5))
+
+`.graph` is now the canonical name for the underlying `nx.DiGraph` on every class (`SalesHierarchy`, `QuotaCascader`, `PipelineAdjuster`), with `.hierarchy` kept as a working alias on both `SalesHierarchy` and `QuotaCascader` — no more `AttributeError` whichever one you reach for. New read-only helpers mean you rarely need the raw graph at all: `hierarchy.roots()`, `hierarchy.leaves(root=None)`, `hierarchy.managers(root=None)`, and `hierarchy.node_depths()` (handy for building per-level hedge dicts).
+
 ### What's New in v0.7.1 — `MetricSpec` columns resolve intuitively ([issue #6](https://github.com/shreyasrkarwa/Analytics/issues/6))
 
 Specs returned by `suggest_weights` are now directly usable — no more `for s in suggested: s.columns = [s.name]`. Column resolution order: explicit `columns=` always wins → the `Q1_<name>…Q<lookback>_<name>` convention → **new**: the plain attribute named exactly `<name>` (so a spec called `knowledge_workers` finds your `knowledge_workers` column automatically). And if an active metric ends up with zero signal across the whole tree, `cascade_quota` warns and names the columns it tried — silent no-op metrics are gone. The full `name`/`columns` contract is documented on the `MetricSpec` dataclass.

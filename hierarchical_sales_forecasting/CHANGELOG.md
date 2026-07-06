@@ -3,6 +3,34 @@
 All notable changes to `b2b_revenue_forecasting` are documented here.
 This project loosely follows [Semantic Versioning](https://semver.org/).
 
+## [0.7.2] — 2026-07
+
+Fixes [issue #5](https://github.com/shreyasrkarwa/Analytics/issues/5):
+inconsistent graph accessor naming. `SalesHierarchy` exposed `.graph`
+while `QuotaCascader` called the same object `self.hierarchy`, so
+`hierarchy.hierarchy` raised `AttributeError` and helpers needing the
+raw graph required reading the source.
+
+### Changed
+- **`.graph` is the canonical accessor everywhere.** `QuotaCascader`
+  now stores the graph as `.graph` (matching `SalesHierarchy` and
+  `PipelineAdjuster`). Backward compatible: `cascader.hierarchy` still
+  works as a documented read-only alias, and `SalesHierarchy` gains a
+  forgiving `.hierarchy` alias too — both names resolve to the same
+  `nx.DiGraph` on both classes.
+
+### Added
+- **Read-only helpers on `SalesHierarchy`** so consumers rarely need
+  the raw graph:
+  - `roots()` — nodes with no parent.
+  - `leaves(root=None)` — all ICs, or just those under `root`.
+  - `managers(root=None)` — all non-leaf nodes, or those under `root`.
+  - `node_depths()` — `{node_id: depth}` from the root(s), e.g. for
+    building per-level hedge dicts.
+
+### Notes
+- No behavior changes — cascade outputs are identical.
+
 ## [0.7.1] — 2026-07
 
 Fixes [issue #6](https://github.com/shreyasrkarwa/Analytics/issues/6):
