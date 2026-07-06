@@ -3,6 +3,31 @@
 All notable changes to `b2b_revenue_forecasting` are documented here.
 This project loosely follows [Semantic Versioning](https://semver.org/).
 
+## [0.10.1] — 2026-07
+
+Implements [issue #11](https://github.com/shreyasrkarwa/Analytics/issues/11):
+surface weight-normalization semantics where weights are set. The
+"raw weight != influence" nuance lived only in the
+`normalized_weights()` docstring; users setting `weight=0.067` were
+surprised it wasn't 6.7% influence.
+
+### Docs
+- **`MetricSpec.weight`** now documents the normalization rule at the
+  point of use, with a worked example: influence =
+  `weight / sum(active weights)`; active = weight > 0; inactive
+  metrics contribute exactly 0. `[1.0, 0.5, 0.0]` → `[66.7%, 33.3%,
+  0%]`; `0.067` alongside `[1.0, 0.98, 0.4]` → 2.7%, not 6.7%.
+- **`cascade_quota(metrics=)`** cross-references the same rule and
+  points at `self.weights_report` / `MetricSpec.normalized_weights`.
+- **README** gains a "How Weights Become Influence" section under Key
+  Concepts.
+- The documented examples are pinned by a unit test
+  (`test_api_consistency.py::test_weight_normalization_docs_example`)
+  so docs and implementation can't drift apart.
+
+### Notes
+- No code behavior changes.
+
 ## [0.10.0] — 2026-07
 
 Implements [issue #10](https://github.com/shreyasrkarwa/Analytics/issues/10):

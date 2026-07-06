@@ -76,12 +76,12 @@
 <div class="container">
 
 <header>
-  <div class="eyebrow">b2b_revenue_forecasting · v0.10.0</div>
+  <div class="eyebrow">b2b_revenue_forecasting · v0.10.1</div>
   <h1>Multi-Metric Cascading &amp; Reconciliation — Walkthrough</h1>
   <p class="subtitle">End-to-end notebook: how an analyst takes one CSV of historical performance + pipeline data and produces a quota plan, a pipeline diagnosis, a redistributed plan, and a bias-corrected forecast — with full visibility into how each metric actually influences allocation.</p>
   <div class="meta">
     <span><strong>Package:</strong> b2b-revenue-forecasting</span>
-    <span><strong>Version:</strong> 0.10.0</span>
+    <span><strong>Version:</strong> 0.10.1</span>
     <span><strong>Dataset:</strong> 170 ICs · 217 hierarchy nodes</span>
     <span><strong>Macro target:</strong> $50,000,000</span>
   </div>
@@ -320,7 +320,7 @@ Has_Active_Cert proportional      0.624482          0.201470    True</pre>
 
   <div class="highlight"><strong>This is the table to put in your planning deck.</strong> "NetNewACV drives 32.3% of the allocation, CloudSeats 31.6%, Has_Active_Cert 20.1%, DCSeats 12.9% (inverse), and ExpansionSpent a light 3.1% dampener." Every input weight is also shown so reviewers can see your judgment vs. the data-driven values.</div>
 
-  <div class="takeaway"><strong>Auto-printed on every cascade.</strong> The cascader prints this same table before running, so analysts never have to remember to call it. Also accessible afterward via <code class="inline">cascader.weights_report</code>. Pass <code class="inline">verbose=False</code> to suppress in batch / test runs.</div>
+  <div class="takeaway"><strong>Auto-printed on every cascade.</strong> The cascader prints this same table before running, so analysts never have to remember to call it. Also accessible afterward via <code class="inline">cascader.weights_report</code>. Pass <code class="inline">verbose=False</code> to suppress in batch / test runs. Since v0.10.1 this rule is documented at every point of use (<code class="inline">MetricSpec.weight</code>, <code class="inline">cascade_quota</code>, README): influence = <code class="inline">weight / sum(active weights)</code>, active = weight &gt; 0 — so raw <code class="inline">[1.0, 0.5, 0.0]</code> acts as <code class="inline">[66.7%, 33.3%, 0%]</code>, and a raw 0.067 here is ~2.7% influence, not 6.7%.</div>
 </section>
 
 <section class="step" id="step-7">

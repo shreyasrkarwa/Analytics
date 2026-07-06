@@ -79,6 +79,20 @@ class MetricSpec:
         Non-negative importance weight. Weights across all metrics are
         normalized to sum=1 at cascade time, so absolute scale doesn't
         matter — only the ratio between metrics.
+
+        How weights become influence (issue #11)
+        ----------------------------------------
+        Normalization happens across ACTIVE metrics only (weight > 0);
+        inactive metrics contribute exactly 0. A metric's real influence
+        is weight / sum(active weights), NOT its raw value:
+
+            raw weights [1.0, 0.5, 0.0]  ->  shares [66.7%, 33.3%, 0%]
+            raw weights [1.0, 0.98, 0.4, 0.067]
+                -> 0.067 / 2.447 = 2.7% influence (not 6.7%!)
+
+        Inspect the actual shares with MetricSpec.normalized_weights(specs)
+        or cascader.weights_report (auto-printed before every verbose
+        multi-metric cascade).
     lookback : int
         Number of historical quarters to aggregate. Default 4.
     columns : Optional[List[str]]

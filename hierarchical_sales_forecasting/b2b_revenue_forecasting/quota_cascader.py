@@ -509,6 +509,15 @@ class QuotaCascader:
         metrics : Optional[List[MetricSpec]]
             If provided, switches to multi-metric cascading. If None, the
             legacy single-metric ('_Attainment') path is used.
+
+            Weight normalization (issue #11): each spec's influence is
+            weight / sum(weights of ACTIVE specs) — active meaning
+            weight > 0; inactive specs contribute exactly 0. So raw
+            weights [1.0, 0.5, 0.0] act as shares [66.7%, 33.3%, 0%],
+            and a raw 0.067 alongside [1.0, 0.98, 0.4] is 2.7% of the
+            influence, not 6.7%. The exact shares are printed before
+            every verbose cascade and stored on self.weights_report;
+            see MetricSpec.normalized_weights for the definition.
         new_ic_ids : Optional[List[str]]
             Explicit list of IC IDs to treat as brand-new (equal-share
             carve-out). Programmatic equivalent of new_ic_attr — useful

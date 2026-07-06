@@ -77,10 +77,50 @@ def test_cascade_unchanged():
     assert abs(q['c'] - 600_000.0) < 0.01
 
 
+# ----------------------------------------------------------------------
+# 4. Issue #11 — the documented weight-normalization examples hold
+# ----------------------------------------------------------------------
+def test_weight_normalization_docs_example():
+    print(f"\n\n{SEPARATOR}")
+    print("TEST 4: documented weight-normalization examples are exact "
+          "(issue #11)")
+    print(SEPARATOR)
+    from b2b_revenue_forecasting import MetricSpec
+
+    # Example 1: [1.0, 0.5, 0.0] -> [66.7%, 33.3%, 0%]; inactive share 0
+    specs = [
+        MetricSpec('a', direction='proportional', weight=1.0),
+        MetricSpec('b', direction='proportional', weight=0.5),
+        MetricSpec('c', direction='proportional', weight=0.0),
+    ]
+    w = MetricSpec.normalized_weights(specs).set_index('metric')
+    assert abs(w.loc['a', 'normalized_share'] - 2 / 3) < 1e-9
+    assert abs(w.loc['b', 'normalized_share'] - 1 / 3) < 1e-9
+    assert w.loc['c', 'normalized_share'] == 0.0
+    assert not bool(w.loc['c', 'active'])
+    # Active shares sum to exactly 1
+    assert abs(w[w['active']]['normalized_share'].sum() - 1.0) < 1e-9
+
+    # Example 2: 0.067 alongside [1.0, 0.98, 0.4] is ~2.7%, not 6.7%
+    specs2 = [
+        MetricSpec('m1', direction='proportional', weight=1.0),
+        MetricSpec('m2', direction='proportional', weight=0.98),
+        MetricSpec('m3', direction='inverse', weight=0.4),
+        MetricSpec('m4', direction='inverse', weight=0.067),
+    ]
+    w2 = MetricSpec.normalized_weights(specs2).set_index('metric')
+    share = w2.loc['m4', 'normalized_share']
+    print(f"  [1.0, 0.5, 0.0] -> {[round(x, 4) for x in w['normalized_share']]}")
+    print(f"  0.067 raw -> {share:.4f} influence (docs say ~2.7%, not 6.7%)")
+    assert abs(share - 0.067 / 2.447) < 1e-9
+    assert 0.026 < share < 0.028
+
+
 if __name__ == '__main__':
     test_graph_accessor_consistency()
     test_readonly_helpers()
     test_cascade_unchanged()
+    test_weight_normalization_docs_example()
 
     print(f"\n\n{SEPARATOR}")
     print("ALL API-CONSISTENCY TESTS PASSED")

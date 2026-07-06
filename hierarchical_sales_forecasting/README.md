@@ -21,6 +21,10 @@ Unlike traditional bottom-up time-series libraries (which are strictly built for
 | **`CommitReconciler`** | Detect sandbagging and "happy ears" bias via historical Bias Quotients, then auto-correct forecasts |
 | **`PipelineAdjuster`** | Diagnose pipeline health with per-region thresholds and redistribute IC quotas using zero-sum logic |
 
+### What's New in v0.10.1 — weight-normalization semantics at point of use ([issue #11](https://github.com/shreyasrkarwa/Analytics/issues/11))
+
+Docs release. The "raw weight ≠ influence" nuance is now explained where you actually set weights — on `MetricSpec.weight`, in the `cascade_quota(metrics=)` docstring, and in a new "How Weights Become Influence" section below, all with the same worked example (`[1.0, 0.5, 0.0]` → `[66.7%, 33.3%, 0%]`; a raw `0.067` alongside `[1.0, 0.98, 0.4]` is **2.7%** of the influence, not 6.7%). The documented examples are pinned by a unit test so they can't drift from the implementation.
+
 ### What's New in v0.10.0 — one-call gating report ([issue #10](https://github.com/shreyasrkarwa/Analytics/issues/10))
 
 `cascader.gating_report()` consolidates the whole gating story of the last cascade into one dict: which nodes were gated (`gated_node_ids`, with `gated_leaf_ids` split out), which were funded anyway as a last resort (`gate_relaxed_node_ids`), how much target is explicitly unallocated (`unallocated_amount` / `unallocated_nodes`), and the per-cascade reconciliation numbers — `leaf_quota_sum` (hedged), `leaf_base_sum` (un-hedged), `base_gap`, and a single `reconciles` boolean asserting every input dollar is either on an IC or reported as unallocated. No more manual diagnostics comparing root target to leaf sums.
@@ -438,6 +442,17 @@ adjusted = adjuster.adjust(
 ---
 
 ## 🧠 Key Concepts
+
+### How Weights Become Influence
+
+Weights you set on `MetricSpec`s are **relative**, normalized to sum to 1 across **active** metrics (weight > 0) at cascade time; inactive metrics contribute exactly 0. A metric's real influence is `weight / sum(active weights)`:
+
+```
+raw weights [1.0, 0.5, 0.0]        ->  influence [66.7%, 33.3%, 0%]
+raw weights [1.0, 0.98, 0.4, 0.067] -> 0.067 / 2.447 = 2.7% (not 6.7%!)
+```
+
+Always check the actual shares with `MetricSpec.normalized_weights(specs)` or `cascader.weights_report` — the same table auto-prints before every verbose multi-metric cascade, and it's the table to show stakeholders.
 
 ### Managerial Hedge (Overassignment Buffer)
 A multiplier applied at each management level to create mathematical safety. A 5% hedge across 5 layers compounds to ~27.6% total overassignment (`1.05⁵`), ensuring the enterprise hits its number even if some ICs miss.
