@@ -640,6 +640,15 @@ class QuotaCascader:
             conservation is impossible: siblings get $0 (never negative
             quotas), a warning fires, and the excess is reported via
             self.overpinned / self.overpinned_nodes and gating_report().
+
+            Absorption policy (issue #37): the remainder flows to the
+            NON-PINNED siblings proportional to their BASELINE
+            (un-pinned) cascade. This is not a separate mode — because
+            each child's baseline is target x its composite share,
+            renormalizing shares among the non-pinned children is
+            algebraically identical to splitting the remainder
+            proportional to their baseline values (pinned to $0.0000 by
+            regression test). No `remainder=` knob is needed.
         override_basis : str
             What a pin amount MEANS when hedging is in play (issue #23).
             "base" (default) — the pin is the UN-HEDGED plan number:

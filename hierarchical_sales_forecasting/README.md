@@ -21,6 +21,10 @@ Unlike traditional bottom-up time-series libraries (which are strictly built for
 | **`CommitReconciler`** | Detect sandbagging and "happy ears" bias via historical Bias Quotients, then auto-correct forecasts |
 | **`PipelineAdjuster`** | Diagnose pipeline health with per-region thresholds and redistribute IC quotas using zero-sum logic |
 
+### What's New in v0.18.1 — the pin absorption policy, stated and pinned ([issue #37](https://github.com/shreyasrkarwa/Analytics/issues/37))
+
+Docs release. When you pin children (`new_ic_overrides`), the remainder flows to the **non-pinned siblings proportional to their baseline (un-pinned) cascade** — that's not a mode to request, it's an algebraic identity of renormalized shares, now stated in the docstring and locked by a regression test (the DACH scenario: $50M with two teams pinned on base totals; non-pinned siblings match baseline-proportional to the penny, base conserves at every depth, hedged derives per node). The rest of #37's proposed API already existed: `pins=` → `new_ic_overrides` (any level, v0.13.0), `pin_basis` → `override_basis` (default `'base'`), cross-combo totals → `apply_pins` (v0.16.0).
+
 ### What's New in v0.18.0 — level-by-level cascading ([issue #30](https://github.com/shreyasrkarwa/Analytics/issues/30))
 
 When each level needs different behavior — split regions by knowledge workers but territories by seats, hedge only the front line, pin at one level — `cascade_levels` chains one-level cascades with per-transition kwargs, threading each level's base output into the next level's targets:

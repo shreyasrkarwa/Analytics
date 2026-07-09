@@ -76,12 +76,12 @@
 <div class="container">
 
 <header>
-  <div class="eyebrow">b2b_revenue_forecasting · v0.18.0</div>
+  <div class="eyebrow">b2b_revenue_forecasting · v0.18.1</div>
   <h1>Multi-Metric Cascading &amp; Reconciliation — Walkthrough</h1>
   <p class="subtitle">End-to-end notebook: how an analyst takes one CSV of historical performance + pipeline data and produces a quota plan, a pipeline diagnosis, a redistributed plan, and a bias-corrected forecast — with full visibility into how each metric actually influences allocation.</p>
   <div class="meta">
     <span><strong>Package:</strong> b2b-revenue-forecasting</span>
-    <span><strong>Version:</strong> 0.18.0</span>
+    <span><strong>Version:</strong> 0.18.1</span>
     <span><strong>Dataset:</strong> 170 ICs · 217 hierarchy nodes</span>
     <span><strong>Macro target:</strong> $50,000,000</span>
   </div>
@@ -421,7 +421,7 @@ IC_Mgr_Dir_RVP_NA_2_2_1_3 algorithmic quota:   $  340,167.63
 IC_Mgr_Dir_RVP_NA_2_2_1_3 CRO-locked quota:    $1,200,000.00
 Manager total still preserved? Sum of that manager's ICs = $2,058,408.58</pre>
 
-  <div class="takeaway"><strong>How it interacts.</strong> Override is carved out first; remainder within the manager's team is split by the multi-metric algorithm (renormalized among the unpinned, so the parent total is conserved exactly). Brand-new IC carve-outs never stack on top of overrides.</div>
+  <div class="takeaway"><strong>How it interacts.</strong> Override is carved out first; remainder within the manager's team is split by the multi-metric algorithm (renormalized among the unpinned, so the parent total is conserved exactly). Brand-new IC carve-outs never stack on top of overrides. Since v0.18.1 the absorption policy is stated and regression-pinned (issue #37): the remainder flows to non-pinned siblings <em>proportional to their baseline (un-pinned) cascade</em> — an algebraic identity of renormalized shares, verified to the penny.</div>
 
   <div class="callout"><strong>Pins grew up in v0.13.0 (issues #28/#21/#23).</strong> Pins now work at <em>any</em> level — pin a manager and that subtree's total is fixed, then cascades normally within; jagged-hierarchy leaf pins are honored too (both were silently ignored before). Conservation is guaranteed: the brand-new carve-out is capped at the remaining pool, and a pin <em>exceeding</em> the pool floors siblings at $0 — never negative quotas — with a warning plus <code class="inline">overpinned_amount</code>/<code class="inline">overpinned_nodes</code> in <code class="inline">gating_report()</code>. Pins carry a basis: <code class="inline">override_basis='base'</code> (default — pin the un-hedged plan number; hedged derived) or <code class="inline">'cascaded'</code> (shown above — pin the exact final number; base derived). And for post-cascade edits, work on <code class="inline">base_quota</code>, roll parents up on base, then <code class="inline">cascader.rehedge(edited_base)</code> re-derives the hedged layer from each node's original ratio (<code class="inline">cascader.hedge_ratios()</code>) — summing hedged leaves into parents double-counts buffers up the tree.</div>
 </section>

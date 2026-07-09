@@ -3,6 +3,29 @@
 All notable changes to `b2b_revenue_forecasting` are documented here.
 This project loosely follows [Semantic Versioning](https://semver.org/).
 
+## [0.18.1] — 2026-07
+
+Closes [issue #37](https://github.com/shreyasrkarwa/Analytics/issues/37)
+as already-resolved, with verification. Every element of the proposed
+API maps onto shipped features: `pins=` → `new_ic_overrides`
+(any-level pins since v0.13.0), `pin_basis='base'` →
+`override_basis='base'` (the default since v0.13.0), aggregate
+cross-combo totals → `apply_pins` (v0.16.0). The claimed-missing
+`remainder='baseline_proportional_nonpinned'` policy is the ONLY
+behavior: because each child's baseline equals target x its composite
+share, renormalizing shares among the non-pinned children is
+algebraically identical to splitting the remainder proportional to
+their baseline values.
+
+### Docs / Tests
+- The absorption policy is now stated explicitly on the
+  `new_ic_overrides` docstring and in the README.
+- The issue's exact DACH scenario ($50M, DACH1 pinned $12.5M base,
+  DACH2 $12M) is a pinned regression test: non-pinned siblings match
+  baseline-proportional to $0.0000, base conserves at every depth,
+  hedged values derive from each node's ratio.
+- No code behavior changes.
+
 ## [0.18.0] — 2026-07
 
 Implements [issue #30](https://github.com/shreyasrkarwa/Analytics/issues/30):

@@ -247,6 +247,59 @@ def test_rehedge_after_base_edit():
         print("  rehedge() before any cascade raises RuntimeError")
 
 
+# ----------------------------------------------------------------------
+# 8. Issue #37 — remainder absorption IS baseline-proportional
+# ----------------------------------------------------------------------
+def test_issue37_baseline_proportional_absorption():
+    print(f"\n\n{SEPARATOR}")
+    print("TEST 8: #37 — non-pinned siblings absorb the remainder exactly "
+          "proportional to their BASELINE cascade (DACH scenario)")
+    print(SEPARATOR)
+    rows = []
+    for team, reps in [('DACH1', [500, 700]), ('DACH2', [400, 600]),
+                       ('UKI', [300, 900]), ('NORD', [200, 400])]:
+        for i, kw in enumerate(reps):
+            rows.append(dict(pool='EMEA', team=team, rep=f'{team}_r{i+1}',
+                             kw=kw))
+    hedge = HedgeByDepth(from_leaves={1: 1.10, 2: 1.05})
+    TARGET = 50_000_000.0
+    PINS = {'DACH1': 12_500_000.0, 'DACH2': 12_000_000.0}
+
+    def build():
+        return QuotaCascader(_build(rows))
+
+    # Baseline (no pins)
+    c0 = build()
+    c0.cascade_quota('EMEA', TARGET, hedge_multiplier=hedge, metrics=M,
+                     verbose=False)
+    base0 = c0.base_quotas
+    # Pinned run — the issue's proposed API maps to existing knobs:
+    # pins= -> new_ic_overrides ; pin_basis='base' -> override_basis
+    c1 = build()
+    q1 = c1.cascade_quota('EMEA', TARGET, hedge_multiplier=hedge, metrics=M,
+                          new_ic_overrides=PINS, override_basis='base',
+                          verbose=False)
+    base1 = c1.base_quotas
+    # Exact BASE totals on the pinned teams
+    assert base1['DACH1'] == 12_500_000.0
+    assert base1['DACH2'] == 12_000_000.0
+    # The claimed-missing policy is the actual behavior, to the penny:
+    remainder = TARGET - sum(PINS.values())
+    unpinned_tot = base0['UKI'] + base0['NORD']
+    for t in ['UKI', 'NORD']:
+        expected = remainder * base0[t] / unpinned_tot
+        assert abs(base1[t] - expected) < 0.005, t
+    # Parent conserved on base; hedged derived from ratios (no re-hedge)
+    assert abs(sum(base1[t] for t in
+                   ['DACH1', 'DACH2', 'UKI', 'NORD']) - TARGET) < 0.01
+    assert c1.reconciliation_report(base1, target=TARGET,
+                                    strict=True)['reconciles'].all()
+    assert abs(q1['DACH1'] - 12_500_000.0 * 1.05) < 0.01
+    print(f"  UKI {base1['UKI']:,.2f} · NORD {base1['NORD']:,.2f} — "
+          f"baseline-proportional to the penny; base conserves; "
+          f"hedged = base x ratio")
+
+
 if __name__ == '__main__':
     test_issue28_repro_conserves()
     test_pin_with_all_brand_new_conserves()
@@ -255,6 +308,7 @@ if __name__ == '__main__':
     test_jagged_leaf_pin_honored()
     test_override_basis()
     test_rehedge_after_base_edit()
+    test_issue37_baseline_proportional_absorption()
 
     print(f"\n\n{SEPARATOR}")
     print("ALL OVERRIDE-HARDENING TESTS PASSED")
