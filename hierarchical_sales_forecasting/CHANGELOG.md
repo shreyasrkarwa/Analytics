@@ -3,6 +3,36 @@
 All notable changes to `b2b_revenue_forecasting` are documented here.
 This project loosely follows [Semantic Versioning](https://semver.org/).
 
+## [0.17.0] — 2026-07
+
+Closes [issue #34](https://github.com/shreyasrkarwa/Analytics/issues/34):
+a deterministic "proportional-to-metric" mode. Verification first: the
+mechanism has ALWAYS existed — fixed-weight `MetricSpec`s passed to
+`cascade_quota(metrics=...)` are used as-is; `suggest_weights` is an
+optional helper, never a required stage, and no statistics run unless
+you call it. The requested `weighting='fixed'` flag would toggle
+behavior that is already the only behavior. What was missing was the
+discoverable front door.
+
+### Added
+- **`QuotaCascader.cascade_proportional(root, target, metric='dc_seats')`**
+  — the issue's Option B, verbatim: split the target proportional to
+  one metric (or a fixed blend via
+  `metrics={'dc_seats': 1.0, 'cloud_seats': 0.5}`), deterministic and
+  explainable at any slice size including n=1/2. Pure sugar: builds
+  the fixed-weight specs and delegates to `cascade_quota`, so gates,
+  `HedgeByDepth`, pins, `gate_fallback`, the base layer, and
+  `gating_report()` all work unchanged. Column resolution follows the
+  v0.7.1 order (Qi_<name> convention, then the plain column).
+  `direction='inverse'` supported; mixed directions -> build specs
+  directly.
+
+### Docs
+- `suggest_weights` docstring and the README now state explicitly that
+  the suggester is optional, with a "Deterministic proportional
+  splits" section. (The #33 immunity noted in the issue also already
+  ships: since v0.12.0 degenerate slices keep declared weights.)
+
 ## [0.16.0] — 2026-07
 
 The aggregate-pinning release — closes

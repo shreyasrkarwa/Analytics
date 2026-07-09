@@ -747,6 +747,16 @@ if mgr_with_zero_team in cascader_ws.gated_nodes:
 ws_cascaded_df = cascader_ws.quotas_to_dataframe(ws_quotas, level_names=taxonomy)
 ws_csv_path = os.path.join(OUT_DIR, 'output_whitespace_cascaded_quotas.csv')
 ws_cascaded_df.to_csv(ws_csv_path, index=False)
+# v0.17.0 (issue #34): the deterministic one-liner — split proportional
+# to a single metric, no correlation, no suggest_weights. (Fixed-weight
+# MetricSpecs were ALWAYS used as-is; this is the discoverable name.)
+quick = QuotaCascader(hierarchy_ws).cascade_proportional(
+    'Global_Corp', 1_000_000.0, metric='Current_Seats_ProductX',
+    verbose=False)
+seat_share = {r: quick[r] / 1_000_000.0 for r in ['NA', 'EMEA', 'APAC']}
+print(f"\ncascade_proportional one-liner (seat-share split): "
+      + " · ".join(f"{r} {s:.1%}" for r, s in seat_share.items()))
+
 print(f"\nWrote {ws_csv_path}")
 print(f"  columns: {list(ws_cascaded_df.columns)}")
 print(f"  Sample gated IC rows (is_gated=True, cascaded_quota=0):")

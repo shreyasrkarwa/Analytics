@@ -76,12 +76,12 @@
 <div class="container">
 
 <header>
-  <div class="eyebrow">b2b_revenue_forecasting · v0.16.0</div>
+  <div class="eyebrow">b2b_revenue_forecasting · v0.17.0</div>
   <h1>Multi-Metric Cascading &amp; Reconciliation — Walkthrough</h1>
   <p class="subtitle">End-to-end notebook: how an analyst takes one CSV of historical performance + pipeline data and produces a quota plan, a pipeline diagnosis, a redistributed plan, and a bias-corrected forecast — with full visibility into how each metric actually influences allocation.</p>
   <div class="meta">
     <span><strong>Package:</strong> b2b-revenue-forecasting</span>
-    <span><strong>Version:</strong> 0.16.0</span>
+    <span><strong>Version:</strong> 0.17.0</span>
     <span><strong>Dataset:</strong> 170 ICs · 217 hierarchy nodes</span>
     <span><strong>Macro target:</strong> $50,000,000</span>
   </div>
@@ -790,6 +790,14 @@ Sample gated IC rows (is_gated=True, cascaded_quota=0):
   <div class="callout"><strong>Configurable gate semantics (v0.9.0).</strong> The PASS predicate is now a knob: <code class="inline">gate_mode='gt'</code> (default — pass iff <code class="inline">value &gt; gate_threshold</code>, exactly the behavior above), <code class="inline">'ge'</code> ("at least N seats": <code class="inline">gate_threshold=5, gate_mode='ge'</code> lets a rep with exactly 5 pass), <code class="inline">'lt'</code>/<code class="inline">'le'</code> (gate reps with <em>too much</em> of a signal — e.g. <code class="inline">gate_threshold=100, gate_mode='le'</code> zeroes churn-heavy territories), and <code class="inline">'truthy'</code> (boolean entitlement flags, threshold ignored). Every mode inherits the <code class="inline">gate_fallback</code> no-stranding guarantees.</div>
 
   <div class="takeaway"><strong>The <code class="inline">is_gated</code> column matters for audit.</strong> It distinguishes "$0 because gated" (a deliberate exclusion the planner chose) from "$0 because the metric signals were weak" (algorithmic outcome). Stakeholders should see this distinction.</div>
+
+  <div class="callout"><strong>Deterministic proportional splits (v0.17.0, issue #34).</strong> The most common allocation — "this team holds 30% of the seats → 30% of the quota" — never needed correlation or <code class="inline">suggest_weights</code>: fixed-weight <code class="inline">MetricSpec</code>s have always been used as-is. It now has a named front door:
+
+<pre class="code" style="margin-top:8px;"><code>quick = QuotaCascader(hierarchy_ws).cascade_proportional(
+    'Global_Corp', 1_000_000, metric='Current_Seats_ProductX')
+# blends: metrics={'dc_seats': 1.0, 'cloud_seats': 0.5}</code></pre>
+<pre class="output" style="margin-top:8px;">cascade_proportional one-liner (seat-share split): NA 55.4% · EMEA 12.9% · APAC 31.7%</pre>
+Deterministic and explainable at any slice size (n≤2 included), immune to the #33 degenerate-slice collapse by construction, and every cascade option (gates, <code class="inline">HedgeByDepth</code>, pins, base layer, <code class="inline">gating_report()</code>) passes straight through.</div>
 </section>
 
 <section class="step" id="step-17">

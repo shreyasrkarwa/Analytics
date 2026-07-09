@@ -21,6 +21,10 @@ Unlike traditional bottom-up time-series libraries (which are strictly built for
 | **`CommitReconciler`** | Detect sandbagging and "happy ears" bias via historical Bias Quotients, then auto-correct forecasts |
 | **`PipelineAdjuster`** | Diagnose pipeline health with per-region thresholds and redistribute IC quotas using zero-sum logic |
 
+### What's New in v0.17.0 — the proportional-split front door ([issue #34](https://github.com/shreyasrkarwa/Analytics/issues/34))
+
+Deterministic capacity-based allocation now has a named entry point: `cascader.cascade_proportional(root, target, metric='dc_seats')` — "this team holds 30% of the DC seats → 30% of the quota," no correlation, no target column, any slice size. Blends: `metrics={'dc_seats': 1.0, 'cloud_seats': 0.5}`. All cascade options (gates, `HedgeByDepth`, pins…) pass through. To be clear about what this is: sugar over the behavior that was always the default — fixed-weight `MetricSpec`s are used as-is, and `suggest_weights` has never been a required stage. See "Deterministic proportional splits" under Key Concepts.
+
 ### What's New in v0.16.0 — pin exact totals across cascades ([#22](https://github.com/shreyasrkarwa/Analytics/issues/22) · [#31](https://github.com/shreyasrkarwa/Analytics/issues/31) · [#24](https://github.com/shreyasrkarwa/Analytics/issues/24))
 
 "This territory carries exactly $2.6M in total across all products and quarters" is now one call on the batch output:
@@ -525,6 +529,17 @@ adjusted = adjuster.adjust(
 ---
 
 ## 🧠 Key Concepts
+
+### Deterministic Proportional Splits (No Statistics)
+
+The most common allocation — "split the target proportional to a metric" — needs no correlation and no `suggest_weights`. Fixed-weight `MetricSpec`s passed to `cascade_quota(metrics=...)` are used exactly as given; the suggester is an *optional* helper for when you want data-driven weight magnitudes. The one-liner (v0.17.0):
+
+```python
+quotas = cascader.cascade_proportional('Enterprise_EMEA', 1_000_000, metric='dc_seats')
+# 30% of the DC seats -> 30% of the quota. Blend: metrics={'dc_seats': 1.0, 'cloud_seats': 0.5}
+```
+
+Deterministic, explainable, and correct at any slice size — including the tiny n≤2 slices where correlation is undefined.
 
 ### How Weights Become Influence
 

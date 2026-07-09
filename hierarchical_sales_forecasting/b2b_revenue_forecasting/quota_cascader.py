@@ -1138,6 +1138,78 @@ class QuotaCascader:
 
         return quotas
 
+    def cascade_proportional(
+        self,
+        root_node: str,
+        macro_target: float,
+        metric: Optional[str] = None,
+        metrics: Optional[Dict[str, float]] = None,
+        direction: str = "proportional",
+        **cascade_kwargs: Any,
+    ) -> Dict[str, float]:
+        """
+        Deterministic "proportional-to-metric" cascade (issue #34):
+        split the target across children in proportion to a chosen
+        metric (or a fixed-weight blend) — no correlation, no target
+        column, works at any slice size including n=1/2.
+
+            # this team holds 30% of the DC seats -> 30% of the quota
+            quotas = cascader.cascade_proportional(
+                'Enterprise_EMEA', 1_000_000, metric='dc_seats')
+
+            # fixed-weight blend (2:1 influence)
+            quotas = cascader.cascade_proportional(
+                'Enterprise_EMEA', 1_000_000,
+                metrics={'dc_seats': 1.0, 'cloud_seats': 0.5})
+
+        This is pure sugar over the mechanism that has ALWAYS been the
+        default: fixed-weight MetricSpecs passed to
+        cascade_quota(metrics=...) are used as-is — `suggest_weights`
+        is an optional helper, never a required stage, and no
+        statistics run unless you call it yourself. This method just
+        builds the specs and delegates, so every cascade_quota option
+        (gate_metrics, hedge_multiplier / HedgeByDepth,
+        new_ic_overrides, gate_fallback, ...) passes through.
+
+        Parameters
+        ----------
+        metric : str
+            Single metric name. Column resolution follows the v0.7.1
+            order: explicit columns aren't needed — the Qi_<name>
+            convention is tried first, then the plain <name> column.
+        metrics : Dict[str, float]
+            Fixed blend: {name: weight}, weights > 0, normalized to
+            sum 1 at cascade time (influence = weight / sum(weights)).
+        direction : str
+            'proportional' (default) or 'inverse', applied to every
+            metric given here. For mixed directions, build MetricSpecs
+            and call cascade_quota directly.
+
+        Returns the same dict as cascade_quota (base layer, gating
+        report, etc. all populated identically).
+        """
+        if (metric is None) == (metrics is None):
+            raise ValueError(
+                "cascade_proportional: pass exactly one of metric='name' "
+                "or metrics={'name': weight, ...}."
+            )
+        if metric is not None:
+            blend = {metric: 1.0}
+        else:
+            blend = dict(metrics)
+        if not blend:
+            raise ValueError("cascade_proportional: metrics dict is empty.")
+        for name, w in blend.items():
+            if not isinstance(w, (int, float)) or w <= 0:
+                raise ValueError(
+                    f"cascade_proportional: weight for '{name}' must be a "
+                    f"positive number, got {w!r}."
+                )
+        specs = [MetricSpec(name, direction=direction, weight=float(w))
+                 for name, w in blend.items()]
+        return self.cascade_quota(root_node, macro_target, metrics=specs,
+                                  **cascade_kwargs)
+
     # ------------------------------------------------------------------
     # CSV-export helpers (convert dict output -> analyst-ready DataFrame)
     # ------------------------------------------------------------------

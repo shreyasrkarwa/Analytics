@@ -352,6 +352,12 @@ class MetricSpec:
         Suggest WEIGHTS (only) for user-declared MetricSpecs by correlating
         each metric with a designated target column.
 
+        This helper is OPTIONAL (issue #34). Fixed-weight MetricSpecs
+        passed straight to cascade_quota(metrics=...) are used as-is —
+        no correlation ever runs unless you call this yourself. For the
+        common "split proportional to a metric" case, see
+        QuotaCascader.cascade_proportional.
+
         Small / degenerate slices (issue #33)
         -------------------------------------
         Correlation is statistically undefined below 3 paired
