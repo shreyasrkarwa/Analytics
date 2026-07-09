@@ -913,6 +913,9 @@ quotas_long, weights_long = cascade_many(
     # dict here, since cascade_many builds each hierarchy internally.
     # Deepest managers (children are ICs) carry 10%, the level above 5%.
     hedge_multiplier=HedgeByDepth(from_leaves={1: 1.10, 2: 1.05}),
+    # v0.15.0 (issue #14): gate_metrics also accepts a CALLABLE evaluated
+    # per combination — e.g. gate only one sales type:
+    #   gate_metrics=lambda g: DC_GATE if g['Region'] == 'NA' else None
 )
 
 n_cascades = quotas_long.groupby(['Region', 'fiscal_quarter']).ngroups

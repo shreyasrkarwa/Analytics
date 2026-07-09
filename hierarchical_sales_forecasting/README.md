@@ -21,6 +21,21 @@ Unlike traditional bottom-up time-series libraries (which are strictly built for
 | **`CommitReconciler`** | Detect sandbagging and "happy ears" bias via historical Bias Quotients, then auto-correct forecasts |
 | **`PipelineAdjuster`** | Diagnose pipeline health with per-region thresholds and redistribute IC quotas using zero-sum logic |
 
+### What's New in v0.15.0 — conditional gating per combination ([issue #14](https://github.com/shreyasrkarwa/Analytics/issues/14))
+
+`cascade_many`'s `gate_metrics` now accepts a callable evaluated per combination with its group-key dict — so a DC-seat gate can apply to Migration only, never Expansion, in one call:
+
+```python
+DC_GATE = [MetricSpec('dc_seats', columns=['dc_seats'])]
+quotas, weights = cascade_many(
+    hierarchy_df, target_df, group_keys=['st1_sales_type', 'regional'], ...,
+    gate_metrics=lambda g: DC_GATE if g['st1_sales_type'] == 'Migration' else None,
+)
+# mapping style: gate_metrics=lambda g: BY_TYPE.get(g['st1_sales_type'])
+```
+
+Exactly equivalent to the old split-and-concat workaround (pinned by test), with failing policies handled by the `on_error`/dropped-targets machinery. Also fixed: `attrs['dropped_targets']` is now stored as records so `pd.concat` on cascade outputs works again.
+
 ### What's New in v0.14.0 — no target left behind ([#26](https://github.com/shreyasrkarwa/Analytics/issues/26) · [#25](https://github.com/shreyasrkarwa/Analytics/issues/25) · [#32](https://github.com/shreyasrkarwa/Analytics/issues/32))
 
 Targets with no matching hierarchy branch (Government + EMEA with no Government subtree) are now first-class: `cascade_many(return_dropped=True)` returns them as a frame with a `reason` column (also always on `quotas_long.attrs['dropped_targets']`), and the new `route_targets()` places that money on named recipients anywhere in the tree:

@@ -76,12 +76,12 @@
 <div class="container">
 
 <header>
-  <div class="eyebrow">b2b_revenue_forecasting · v0.14.0</div>
+  <div class="eyebrow">b2b_revenue_forecasting · v0.15.0</div>
   <h1>Multi-Metric Cascading &amp; Reconciliation — Walkthrough</h1>
   <p class="subtitle">End-to-end notebook: how an analyst takes one CSV of historical performance + pipeline data and produces a quota plan, a pipeline diagnosis, a redistributed plan, and a bias-corrected forecast — with full visibility into how each metric actually influences allocation.</p>
   <div class="meta">
     <span><strong>Package:</strong> b2b-revenue-forecasting</span>
-    <span><strong>Version:</strong> 0.14.0</span>
+    <span><strong>Version:</strong> 0.15.0</span>
     <span><strong>Dataset:</strong> 170 ICs · 217 hierarchy nodes</span>
     <span><strong>Macro target:</strong> $50,000,000</span>
   </div>
@@ -954,7 +954,7 @@ NA     1              $25,000,000 $25,000,000.02
 
 Wrote examples/data/output_batch_cascaded_quotas.csv</pre>
 
-  <div class="highlight"><strong>Prepare once, cascade many.</strong> Each region's hierarchy is built and validated once; Q1 and Q2 then cascade against the same prepared structure with identical shares (Q2 = Q1 × target ratio). With <code class="inline">group_keys</code> like <code class="inline">["st1_sales_type", "base_product_r4f", "regional"]</code> the same call scales to hundreds of combinations — replacing the ~150-line bespoke loop from issue #4.</div>
+  <div class="highlight"><strong>Prepare once, cascade many.</strong> Each region's hierarchy is built and validated once; Q1 and Q2 then cascade against the same prepared structure with identical shares (Q2 = Q1 × target ratio). With <code class="inline">group_keys</code> like <code class="inline">["st1_sales_type", "base_product_r4f", "regional"]</code> the same call scales to hundreds of combinations — replacing the ~150-line bespoke loop from issue #4. Since v0.15.0, <code class="inline">gate_metrics</code> may also be a <em>callable</em> evaluated per combination (<code class="inline">lambda g: DC_GATE if g['st1_sales_type'] == 'Migration' else None</code>) — conditional gating in one call instead of a split-and-concat pair, exactly equivalent number-for-number (pinned by test).</div>
 
   <div class="takeaway"><strong>Everything travels with the rows.</strong> The long output carries group keys, sub-target columns, the input target, <code class="inline">cascaded_quota</code>, <code class="inline">base_quota</code> (un-hedged), and the gate audit columns — ready for <code class="inline">.to_csv()</code>, <code class="inline">.to_sql()</code>, or a BI tool, no post-hoc tagging.</div>
 

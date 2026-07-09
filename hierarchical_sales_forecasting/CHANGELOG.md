@@ -3,6 +3,30 @@
 All notable changes to `b2b_revenue_forecasting` are documented here.
 This project loosely follows [Semantic Versioning](https://semver.org/).
 
+## [0.15.0] — 2026-07
+
+Implements [issue #14](https://github.com/shreyasrkarwa/Analytics/issues/14):
+per-group / conditional gating in `cascade_many`.
+
+### Added
+- **`gate_metrics` accepts a callable** — evaluated once per
+  combination with the group-key dict, returning that combination's
+  gate list (or None for no gates). E.g. gate only Migration:
+  `gate_metrics=lambda g: DC_GATE if g['st1_sales_type'] ==
+  'Migration' else None`. A mapping-style policy is one line via
+  `dict.get` (documented recipe). Replaces the split-and-concat
+  two-call workaround — pinned as an exact-equivalence test. Bad
+  return types and raising policies flow through the existing
+  `on_error` / dropped-targets machinery. Static lists unchanged.
+
+### Fixed
+- **`quotas_long.attrs['dropped_targets']` is now a list of record
+  dicts** instead of a DataFrame. Storing a DataFrame in `.attrs`
+  made `pd.concat` on two cascade outputs raise "truth value of a
+  DataFrame is ambiguous" (pandas compares attrs during finalize).
+  Reconstruct with `pd.DataFrame(quotas.attrs['dropped_targets'])`;
+  `return_dropped=True` remains the primary DataFrame channel.
+
 ## [0.14.0] — 2026-07
 
 The routing release — closes

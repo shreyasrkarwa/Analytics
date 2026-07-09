@@ -11,7 +11,7 @@ loop — and with it all the correctness work the package already does
 never gated, per-depth reconciliation of the base layer).
 """
 import warnings
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import pandas as pd
 
@@ -30,7 +30,10 @@ def cascade_many(
     target_col: str,
     taxonomy: List[str],
     metrics: Optional[List[MetricSpec]] = None,
-    gate_metrics: Optional[List[MetricSpec]] = None,
+    gate_metrics: Optional[Union[
+        List[MetricSpec],
+        Callable[[Dict[str, Any]], Optional[List[MetricSpec]]],
+    ]] = None,
     hedge_multiplier: Union[float, Dict[str, float]] = 1.0,
     suggest_config: Optional[Dict[str, Any]] = None,
     weights_mode: str = "global",
@@ -82,10 +85,28 @@ def cascade_many(
     metrics : list[MetricSpec], optional
         Fixed metric slate used for every combination. Mutually
         exclusive with `suggest_config`.
-    gate_metrics : list[MetricSpec], optional
+    gate_metrics : list[MetricSpec] | callable, optional
         Gate metrics, passed straight to cascade_quota. All
         gate_fallback semantics (v0.5.0) apply; override the fallback
         via **cascade_kwargs (e.g. gate_fallback="strand_at_root").
+
+        Conditional gating (issue #14, v0.15.0): pass a CALLABLE that
+        receives the combination's group-key dict and returns the gate
+        list for that combination (or None for "no gates"). Resolved
+        once per combination — gates only where the policy says so::
+
+            gate_metrics=lambda g: (
+                [MetricSpec('dc_seats', columns=['dc_seats'])]
+                if g['st1_sales_type'] == 'Migration' else None)
+
+        A mapping-style policy is the same thing via dict.get::
+
+            BY_TYPE = {'Migration': [MetricSpec('dc_seats',
+                                                columns=['dc_seats'])]}
+            gate_metrics=lambda g: BY_TYPE.get(g['st1_sales_type'])
+
+        If the callable raises for a combination, that combination is
+        handled per `on_error` (skip + dropped-targets frame, or raise).
     hedge_multiplier : float | dict | HedgeByDepth
         Passed to cascade_quota. A HedgeByDepth spec (issue #13) is
         resolved against EACH combination's freshly built hierarchy —
@@ -123,10 +144,11 @@ def cascade_many(
         row that was dropped (its combination failed / had no hierarchy
         branch), with all original columns plus a `reason` column —
         so dropped money is data, not log noise (issue #26). The same
-        frame is ALWAYS attached as
-        quotas_long.attrs['dropped_targets'], regardless of this flag.
-        Feed it to route_targets() to place the money on chosen
-        recipients (issues #25/#32).
+        rows are ALWAYS attached as
+        quotas_long.attrs['dropped_targets'] (as a list of record
+        dicts — reconstruct with pd.DataFrame(...)), regardless of
+        this flag. Feed the frame to route_targets() to place the
+        money on chosen recipients (issues #25/#32).
     on_collision : str
         Passed to from_dataframe (v0.6.0 duplicate-level policy).
     verbose : bool
@@ -245,6 +267,22 @@ def cascade_many(
             else:
                 combo_metrics = global_metrics
 
+            # 4b. Resolve gates for this combination (issue #14) —
+            # a callable policy is evaluated against the group-key dict.
+            if callable(gate_metrics):
+                combo_gates = gate_metrics(dict(combo_dict))
+                if combo_gates is not None and not (
+                        isinstance(combo_gates, list)
+                        and all(isinstance(g, MetricSpec)
+                                for g in combo_gates)):
+                    raise ValueError(
+                        f"gate_metrics callable must return a list of "
+                        f"MetricSpec or None for combination {combo_dict}, "
+                        f"got {type(combo_gates).__name__}."
+                    )
+            else:
+                combo_gates = gate_metrics
+
             # Record the weights actually used (once per combination)
             if combo_metrics:
                 wdf = MetricSpec.normalized_weights(combo_metrics)
@@ -259,7 +297,7 @@ def cascade_many(
                     root, target,
                     hedge_multiplier=hedge_multiplier,
                     metrics=combo_metrics,
-                    gate_metrics=gate_metrics,
+                    gate_metrics=combo_gates,
                     verbose=verbose,
                     **cascade_kwargs,
                 )
@@ -327,7 +365,11 @@ def cascade_many(
     else:
         dropped_long = pd.DataFrame(
             columns=list(target_df.columns) + ["reason"])
-    quotas_long.attrs["dropped_targets"] = dropped_long
+    # Stored as RECORDS, not a DataFrame: pandas compares .attrs with ==
+    # during pd.concat, and a DataFrame value there makes concatenating
+    # two cascade outputs raise "truth value is ambiguous". Reconstruct
+    # with pd.DataFrame(quotas_long.attrs['dropped_targets']).
+    quotas_long.attrs["dropped_targets"] = dropped_long.to_dict("records")
 
     if return_dropped:
         return quotas_long, weights_long, dropped_long
