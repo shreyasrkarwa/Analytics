@@ -3,6 +3,46 @@
 All notable changes to `b2b_revenue_forecasting` are documented here.
 This project loosely follows [Semantic Versioning](https://semver.org/).
 
+## [0.12.0] — 2026-07
+
+Fixes [issue #33](https://github.com/shreyasrkarwa/Analytics/issues/33):
+small/low-variance slices no longer silently equal-split. Correlation
+is statistically undefined below 3 paired observations — and tiny
+slices (a sub-region with 2 teams) are the COMMON case in per-group
+batch runs. Zeroing those candidates' weights threw away the metric
+VALUES, so siblings with a 6x seat difference received identical
+quotas (field-reported).
+
+### Changed
+- **`on_degenerate` parameter** on `suggest_weights` and
+  `suggest_directions_and_weights`:
+  - `"proportional"` *(new default)* — statistically-degenerate
+    candidates KEEP their declared weight (1.0 unless set), so the
+    cascade splits proportionally to the blended metric values. Works
+    with any number of metrics (each child's share is the weighted
+    average of its per-metric share-of-siblings); directions still
+    apply.
+  - `"equal"` — pre-0.12.0 behavior: weight 0; if every candidate
+    degrades, the cascade equal-splits (with the v0.10.2 warning).
+  - `"raise"` — fail loudly for callers who handle thin slices
+    upstream.
+- Only true statistical degeneracy (n < 3 paired observations, zero
+  variance) triggers the fallback. A MISSING column is absent data,
+  not thin data: it stays weight 0 in every mode and never raises.
+
+### Added
+- Report entries now carry **`degenerate`** and **`fallback`** fields
+  in every path, and a summary warning names the degenerate candidates
+  in proportional mode — loud in the report, not just the log.
+
+### Notes
+- The issue's France-South repro is pinned by tests: the two teams now
+  split ~70/30 under the default (blend of ~20%-apart knowledge
+  workers and ~6x-apart cloud seats) instead of 50/50. Also pinned:
+  single-metric 6x ratio, per_group batch runs, and missing-column
+  behavior. Related feature request #34 (a fully correlation-free
+  proportional weighting mode) remains open.
+
 ## [0.11.0] — 2026-07
 
 Implements [issue #13](https://github.com/shreyasrkarwa/Analytics/issues/13):

@@ -163,6 +163,10 @@ def test_weights_modes():
                             'direction': 'proportional', 'lookback': 1,
                             'columns': ['dc_seats']}],
         warn_on_direction_mismatch=False,
+        # This test demonstrates per-group WEIGHT VARIATION, which needs
+        # the zero-on-degenerate path; since v0.12.0 (issue #33) the
+        # default keeps declared weights instead.
+        on_degenerate='equal',
     )
     with warnings.catch_warnings():
         warnings.simplefilter('ignore')

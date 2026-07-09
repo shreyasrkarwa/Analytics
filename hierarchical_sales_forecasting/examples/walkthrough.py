@@ -173,6 +173,10 @@ df['Has_Cert_4Q_sum'] = (
 
 # Direction is REQUIRED on every candidate. All 4 secondary metrics go
 # through the suggester so each weight is grounded in the data.
+# v0.12.0 (issue #33): on tiny/degenerate slices where correlation is
+# undefined, candidates now KEEP their declared weights by default
+# (on_degenerate='proportional') instead of silently zeroing out and
+# equal-splitting — see on_degenerate='equal'/'raise' for alternatives.
 # (NetNewACV is the cascade target itself — correlating it with itself
 # would always give 1.0, so we pin it manually as the anchor.)
 candidates = [

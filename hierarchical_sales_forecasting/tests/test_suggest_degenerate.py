@@ -21,23 +21,24 @@ SEPARATOR = "=" * 90
 CAND = [{'name': 'dc', 'column': 'dc', 'direction': 'proportional'}]
 
 
-def _suggest(df):
+def _suggest(df, **kw):
     with warnings.catch_warnings(record=True) as wlog:
         warnings.simplefilter('always')
         specs, report = MetricSpec.suggest_weights(
-            df, target_column='kw', candidate_metrics=CAND)
+            df, target_column='kw', candidate_metrics=CAND, **kw)
     heads_up = [w for w in wlog
                 if 'ALL suggested weights are 0' in str(w.message)]
     return specs, report, heads_up
 
 
 # ----------------------------------------------------------------------
-# 1. Degenerate slices: no exception, weight 0, ONE heads-up warning
+# 1. Degenerate slices under on_degenerate='equal' (pre-0.12.0 behavior):
+#    no exception, weight 0, ONE heads-up warning
 # ----------------------------------------------------------------------
 def test_degenerate_slices_warn_once():
     print(SEPARATOR)
-    print("TEST 1: degenerate slices never raise; all-zero result emits ONE "
-          "equal-split heads-up")
+    print("TEST 1: on_degenerate='equal' — degenerate slices never raise; "
+          "all-zero result emits ONE equal-split heads-up")
     print(SEPARATOR)
     cases = {
         'single row':      pd.DataFrame({'kw': [100], 'dc': [5]}),
@@ -46,9 +47,10 @@ def test_degenerate_slices_warn_once():
         'empty df':        pd.DataFrame({'kw': [], 'dc': []}),
     }
     for label, df in cases.items():
-        specs, report, heads_up = _suggest(df)
+        specs, report, heads_up = _suggest(df, on_degenerate='equal')
         assert specs[0].weight == 0.0, label
         assert 'rationale' in report['dc'], label
+        assert report['dc']['degenerate'] is True, label
         assert len(heads_up) == 1, f"{label}: expected 1 heads-up warning"
         assert 'EQUAL SPLIT' in str(heads_up[0].message)
         print(f"  {label:>16}: weight=0, warned once "
@@ -78,18 +80,31 @@ def test_partial_zero_no_warning():
     print(SEPARATOR)
     df = pd.DataFrame({'kw': [100, 200, 300, 400],
                        'dc': [1, 2, 3, 4],
-                       'flat': [7, 7, 7, 7]})       # constant -> weight 0
+                       'flat': [7, 7, 7, 7]})       # constant -> degenerate
+    flat_cand = [{'name': 'flat', 'column': 'flat',
+                  'direction': 'proportional'}]
+    # on_degenerate='equal': constant candidate zeroed, no all-zero warning
     with warnings.catch_warnings(record=True) as wlog:
         warnings.simplefilter('always')
         specs, _ = MetricSpec.suggest_weights(
-            df, target_column='kw',
-            candidate_metrics=CAND + [{'name': 'flat', 'column': 'flat',
-                                       'direction': 'proportional'}])
+            df, target_column='kw', candidate_metrics=CAND + flat_cand,
+            on_degenerate='equal')
     weights = {s.name: s.weight for s in specs}
     heads_up = [w for w in wlog if 'ALL suggested weights' in str(w.message)]
-    print(f"  weights: {weights} · heads-up: {len(heads_up)}")
+    print(f"  equal mode weights: {weights} · heads-up: {len(heads_up)}")
     assert weights['dc'] > 0 and weights['flat'] == 0.0
     assert heads_up == []
+    # default proportional mode: the constant candidate KEEPS its declared
+    # weight (issue #33) and the degenerate warning names it
+    with warnings.catch_warnings(record=True) as wlog2:
+        warnings.simplefilter('always')
+        specs2, rep2 = MetricSpec.suggest_weights(
+            df, target_column='kw', candidate_metrics=CAND + flat_cand)
+    w2 = {s.name: s.weight for s in specs2}
+    deg = [w for w in wlog2 if 'statistically undefined' in str(w.message)]
+    print(f"  default weights: {w2} · degenerate warnings: {len(deg)}")
+    assert w2['flat'] == 1.0 and rep2['flat']['degenerate'] is True
+    assert len(deg) == 1 and 'flat' in str(deg[0].message)
 
 
 # ----------------------------------------------------------------------
@@ -97,14 +112,16 @@ def test_partial_zero_no_warning():
 # ----------------------------------------------------------------------
 def test_all_zero_specs_equal_split():
     print(f"\n\n{SEPARATOR}")
-    print("TEST 4: cascading with all-zero specs -> clean equal split")
+    print("TEST 4: cascading with all-zero specs (on_degenerate='equal') -> "
+          "clean equal split")
     print(SEPARATOR)
     df = pd.DataFrame([
         dict(r='AMER', team='T1', rep='r1', kw=100, dc=5),
         dict(r='AMER', team='T1', rep='r2', kw=100, dc=5),
     ])
     specs, _, _ = _suggest(df.rename(columns={'kw': 'kw', 'dc': 'dc'})
-                           .assign(kw=[100, 100]))   # zero variance
+                           .assign(kw=[100, 100]),   # zero variance
+                           on_degenerate='equal')
     h = SalesHierarchy()
     h.from_dataframe(df, path_cols=['r', 'team', 'rep'],
                      metrics_cols=['kw', 'dc'])

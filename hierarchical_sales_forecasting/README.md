@@ -21,6 +21,10 @@ Unlike traditional bottom-up time-series libraries (which are strictly built for
 | **`CommitReconciler`** | Detect sandbagging and "happy ears" bias via historical Bias Quotients, then auto-correct forecasts |
 | **`PipelineAdjuster`** | Diagnose pipeline health with per-region thresholds and redistribute IC quotas using zero-sum logic |
 
+### What's New in v0.12.0 — small slices split proportionally, not equally ([issue #33](https://github.com/shreyasrkarwa/Analytics/issues/33))
+
+Correlation-based weight suggestion is undefined on tiny slices (n ≤ 2) and zero-variance columns — the *common* case in per-group batch runs. Previously those candidates were zeroed, and an all-zero slate made the cascade equal-split: siblings with a 6× seat difference got identical quotas, silently. Now `on_degenerate="proportional"` (the new default) keeps each degenerate candidate's **declared** weight, so allocation stays proportional to the blended metric values — with any number of metrics, directions included. The old behavior is one keyword away (`on_degenerate="equal"`), `"raise"` fails fast, degenerate candidates are flagged in the report (`degenerate` / `fallback` fields) and named in a warning, and missing columns still get weight 0 (absent data ≠ thin data).
+
 ### What's New in v0.11.0 — per-depth hedging with `HedgeByDepth` ([issue #13](https://github.com/shreyasrkarwa/Analytics/issues/13))
 
 Hedge policies are usually stated by *level*, not by node: "front-line managers carry 10%, their directors 5%." `HedgeByDepth` expresses exactly that and works everywhere `hedge_multiplier` does — including `cascade_many`, where per-node dicts were structurally impossible:

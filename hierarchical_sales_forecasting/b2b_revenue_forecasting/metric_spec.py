@@ -58,6 +58,19 @@ AGGREGATIONS = ("sum", "mean", "last")
 #   "le"     pass iff value <= gate_threshold
 #   "truthy" pass iff bool(value)               (threshold ignored)
 GATE_MODES = ("gt", "ge", "lt", "le", "truthy")
+# What to do when a candidate's correlation is STATISTICALLY undefined
+# (fewer than 3 paired observations, or zero variance) — issue #33:
+#   "proportional" (default) keep the candidate's DECLARED weight, so the
+#                  cascade splits proportionally to the metric values
+#                  instead of equally. Correct for tiny slices (n<=2),
+#                  which are the COMMON case in per-group batch runs.
+#   "equal"        pre-0.12.0 behavior: weight 0; if every candidate
+#                  degrades, the cascade falls back to an equal split.
+#   "raise"        fail loudly so the caller can handle thin slices.
+# Note: a MISSING column is absent data, not thin data — it always gets
+# weight 0 regardless of this setting.
+DEGENERATE_MODES = ("proportional", "equal", "raise")
+_DEGENERATE_PREFIX = "Insufficient variation"
 
 
 @dataclass
@@ -333,10 +346,35 @@ class MetricSpec:
         default_lookback: int = 4,
         min_correlation: float = 0.05,
         warn_on_direction_mismatch: bool = True,
+        on_degenerate: str = "proportional",
     ) -> Tuple[List["MetricSpec"], Dict[str, Dict[str, Any]]]:
         """
         Suggest WEIGHTS (only) for user-declared MetricSpecs by correlating
         each metric with a designated target column.
+
+        Small / degenerate slices (issue #33)
+        -------------------------------------
+        Correlation is statistically undefined below 3 paired
+        observations and for zero-variance columns — and tiny slices
+        (a sub-region with 2 teams) are the COMMON case in per-group
+        batch runs. `on_degenerate` controls the fallback for such
+        candidates:
+
+          "proportional" (default) — the candidate KEEPS its declared
+              weight (1.0 unless you set one), so cascading splits
+              proportionally to the blended metric values. Two siblings
+              with a 6x seat difference get ~6x different shares
+              instead of identical quotas.
+          "equal" — pre-0.12.0 behavior: weight 0; if every candidate
+              degrades, the cascade equal-splits (with the v0.10.2
+              warning).
+          "raise" — ValueError, for callers who want thin slices
+              handled upstream.
+
+        Whatever the mode, degenerate candidates are flagged in the
+        report (`degenerate: True`, `fallback: <mode>`), and a summary
+        warning names them. A MISSING column is absent data, not thin
+        data: it always gets weight 0.
 
         Direction MUST be set on every candidate (either via a MetricSpec
         instance with .direction, or via a dict with a 'direction' key).
@@ -385,9 +423,15 @@ class MetricSpec:
                 f"target_column '{target_column}' not found in dataframe. "
                 f"Available columns: {list(df.columns)}"
             )
+        if on_degenerate not in DEGENERATE_MODES:
+            raise ValueError(
+                f"on_degenerate must be one of {DEGENERATE_MODES}, "
+                f"got '{on_degenerate}'."
+            )
 
         suggestions: List[MetricSpec] = []
         report: Dict[str, Dict[str, Any]] = {}
+        degenerate_names: List[str] = []
         target_series = pd.to_numeric(df[target_column], errors="coerce")
 
         for entry in candidate_metrics:
@@ -398,14 +442,42 @@ class MetricSpec:
             corr, n, status = _pairwise_correlation(df, target_series, corr_col)
 
             if status != "ok":
-                spec.weight = 0.0  # respect direction; just zero out influence
+                is_degenerate = status.startswith(_DEGENERATE_PREFIX)
+                if is_degenerate and on_degenerate == "raise":
+                    raise ValueError(
+                        f"suggest_weights: correlation for '{spec.name}' is "
+                        f"statistically undefined on this slice ({status}) "
+                        f"and on_degenerate='raise'. Use 'proportional' to "
+                        f"keep declared weights, or 'equal' for weight 0."
+                    )
+                if is_degenerate and on_degenerate == "proportional":
+                    # Keep the DECLARED weight (spec.weight as passed in;
+                    # 1.0 by default) so the cascade splits proportionally
+                    # to the metric values instead of equally.
+                    fallback_weight = float(spec.weight)
+                    rationale = (
+                        f"Correlation undefined on this slice (n={n}); KEPT "
+                        f"declared weight {fallback_weight:g} "
+                        f"(on_degenerate='proportional') so allocation stays "
+                        f"proportional to the metric values."
+                    )
+                else:
+                    # Missing column always lands here; degenerate data
+                    # lands here under on_degenerate='equal'.
+                    fallback_weight = 0.0
+                    rationale = status
+                spec.weight = fallback_weight
+                if is_degenerate:
+                    degenerate_names.append(spec.name)
                 report[spec.name] = {
                     "correlation": corr,
                     "n_observations": n,
                     "direction": user_direction,
-                    "weight": 0.0,
+                    "weight": fallback_weight,
                     "direction_matches_data": None,
-                    "rationale": status,
+                    "rationale": rationale,
+                    "degenerate": is_degenerate,
+                    "fallback": on_degenerate if is_degenerate else None,
                 }
                 suggestions.append(spec)
                 continue
@@ -447,11 +519,34 @@ class MetricSpec:
                 "weight": weight,
                 "direction_matches_data": direction_matches,
                 "rationale": rationale,
+                "degenerate": False,
+                "fallback": None,
             }
             suggestions.append(spec)
 
+        cls._warn_degenerate(degenerate_names, on_degenerate, "suggest_weights")
         cls._warn_if_all_zero(suggestions, report, "suggest_weights")
         return suggestions, report
+
+    @staticmethod
+    def _warn_degenerate(names: List[str], mode: str, caller: str) -> None:
+        """
+        Issue #33: degenerate candidates must be loud in every mode.
+        ('raise' never reaches here; 'equal' additionally triggers the
+        all-zero equal-split warning when every candidate degraded.)
+        """
+        if not names or mode == "equal":
+            return  # 'equal' keeps the v0.10.2 all-zero warning instead
+        warnings.warn(
+            f"{caller}: correlation was statistically undefined for "
+            f"{names} on this slice (too few rows or zero variance). "
+            f"Their DECLARED weights were kept "
+            f"(on_degenerate='proportional'), so allocation stays "
+            f"proportional to the metric values. See report[name]"
+            f"['degenerate'] / ['fallback'].",
+            UserWarning,
+            stacklevel=3,
+        )
 
     @staticmethod
     def _warn_if_all_zero(suggestions, report, caller: str) -> None:
@@ -487,11 +582,16 @@ class MetricSpec:
         candidate_metrics: List[Union[str, Dict[str, Any], "MetricSpec"]],
         default_lookback: int = 4,
         min_correlation: float = 0.05,
+        on_degenerate: str = "proportional",
     ) -> Tuple[List["MetricSpec"], Dict[str, Dict[str, Any]]]:
         """
         Exploratory helper — infer BOTH direction (from correlation sign)
         AND weight (from correlation magnitude). Use for sanity checks
         before locking in your domain-driven directions.
+
+        on_degenerate behaves as in suggest_weights (issue #33). Note
+        that for degenerate candidates the DIRECTION cannot be inferred
+        either — the declared/default direction is kept.
 
         Accepts the same candidate_metrics shapes as suggest_weights, plus
         bare strings (which default to direction='proportional' before
@@ -503,9 +603,15 @@ class MetricSpec:
             raise ValueError(
                 f"target_column '{target_column}' not found in dataframe."
             )
+        if on_degenerate not in DEGENERATE_MODES:
+            raise ValueError(
+                f"on_degenerate must be one of {DEGENERATE_MODES}, "
+                f"got '{on_degenerate}'."
+            )
 
         suggestions: List[MetricSpec] = []
         report: Dict[str, Dict[str, Any]] = {}
+        degenerate_names: List[str] = []
         target_series = pd.to_numeric(df[target_column], errors="coerce")
 
         for entry in candidate_metrics:
@@ -523,14 +629,36 @@ class MetricSpec:
             corr, n, status = _pairwise_correlation(df, target_series, corr_col)
 
             if status != "ok":
-                spec.weight = 0.0
+                is_degenerate = status.startswith(_DEGENERATE_PREFIX)
+                if is_degenerate and on_degenerate == "raise":
+                    raise ValueError(
+                        f"suggest_directions_and_weights: correlation for "
+                        f"'{spec.name}' is statistically undefined on this "
+                        f"slice ({status}) and on_degenerate='raise'."
+                    )
+                if is_degenerate and on_degenerate == "proportional":
+                    fallback_weight = float(spec.weight)
+                    rationale = (
+                        f"Correlation undefined on this slice (n={n}); KEPT "
+                        f"declared weight {fallback_weight:g} and "
+                        f"declared/default direction '{spec.direction}' "
+                        f"(on_degenerate='proportional')."
+                    )
+                else:
+                    fallback_weight = 0.0
+                    rationale = status
+                spec.weight = fallback_weight
+                if is_degenerate:
+                    degenerate_names.append(spec.name)
                 report[spec.name] = {
                     "correlation": corr,
                     "n_observations": n,
                     "direction": spec.direction,
-                    "weight": 0.0,
+                    "weight": fallback_weight,
                     "direction_matches_data": None,
-                    "rationale": status,
+                    "rationale": rationale,
+                    "degenerate": is_degenerate,
+                    "fallback": on_degenerate if is_degenerate else None,
                 }
                 suggestions.append(spec)
                 continue
@@ -555,6 +683,8 @@ class MetricSpec:
             }
             suggestions.append(spec)
 
+        cls._warn_degenerate(degenerate_names, on_degenerate,
+                             "suggest_directions_and_weights")
         cls._warn_if_all_zero(suggestions, report,
                               "suggest_directions_and_weights")
         return suggestions, report
