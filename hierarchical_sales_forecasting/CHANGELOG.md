@@ -3,6 +3,48 @@
 All notable changes to `b2b_revenue_forecasting` are documented here.
 This project loosely follows [Semantic Versioning](https://semver.org/).
 
+## [0.14.0] — 2026-07
+
+The routing release — closes
+[#26](https://github.com/shreyasrkarwa/Analytics/issues/26),
+[#25](https://github.com/shreyasrkarwa/Analytics/issues/25), and
+[#32](https://github.com/shreyasrkarwa/Analytics/issues/32) (what
+happens to target money with no hierarchy branch to land on).
+
+### Added (issue #26 — dropped targets are data)
+- **`cascade_many(return_dropped=True)`** returns a third frame with
+  every dropped target row: all original columns plus a `reason`
+  column. The same frame is ALWAYS attached as
+  `quotas_long.attrs['dropped_targets']`. Warnings were already
+  emitted per skipped combination; now the money is programmatically
+  visible instead of log noise. (`on_error='raise'` remains the strict
+  mode.)
+
+### Added (issue #25 — cross-tree routing)
+- **`route_targets(targets, quotas_long, recipients, target_col,
+  recipient_keys=None, split='base_quota', rollup=True)`** — carry
+  target rows on named recipient nodes in a DIFFERENT part of the
+  tree. Mechanics: split on the BASE layer proportional to the
+  recipients' existing `base_quota` (or `'equal'`, or any numeric
+  column); each routed node's `cascaded_quota` is derived from its own
+  existing hedge ratio (never re-hedged — the #21 contract); ancestor
+  rollups emitted so the routed slice reconciles at every depth;
+  every routed row keeps ALL columns of its originating target row
+  plus `routed=True`, so the money stays attributable to the original
+  segment. Additive by construction — concatenate to `quotas_long`.
+  Per-product recipient exclusions are two calls with different
+  filters (documented recipe).
+
+### Closed by composition (issue #32 — unmatched-target routing)
+- The requested `unmatched_targets='route'` + `route_map` is
+  deliberately NOT built into `cascade_many` (per-combo routing
+  semantics inside the batch loop are opaque). The supported pattern
+  is two lines:
+  `..., dropped = cascade_many(..., return_dropped=True)` →
+  `route_targets(dropped, quotas, recipients=[...], ...)`.
+  'error' was already available via `on_error='raise'`; 'skip' is the
+  default.
+
 ## [0.13.0] — 2026-07
 
 The override release — closes

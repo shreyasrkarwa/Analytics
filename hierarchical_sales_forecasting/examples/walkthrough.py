@@ -57,6 +57,7 @@ from b2b_revenue_forecasting import (
     CommitReconciler,
     MetricSpec,
     cascade_many,
+    route_targets,
     HedgeByDepth,
 )
 
@@ -937,6 +938,42 @@ print(ic_check.to_string(
 batch_path = os.path.join(OUT_DIR, 'output_batch_cascaded_quotas.csv')
 quotas_long.to_csv(batch_path, index=False)
 print(f"\nWrote {batch_path}")
+
+# NEW in v0.14.0 (issues #25/#26/#32): targets with NO hierarchy branch
+# are returned as DATA — and can be routed onto named recipients.
+print(f"\n--- Routing targets with no hierarchy branch (v0.14.0) ---")
+gov_row = pd.DataFrame([{'Region': 'Government', 'fiscal_quarter': 1,
+                         'q_target': 500_000.0}])   # no Government subtree!
+import warnings as _warnings
+with _warnings.catch_warnings():
+    _warnings.simplefilter('ignore')
+    q_gov, _, dropped = cascade_many(
+        df, pd.concat([regional_targets, gov_row], ignore_index=True),
+        group_keys=['Region'], target_col='q_target', taxonomy=taxonomy,
+        metrics=cascade_metrics, hedge_multiplier=HedgeByDepth(
+            from_leaves={1: 1.10, 2: 1.05}),
+        return_dropped=True,
+    )
+print(f"Dropped targets: {len(dropped)} row(s), "
+      f"${dropped['q_target'].sum():,.2f} "
+      f"({dropped['Region'].iloc[0]}: {dropped['reason'].iloc[0][:48]}...)")
+
+gov_recipients = sorted(
+    q_gov[(q_gov.Region == 'NA') & (q_gov.fiscal_quarter == 1)
+          & q_gov.is_leaf].node_id)[:3]
+routed = route_targets(
+    dropped, q_gov, recipients=gov_recipients, target_col='q_target',
+    recipient_keys={'Region': 'NA', 'fiscal_quarter': 1},
+    split='base_quota',            # proportional to existing capacity
+)
+leaf_routed = routed[routed.node_id.isin(gov_recipients)]
+print(f"Routed onto {len(gov_recipients)} named NA reps "
+      f"(split by base_quota, tagged Region='Government'):")
+print(leaf_routed[['node_id', 'base_quota', 'cascaded_quota']]
+      .to_string(index=False))
+print(f"Routed base per depth all equal $500,000: "
+      f"{(abs(routed.groupby('depth')['base_quota'].sum() - 500_000) < 0.05).all()}")
+# full plan = pd.concat([q_gov, routed]) — additive by construction
 
 
 # ======================================================================

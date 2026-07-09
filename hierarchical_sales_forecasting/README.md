@@ -21,6 +21,24 @@ Unlike traditional bottom-up time-series libraries (which are strictly built for
 | **`CommitReconciler`** | Detect sandbagging and "happy ears" bias via historical Bias Quotients, then auto-correct forecasts |
 | **`PipelineAdjuster`** | Diagnose pipeline health with per-region thresholds and redistribute IC quotas using zero-sum logic |
 
+### What's New in v0.14.0 — no target left behind ([#26](https://github.com/shreyasrkarwa/Analytics/issues/26) · [#25](https://github.com/shreyasrkarwa/Analytics/issues/25) · [#32](https://github.com/shreyasrkarwa/Analytics/issues/32))
+
+Targets with no matching hierarchy branch (Government + EMEA with no Government subtree) are now first-class: `cascade_many(return_dropped=True)` returns them as a frame with a `reason` column (also always on `quotas_long.attrs['dropped_targets']`), and the new `route_targets()` places that money on named recipients anywhere in the tree:
+
+```python
+quotas, weights, dropped = cascade_many(..., return_dropped=True)
+routed = route_targets(
+    dropped, quotas,
+    recipients=['UKI1_2', 'UKI2_1', 'NORD1_3'],   # named Enterprise_EMEA reps
+    target_col='nn_acv_target',
+    recipient_keys={'regional': 'Enterprise_EMEA'},
+    split='base_quota',                            # proportional to capacity
+)
+full_plan = pd.concat([quotas, routed], ignore_index=True)
+```
+
+Routing happens on the base layer, hedged values derive from each recipient's own ratio, ancestor rollups keep every depth reconciled, and routed rows carry the original segment tags plus `routed=True`. Conditional exclusions ("this rep never carries Cloud") are just two calls with different filters.
+
 ### What's New in v0.13.0 — pins that behave: any level, a basis, and safe re-hedging ([#28](https://github.com/shreyasrkarwa/Analytics/issues/28) · [#21](https://github.com/shreyasrkarwa/Analytics/issues/21) · [#23](https://github.com/shreyasrkarwa/Analytics/issues/23))
 
 `new_ic_overrides` pins now work at **any level** — pin a manager and the subtree total is fixed and cascades within; jagged-hierarchy leaf pins are honored too (both were silently ignored). Conservation is guaranteed: unpinned siblings share the exact remainder, the brand-new carve-out is capped at the pool, and a pin *exceeding* the pool floors siblings at $0 (never negative) with a loud warning plus `overpinned_amount`/`overpinned_nodes` in `gating_report()`. Pins also gained a **basis** (`override_basis`): `"base"` (default — pin the un-hedged plan number, hedged derived) or `"cascaded"` (pin the exact final number, base derived) — previously pinned reps silently received no hedge. And for post-cascade edits: do the math on `base_quota`, roll parents up on base, then derive the hedged layer with `cascader.rehedge(edited_base)` (per-node ratios via `cascader.hedge_ratios()`) — summing hedged leaves into parents double-counts buffers up the tree.

@@ -40,8 +40,10 @@ def cascade_many(
     on_error: str = "skip",
     on_collision: str = "suffix",
     verbose: bool = False,
+    return_dropped: bool = False,
     **cascade_kwargs: Any,
-) -> Tuple[pd.DataFrame, pd.DataFrame]:
+) -> Union[Tuple[pd.DataFrame, pd.DataFrame],
+           Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]]:
     """
     Cascade many targets across many segment combinations in one call.
 
@@ -116,6 +118,15 @@ def cascade_many(
         "skip" (default) — a failing combination emits a warning and is
         excluded from the outputs; a summary warning lists all failures
         at the end. "raise" — re-raise the first failure immediately.
+    return_dropped : bool
+        When True, a THIRD frame is returned containing every target_df
+        row that was dropped (its combination failed / had no hierarchy
+        branch), with all original columns plus a `reason` column —
+        so dropped money is data, not log noise (issue #26). The same
+        frame is ALWAYS attached as
+        quotas_long.attrs['dropped_targets'], regardless of this flag.
+        Feed it to route_targets() to place the money on chosen
+        recipients (issues #25/#32).
     on_collision : str
         Passed to from_dataframe (v0.6.0 duplicate-level policy).
     verbose : bool
@@ -183,6 +194,7 @@ def cascade_many(
     quota_frames: List[pd.DataFrame] = []
     weight_frames: List[pd.DataFrame] = []
     failures: List[Tuple[tuple, str]] = []
+    dropped_frames: List[pd.DataFrame] = []
 
     passthrough_cols = [c for c in target_df.columns
                         if c not in group_keys and c != target_col]
@@ -269,6 +281,10 @@ def cascade_many(
             if on_error == "raise":
                 raise
             failures.append((combo_vals, f"{type(exc).__name__}: {exc}"))
+            # Issue #26: dropped money must be data, not log noise —
+            # keep the full original target rows with the reason.
+            dropped_frames.append(
+                combo_targets.assign(reason=f"{type(exc).__name__}: {exc}"))
             warnings.warn(
                 f"cascade_many: combination {combo_dict} skipped — "
                 f"{type(exc).__name__}: {exc}",
@@ -303,4 +319,204 @@ def cascade_many(
     else:
         weights_long = pd.DataFrame()
 
+    # ---- Dropped-targets frame (issue #26) ------------------------------
+    # Always available on the output's attrs; opt into an explicit third
+    # return value with return_dropped=True.
+    if dropped_frames:
+        dropped_long = pd.concat(dropped_frames, ignore_index=True)
+    else:
+        dropped_long = pd.DataFrame(
+            columns=list(target_df.columns) + ["reason"])
+    quotas_long.attrs["dropped_targets"] = dropped_long
+
+    if return_dropped:
+        return quotas_long, weights_long, dropped_long
     return quotas_long, weights_long
+
+
+def route_targets(
+    targets: pd.DataFrame,
+    quotas_long: pd.DataFrame,
+    recipients: List[str],
+    target_col: str,
+    recipient_keys: Optional[Dict[str, Any]] = None,
+    split: str = "base_quota",
+    rollup: bool = True,
+) -> pd.DataFrame:
+    """
+    Route target rows onto named recipient nodes in a DIFFERENT part of
+    the tree (issues #25 / #32) — e.g. carry Government+EMEA targets on
+    six named Enterprise_EMEA reps, split by capacity, added on top of
+    their normal quota, tagged with the original segment.
+
+    Composes with cascade_many: run the batch, take the dropped-targets
+    frame (issue #26), route it::
+
+        quotas, weights, dropped = cascade_many(..., return_dropped=True)
+        gov = dropped[dropped.reason.str.contains('no rows')]
+        routed = route_targets(
+            gov, quotas,
+            recipients=['UKI1_2', 'UKI2_1', 'NORD1_3'],
+            target_col='nn_acv_target',
+            recipient_keys={'regional': 'Enterprise_EMEA'},
+        )
+        full = pd.concat([quotas, routed], ignore_index=True)
+
+    Mechanics (all on the BASE layer, per issue #21's contract):
+      - each target row's amount is split across `recipients` by their
+        `split` values read from quotas_long (their existing base_quota
+        by default — "proportional to capacity"),
+      - each routed node's cascaded_quota is DERIVED from its own
+        existing hedge ratio (cascaded/base), never re-hedged,
+      - with rollup=True (default), ancestor rows are emitted too (base
+        summed up each recipient's parent chain, hedged via each
+        ancestor's ratio) so the routed slice reconciles at every depth,
+      - every routed row carries ALL columns of its originating target
+        row (group keys, fiscal_quarter, segment tags, ...) plus a
+        `routed=True` marker — so the money stays attributable to the
+        original segment after concatenation.
+
+    The result is ADDITIVE by construction: concatenate it to
+    quotas_long and aggregate by node to see combined carrying totals.
+    (For conditional exclusions — e.g. one rep must not carry Cloud
+    products — call route_targets twice with different `targets` filters
+    and `recipients` lists.)
+
+    Parameters
+    ----------
+    targets : pd.DataFrame
+        The target rows to route — typically (a filter of) the
+        dropped-targets frame from cascade_many(return_dropped=True),
+        but any frame with `target_col` works.
+    quotas_long : pd.DataFrame
+        Output of cascade_many (or a quotas_to_dataframe result with
+        the base/audit columns): supplies recipients' split weights,
+        hedge ratios, and parent chains.
+    recipients : list[str]
+        Leaf node_ids that will carry the money.
+    target_col : str
+        Column in `targets` holding the dollar amount per row.
+    recipient_keys : Optional[Dict[str, Any]]
+        Column=value filters applied to quotas_long first (e.g.
+        {'regional': 'Enterprise_EMEA', 'fiscal_quarter': 1}). Required
+        whenever a recipient matches MORE than one row (multiple
+        combinations or sub-targets in the frame) — the weights and
+        ratios must come from exactly one cascade snapshot.
+    split : str
+        "base_quota" (default) — proportional to the recipients'
+        existing un-hedged quota. "equal" — even split. Any other value
+        must be a numeric column in quotas_long (e.g. a metadata
+        capacity column). If the chosen values sum to <= 0, an equal
+        split is used with a warning.
+    rollup : bool
+        Emit ancestor rows (default True) so per-depth sums of the
+        routed slice equal the routed amount.
+
+    Returns
+    -------
+    pd.DataFrame — routed rows only (concatenate to quotas_long
+    yourself), sorted by target row then depth.
+    """
+    if target_col not in targets.columns:
+        raise ValueError(f"target_col '{target_col}' not found in targets "
+                         f"columns: {list(targets.columns)}")
+    if not recipients:
+        raise ValueError("recipients must be a non-empty list of leaf "
+                         "node_ids.")
+    required = {"node_id", "parent", "depth", "base_quota",
+                "cascaded_quota"}
+    missing = required - set(quotas_long.columns)
+    if missing:
+        raise ValueError(f"quotas_long is missing required columns "
+                         f"{sorted(missing)} — pass the frame produced by "
+                         f"cascade_many.")
+
+    slice_df = quotas_long
+    if recipient_keys:
+        for col, val in recipient_keys.items():
+            if col not in slice_df.columns:
+                raise ValueError(f"recipient_keys column '{col}' not in "
+                                 f"quotas_long.")
+            slice_df = slice_df[slice_df[col] == val]
+
+    node_rows = slice_df.set_index("node_id", drop=False)
+    dup = node_rows.index[node_rows.index.duplicated()].unique().tolist()
+    if any(r in dup for r in recipients) or (
+            rollup and len(dup) > 0 and not node_rows.empty):
+        raise ValueError(
+            f"Nodes appear in multiple rows after filtering "
+            f"(e.g. {dup[:5]}) — weights/ratios would be ambiguous. "
+            f"Narrow recipient_keys to exactly one cascade (include the "
+            f"group keys AND any sub-target column like fiscal_quarter)."
+        )
+    unknown = [r for r in recipients if r not in node_rows.index]
+    if unknown:
+        raise ValueError(f"recipients not found in quotas_long (after "
+                         f"recipient_keys filter): {unknown}")
+
+    # ---- Split weights from the recipients' existing rows --------------
+    if split == "equal":
+        weights = {r: 1.0 / len(recipients) for r in recipients}
+    else:
+        if split not in node_rows.columns:
+            raise ValueError(f"split column '{split}' not in quotas_long.")
+        vals = {}
+        for r in recipients:
+            v = node_rows.at[r, split]
+            vals[r] = 0.0 if pd.isna(v) else float(v)
+        total = sum(vals.values())
+        if total <= 0:
+            warnings.warn(
+                f"route_targets: split column '{split}' sums to 0 across "
+                f"the recipients — falling back to an equal split.",
+                UserWarning, stacklevel=2,
+            )
+            weights = {r: 1.0 / len(recipients) for r in recipients}
+        else:
+            weights = {r: v / total for r, v in vals.items()}
+
+    def _ratio(node_id: str) -> float:
+        base = node_rows.at[node_id, "base_quota"]
+        if pd.isna(base) or float(base) == 0.0:
+            return 1.0
+        return float(node_rows.at[node_id, "cascaded_quota"]) / float(base)
+
+    def _ancestors(node_id: str) -> List[str]:
+        chain, seen = [], set()
+        current = node_rows.at[node_id, "parent"]
+        while (current is not None and pd.notna(current)
+               and current in node_rows.index and current not in seen):
+            chain.append(current)
+            seen.add(current)
+            current = node_rows.at[current, "parent"]
+        return chain
+
+    structural = [c for c in ("depth", "level", "parent", "is_leaf")
+                  if c in node_rows.columns]
+
+    routed_rows = []
+    for _, trow in targets.iterrows():
+        amount = float(trow[target_col])
+        base_add: Dict[str, float] = {}
+        for r in recipients:
+            base_add[r] = amount * weights[r]
+        if rollup:
+            for r in recipients:
+                for anc in _ancestors(r):
+                    base_add[anc] = base_add.get(anc, 0.0) + amount * weights[r]
+
+        for node_id, badd in base_add.items():
+            row = {c: trow[c] for c in targets.columns}
+            row["node_id"] = node_id
+            for c in structural:
+                row[c] = node_rows.at[node_id, c]
+            row["base_quota"] = round(badd, 2)
+            row["cascaded_quota"] = round(badd * _ratio(node_id), 2)
+            row["routed"] = True
+            routed_rows.append(row)
+
+    routed = pd.DataFrame(routed_rows)
+    if not routed.empty and "depth" in routed.columns:
+        routed = routed.sort_values(["depth", "node_id"],
+                                    kind="stable").reset_index(drop=True)
+    return routed
