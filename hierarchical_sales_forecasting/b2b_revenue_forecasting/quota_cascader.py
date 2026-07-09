@@ -190,6 +190,8 @@ class QuotaCascader:
         # Columns already flagged for non-numeric values — so the issue-#3
         # warning fires once per column, not once per node.
         self._non_numeric_warned = set()
+        # Metrics already flagged for suspected grain mismatch (issue #36).
+        self._grain_warned = set()
 
     def _warn_non_numeric(self, column: str, value: Any) -> None:
         """Warn (once per column) that a metric value was silently skipped
@@ -518,6 +520,62 @@ class QuotaCascader:
     def _node_has_brand_new_flag(self, node_id: str, attr: str) -> bool:
         """True iff the node has a truthy value under the given attribute."""
         return bool(self.graph.nodes[node_id].get(attr, False))
+
+    def _warn_possible_grain_mismatch(self,
+                                      specs: List[MetricSpec]) -> None:
+        """
+        Issue #36 guardrail: a metric whose values are IDENTICAL across
+        (nearly) every leaf-sibling group is very likely populated at a
+        coarser grain than the leaf — an ancestor-level number repeated
+        onto every child row. Naive rollups then double-count it and
+        sibling shares collapse to equal splits, silently.
+
+        Heuristic (deliberately conservative):
+          - only leaf-sibling groups with >= 2 members count; at least 2
+            such groups must exist,
+          - boolean / 0-1 metrics are exempt (legitimately constant),
+          - all-zero groups are exempt (the tree-wide zero-signal
+            warning owns that case),
+          - warn when >= 90% of eligible groups are internally constant,
+          - once per metric name per cascader; warning only — a
+            legitimately uniform book still cascades normally.
+        """
+        sibling_groups: Dict[str, List[str]] = {}
+        for n in self.graph.nodes:
+            if self.graph.out_degree(n) == 0:
+                for p in self.graph.predecessors(n):
+                    sibling_groups.setdefault(p, []).append(n)
+        groups = [ls for ls in sibling_groups.values() if len(ls) >= 2]
+        if len(groups) < 2:
+            return
+
+        for spec in specs:
+            if spec.name in self._grain_warned:
+                continue
+            per_group = [[self._aggregate_node_metric(leaf, spec)
+                          for leaf in ls] for ls in groups]
+            flat = [v for vs in per_group for v in vs]
+            if not flat or all(v in (0.0, 1.0) for v in flat):
+                continue                      # empty or boolean-ish
+            eligible = [vs for vs in per_group if any(v != 0 for v in vs)]
+            if len(eligible) < 2:
+                continue
+            constant = [vs for vs in eligible if max(vs) == min(vs)]
+            if len(constant) / len(eligible) >= 0.9:
+                self._grain_warned.add(spec.name)
+                warnings.warn(
+                    f"Metric '{spec.name}' is IDENTICAL across siblings in "
+                    f"{len(constant)} of {len(eligible)} leaf groups — this "
+                    f"usually means the column is populated at a coarser "
+                    f"grain than the leaf (an ancestor-level value repeated "
+                    f"onto every child row). Rollups will double-count it "
+                    f"and sibling shares collapse to EQUAL SPLITS. Resolve "
+                    f"the column to true per-leaf grain (e.g. dedup per "
+                    f"account in SQL before summing per rep). If the "
+                    f"uniformity is intentional, ignore this warning.",
+                    UserWarning,
+                    stacklevel=3,
+                )
 
     @staticmethod
     def _passes_gate(value: float, gate: MetricSpec) -> bool:
@@ -880,6 +938,13 @@ class QuotaCascader:
                         UserWarning,
                         stacklevel=2,
                     )
+
+        # Issue #36 guardrail: flag metrics that look repeated from an
+        # ancestor grain (identical across ~all leaf-sibling groups).
+        grain_specs = ([m for m in (metrics or []) if m.weight > 0]
+                       + list(gate_metrics or []))
+        if grain_specs:
+            self._warn_possible_grain_mismatch(grain_specs)
 
         # Precompute the gated set (nodes whose any gate fails). Stored on
         # self so analysts can inspect it and so quotas_to_dataframe can

@@ -21,6 +21,10 @@ Unlike traditional bottom-up time-series libraries (which are strictly built for
 | **`CommitReconciler`** | Detect sandbagging and "happy ears" bias via historical Bias Quotients, then auto-correct forecasts |
 | **`PipelineAdjuster`** | Diagnose pipeline health with per-region thresholds and redistribute IC quotas using zero-sum logic |
 
+### What's New in v0.19.1 — metric-grain guardrails ([issue #36](https://github.com/shreyasrkarwa/Analytics/issues/36))
+
+Metric columns must be at **leaf grain** — an account- or region-level value repeated onto every leaf row double-counts under sum rollups and collapses sibling shares to equal splits, silently. The cascader now detects the signature (values identical across ≥90% of leaf-sibling groups) and warns, naming the column, for both cascade metrics and gates. Booleans and all-zero cases are exempt, it's once-per-metric, and it's warning-only. Auto-deduping via a `grain`/`dedup_key` was deliberately not added — the correct collapse (e.g. MAX per account → SUM per rep) is source-data semantics that belongs in your feed query; see the new "Metric Grain" section under Key Concepts.
+
 ### What's New in v0.19.0 — mixed weight strategies per combination ([issue #35](https://github.com/shreyasrkarwa/Analytics/issues/35))
 
 `cascade_many`'s `metrics=` now accepts a callable evaluated per combination — fix some groups' slates verbatim while others use suggested weights, in one call:
@@ -567,6 +571,10 @@ adjusted = adjuster.adjust(
 ---
 
 ## 🧠 Key Concepts
+
+### Metric Grain
+
+Metric columns must be at **leaf grain**: one value describing that rep/territory alone. Non-leaf values are always computed as leaf-sums, so an ancestor-level number repeated onto child rows (an account's seats copied to every product row, a region's seats copied to every team) double-counts on the way up and makes siblings identical — collapsing their shares to an equal split. Resolve grain in the feed query (e.g. `MAX per (rep, account)` then `SUM per rep`); since v0.19.1 the cascader warns when a metric looks repeated from a coarser grain.
 
 ### Deterministic Proportional Splits (No Statistics)
 

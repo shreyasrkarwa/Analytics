@@ -3,6 +3,34 @@
 All notable changes to `b2b_revenue_forecasting` are documented here.
 This project loosely follows [Semantic Versioning](https://semver.org/).
 
+## [0.19.1] — 2026-07
+
+Closes [issue #36](https://github.com/shreyasrkarwa/Analytics/issues/36):
+guidance + guardrails for metric-column GRAIN. An ancestor-level value
+repeated onto every leaf row double-counts under SUM rollups and
+collapses sibling shares to equal splits — silently (two field
+incidents).
+
+### Added
+- **Grain-mismatch detector**: `cascade_quota` (and therefore every
+  batch/level driver) warns when an active metric's or gate's values
+  are identical across >= 90% of leaf-sibling groups — the signature
+  of a coarser-grain column. Conservative by design: needs >= 2 groups
+  of >= 2 leaves, boolean/0-1 metrics exempt, all-zero groups exempt
+  (the zero-signal warning owns those), once per metric per cascader,
+  warning-only (legitimately uniform books still cascade).
+
+### Docs
+- README "Metric Grain" section + `from_dataframe(metrics_cols=...)`
+  note: metric columns must be at LEAF grain; non-leaf values are
+  leaf-sums.
+- The proposed `grain`/`dedup_key` auto-dedup is deliberately NOT
+  implemented: collapsing a repeated value requires knowing which
+  aggregation is meaningful (e.g. MAX per account, then SUM per rep) —
+  source-data semantics that belong in the feed query. Guessing would
+  create a new class of silently-wrong numbers; the library detects
+  and warns instead.
+
 ## [0.19.0] — 2026-07
 
 Implements [issue #35](https://github.com/shreyasrkarwa/Analytics/issues/35):

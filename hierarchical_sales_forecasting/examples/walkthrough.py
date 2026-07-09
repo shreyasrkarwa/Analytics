@@ -134,6 +134,8 @@ print(f"roots(): {hierarchy.roots()} · leaves(): {len(hierarchy.leaves())} ICs 
 #   - metric cells are coerced ('true' -> True, '$1,200' -> 1200.0);
 #     uncoercible values warn and become missing (never a silent 0)
 #   - the finished graph is DAG-validated (cycles raise a clear error)
+#   - v0.19.1: metrics that look repeated from an ancestor grain
+#     (identical across leaf-sibling groups) trigger a warning
 print("\nGraph validated as a DAG:",
       hierarchy.validate() is hierarchy)  # chainable; raises if cyclic
 
