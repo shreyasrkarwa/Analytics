@@ -10,10 +10,14 @@ from b2b_revenue_forecasting.quota_cascader import (
 from b2b_revenue_forecasting.commit_reconciler import CommitReconciler
 from b2b_revenue_forecasting.pipeline_adjuster import PipelineAdjuster
 from b2b_revenue_forecasting.metric_spec import MetricSpec
-from b2b_revenue_forecasting.batch import cascade_many, route_targets
+from b2b_revenue_forecasting.batch import (
+    cascade_many,
+    cascade_levels,
+    route_targets,
+)
 from b2b_revenue_forecasting.pins import Pin, apply_pins
 
-__version__ = "0.17.0"
+__version__ = "0.18.0"
 
 __all__ = [
     "SalesHierarchy",
@@ -25,6 +29,7 @@ __all__ = [
     "PipelineAdjuster",
     "MetricSpec",
     "cascade_many",
+    "cascade_levels",
     "route_targets",
     "Pin",
     "apply_pins",

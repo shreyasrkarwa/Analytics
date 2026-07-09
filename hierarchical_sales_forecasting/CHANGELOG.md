@@ -3,6 +3,42 @@
 All notable changes to `b2b_revenue_forecasting` are documented here.
 This project loosely follows [Semantic Versioning](https://semver.org/).
 
+## [0.18.0] — 2026-07
+
+Implements [issue #30](https://github.com/shreyasrkarwa/Analytics/issues/30):
+a supported multi-level / recursive cascade driver. Review notes:
+two of the four motivations already shipped — per-level hedges
+(v0.11.0 `HedgeByDepth`) and level-specific pins (v0.13.0/v0.16.0) —
+and the requested `cascade_level` primitive already exists as
+`cascade_many(df, targets, group_keys=[parent_col],
+taxonomy=[parent_col, child_col])`, where every parent is its own
+root. What was genuinely missing: chaining levels with DIFFERENT
+kwargs per transition (especially different metric blends per level).
+
+### Added
+- **`cascade_levels(hierarchy_df, root_targets, taxonomy, target_col,
+  level_kwargs=[...], on_error='skip', return_dropped=False)`** —
+  cascades one level at a time, threading each level's BASE output
+  into the next level's targets, with per-transition kwargs (metrics,
+  gate_metrics, hedge_multiplier, new_ic_overrides, suggest_config,
+  ...). Each transition hedges only its own step; base conservation
+  holds per parent at every level; intermediate levels aggregate
+  metric columns per (parent, child) by SUM (matching the cascader's
+  leaf rollups); sub-target key columns (fiscal_quarter, ...) thread
+  through; dropped targets aggregate across levels with a `level`
+  tag. Output: one tidy frame per node at its level (`level`,
+  `depth`, is_leaf at the deepest level, audit columns intact).
+- **Pinned equivalence anchor:** with uniform kwargs, the chained
+  base layer equals a single full-tree `cascade_many` — number for
+  number.
+
+### Notes
+- Requires globally unique child ids (qualified naming); ambiguity
+  raises. Jagged hierarchies (missing level values) are excluded per
+  transition with a warning — use the full-tree cascade for those.
+- Replaces the consumer's three hand-rolled per-level engines
+  (~300 lines).
+
 ## [0.17.0] — 2026-07
 
 Closes [issue #34](https://github.com/shreyasrkarwa/Analytics/issues/34):

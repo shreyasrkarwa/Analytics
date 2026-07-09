@@ -21,6 +21,24 @@ Unlike traditional bottom-up time-series libraries (which are strictly built for
 | **`CommitReconciler`** | Detect sandbagging and "happy ears" bias via historical Bias Quotients, then auto-correct forecasts |
 | **`PipelineAdjuster`** | Diagnose pipeline health with per-region thresholds and redistribute IC quotas using zero-sum logic |
 
+### What's New in v0.18.0 — level-by-level cascading ([issue #30](https://github.com/shreyasrkarwa/Analytics/issues/30))
+
+When each level needs different behavior — split regions by knowledge workers but territories by seats, hedge only the front line, pin at one level — `cascade_levels` chains one-level cascades with per-transition kwargs, threading each level's base output into the next level's targets:
+
+```python
+result = cascade_levels(
+    hierarchy_df, regional_targets,
+    taxonomy=['regional', 'node_3_region', 'node_4_team', 'node_5_rep_no'],
+    target_col='nn_acv_target',
+    level_kwargs=[
+        dict(metrics=KW_SPECS),                                  # d0 -> d1
+        dict(metrics=KW_SPECS, hedge_multiplier=1.05),           # d1 -> d2
+        dict(metrics=SEAT_SPECS, gate_metrics=DC_GATE),          # d2 -> d3
+    ])
+```
+
+Base conservation holds per parent at every level, each transition hedges only its own step, quarters/keys thread through, dropped targets carry a `level` tag — and with uniform kwargs the result equals a single full-tree `cascade_many` (pinned test). The one-level primitive itself needs no new API: `cascade_many(df, targets, group_keys=[parent_col], taxonomy=[parent_col, child_col])`.
+
 ### What's New in v0.17.0 — the proportional-split front door ([issue #34](https://github.com/shreyasrkarwa/Analytics/issues/34))
 
 Deterministic capacity-based allocation now has a named entry point: `cascader.cascade_proportional(root, target, metric='dc_seats')` — "this team holds 30% of the DC seats → 30% of the quota," no correlation, no target column, any slice size. Blends: `metrics={'dc_seats': 1.0, 'cloud_seats': 0.5}`. All cascade options (gates, `HedgeByDepth`, pins…) pass through. To be clear about what this is: sugar over the behavior that was always the default — fixed-weight `MetricSpec`s are used as-is, and `suggest_weights` has never been a required stage. See "Deterministic proportional splits" under Key Concepts.

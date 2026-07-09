@@ -57,6 +57,7 @@ from b2b_revenue_forecasting import (
     CommitReconciler,
     MetricSpec,
     cascade_many,
+    cascade_levels,
     route_targets,
     HedgeByDepth,
     Pin,
@@ -1012,6 +1013,29 @@ frozen_same = (pinned_df[pinned_df.node_id == gov_recipients[1]]['base_quota']
                        ['base_quota'].reset_index(drop=True)))
 print(f"Frozen rep untouched: {frozen_same} · "
       f"is_pinned rows: {int(pinned_df['is_pinned'].sum())}")
+
+# NEW in v0.18.0 (issue #30): level-by-level cascading with DIFFERENT
+# behavior per transition — e.g. split Region->RVP by NetNewACV but
+# RVP->Director by CloudSeats, hedging only the second step.
+print(f"\n--- Level-by-level cascading (v0.18.0) ---")
+lvl = cascade_levels(
+    df, pd.DataFrame([{'Region': 'NA', 'q_target': 10_000_000.0}]),
+    taxonomy=['Region', 'RVP', 'Director'],
+    target_col='q_target',
+    level_kwargs=[
+        dict(metrics=[MetricSpec('NetNewACV', direction='proportional',
+                                 weight=1.0, lookback=4)]),
+        dict(metrics=[MetricSpec('CloudSeats', direction='proportional',
+                                 weight=1.0, lookback=4)],
+             hedge_multiplier=1.05),
+    ])
+print(lvl[lvl.level != 'Region']
+      [['level', 'node_id', 'parent', 'base_quota', 'cascaded_quota']]
+      .head(6).to_string(index=False))
+by_level = lvl.groupby('level')['base_quota'].sum()
+print(f"Base conserved at every level: "
+      f"{(abs(by_level - 10_000_000.0) < 0.05).all()} "
+      f"(RVPs split by ACV, Directors by CloudSeats +5% hedge)")
 
 
 # ======================================================================

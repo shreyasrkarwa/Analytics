@@ -376,6 +376,184 @@ def cascade_many(
     return quotas_long, weights_long
 
 
+def cascade_levels(
+    hierarchy_df: pd.DataFrame,
+    root_targets: pd.DataFrame,
+    taxonomy: List[str],
+    target_col: str,
+    level_kwargs: Optional[List[Dict[str, Any]]] = None,
+    on_error: str = "skip",
+    return_dropped: bool = False,
+) -> Union[pd.DataFrame, Tuple[pd.DataFrame, pd.DataFrame]]:
+    """
+    Multi-level cascade driver (issue #30): cascade ONE LEVEL AT A TIME,
+    threading level N's output into level N+1's targets, with different
+    kwargs per transition — different metric blends, gates, hedges,
+    pins, even suggest_config, at every level.
+
+        result = cascade_levels(
+            hierarchy_df, regional_targets,
+            taxonomy=['regional', 'node_3_region', 'node_4_team',
+                      'node_5_rep_no'],
+            target_col='nn_acv_target',
+            level_kwargs=[
+                dict(metrics=KW_SPECS),                      # d0 -> d1
+                dict(metrics=KW_SPECS, hedge_multiplier=1.05),  # d1 -> d2
+                dict(metrics=SEAT_SPECS,                     # d2 -> d3
+                     gate_metrics=DC_GATE,
+                     new_ic_overrides={'East1_4': 250_000}),
+            ])
+
+    Each transition is a cascade_many run with a two-column taxonomy
+    (every parent is its own root/combination) — the same "one-level
+    primitive" you can also call directly:
+    ``cascade_many(df, targets, group_keys=[parent_col],
+    taxonomy=[parent_col, child_col], ...)``.
+
+    Mechanics
+    ---------
+    - The BASE layer threads forward: level N children's base_quota
+      becomes level N+1's targets, so each transition hedges only its
+      own step (no hedge compounding across transitions) and base
+      conservation holds per parent at every level.
+    - For non-leaf transitions, metric columns are aggregated per
+      (parent, child) by SUM — identical to the cascader's leaf-summed
+      rollups. Non-numeric columns are dropped from intermediate
+      levels.
+    - Extra columns in root_targets (e.g. fiscal_quarter) are
+      sub-target keys: they ride through every level and keep cascades
+      separated, exactly as in cascade_many.
+    - Combinations that fail at any transition follow `on_error`; their
+      target rows are collected (with a `level` column) into
+      result.attrs['dropped_targets'] (records) and, with
+      return_dropped=True, returned as a second frame.
+
+    Requirements
+    ------------
+    - Child ids must be unique to one parent across the frame (usual
+      qualified naming: 'Enterprise_EMEA_T1'). Ambiguous ids raise.
+    - Rows with a missing level value are excluded from that transition
+      (with a warning) — for jagged hierarchies use the full-tree
+      cascade_many instead.
+
+    Returns
+    -------
+    A tidy frame with one row per node at ITS level: `level` (taxonomy
+    column name), `depth` (level index), node_id, parent, is_leaf
+    (True only at the deepest level), base_quota, cascaded_quota, the
+    audit columns produced by that transition, and your key columns.
+    """
+    if len(taxonomy) < 2:
+        raise ValueError("taxonomy must have at least 2 levels.")
+    missing = [c for c in taxonomy if c not in hierarchy_df.columns]
+    if missing:
+        raise ValueError(f"taxonomy columns {missing} not in hierarchy_df.")
+    if taxonomy[0] not in root_targets.columns:
+        raise ValueError(f"root_targets must contain the root column "
+                         f"'{taxonomy[0]}'.")
+    if target_col not in root_targets.columns:
+        raise ValueError(f"target_col '{target_col}' not in root_targets.")
+    n_transitions = len(taxonomy) - 1
+    if level_kwargs is None:
+        level_kwargs = [{} for _ in range(n_transitions)]
+    if len(level_kwargs) != n_transitions:
+        raise ValueError(
+            f"level_kwargs must have one dict per transition "
+            f"({n_transitions} for this taxonomy), got {len(level_kwargs)}."
+        )
+
+    # Child ids must belong to exactly one parent (qualified naming)
+    for parent_col, child_col in zip(taxonomy, taxonomy[1:]):
+        pairs = hierarchy_df[[parent_col, child_col]].dropna()
+        amb = (pairs.groupby(child_col)[parent_col].nunique())
+        amb = amb[amb > 1]
+        if len(amb):
+            raise ValueError(
+                f"'{child_col}' values appear under multiple "
+                f"'{parent_col}' parents (e.g. {list(amb.index[:3])}) — "
+                f"level chaining needs globally unique child ids. Qualify "
+                f"the names or use the full-tree cascade_many."
+            )
+
+    key_cols = [c for c in root_targets.columns
+                if c != taxonomy[0] and c != target_col]
+    metric_cols = [c for c in hierarchy_df.columns if c not in taxonomy]
+
+    pieces: List[pd.DataFrame] = []
+    dropped_pieces: List[pd.DataFrame] = []
+    targets = root_targets.copy()
+
+    for i, (parent_col, child_col) in enumerate(zip(taxonomy, taxonomy[1:])):
+        # Two-level slice with metrics aggregated per (parent, child) —
+        # SUM matches the cascader's leaf-rollup semantics.
+        pair_df = hierarchy_df[[parent_col, child_col] + metric_cols]
+        n_missing = int(pair_df[[parent_col, child_col]].isna().any(axis=1).sum())
+        if n_missing:
+            warnings.warn(
+                f"cascade_levels: {n_missing} row(s) with a missing "
+                f"'{parent_col}'/'{child_col}' value are excluded from "
+                f"transition {i} — jagged hierarchies need the full-tree "
+                f"cascade_many.",
+                UserWarning, stacklevel=2,
+            )
+            pair_df = pair_df.dropna(subset=[parent_col, child_col])
+        agg = (pair_df.groupby([parent_col, child_col], sort=False)
+               .sum(numeric_only=True).reset_index())
+
+        step = cascade_many(
+            agg, targets,
+            group_keys=[parent_col],
+            target_col=target_col,
+            taxonomy=[parent_col, child_col],
+            on_error=on_error,
+            return_dropped=True,
+            **level_kwargs[i],
+        )
+        quotas_i, _, dropped_i = step
+        if len(dropped_i):
+            dropped_pieces.append(dropped_i.assign(level=parent_col))
+
+        if quotas_i.empty:
+            break
+
+        if i == 0:
+            roots = quotas_i[quotas_i["depth"] == 0].copy()
+            roots["level"] = taxonomy[0]
+            roots["depth"] = 0
+            roots["is_leaf"] = False
+            pieces.append(roots)
+
+        children = quotas_i[quotas_i["depth"] == 1].copy()
+        children["level"] = child_col
+        children["depth"] = i + 1
+        children["is_leaf"] = (child_col == taxonomy[-1])
+        pieces.append(children)
+
+        # Thread the BASE layer forward as the next level's targets
+        if i < n_transitions - 1:
+            targets = (children[["node_id"] + key_cols + ["base_quota"]]
+                       .rename(columns={"node_id": child_col,
+                                        "base_quota": target_col})
+                       .reset_index(drop=True))
+
+    if pieces:
+        result = pd.concat(pieces, ignore_index=True)
+        lead = ["level", "depth", "node_id", "parent", "is_leaf"]
+        lead = [c for c in lead if c in result.columns]
+        rest = [c for c in result.columns if c not in lead]
+        result = result[lead + rest]
+    else:
+        result = pd.DataFrame()
+
+    dropped = (pd.concat(dropped_pieces, ignore_index=True)
+               if dropped_pieces else pd.DataFrame())
+    result.attrs["dropped_targets"] = (dropped.to_dict("records")
+                                       if len(dropped) else [])
+    if return_dropped:
+        return result, dropped
+    return result
+
+
 def route_targets(
     targets: pd.DataFrame,
     quotas_long: pd.DataFrame,

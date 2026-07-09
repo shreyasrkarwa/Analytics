@@ -76,12 +76,12 @@
 <div class="container">
 
 <header>
-  <div class="eyebrow">b2b_revenue_forecasting · v0.17.0</div>
+  <div class="eyebrow">b2b_revenue_forecasting · v0.18.0</div>
   <h1>Multi-Metric Cascading &amp; Reconciliation — Walkthrough</h1>
   <p class="subtitle">End-to-end notebook: how an analyst takes one CSV of historical performance + pipeline data and produces a quota plan, a pipeline diagnosis, a redistributed plan, and a bias-corrected forecast — with full visibility into how each metric actually influences allocation.</p>
   <div class="meta">
     <span><strong>Package:</strong> b2b-revenue-forecasting</span>
-    <span><strong>Version:</strong> 0.17.0</span>
+    <span><strong>Version:</strong> 0.18.0</span>
     <span><strong>Dataset:</strong> 170 ICs · 217 hierarchy nodes</span>
     <span><strong>Macro target:</strong> $50,000,000</span>
   </div>
@@ -965,6 +965,19 @@ Wrote examples/data/output_batch_cascaded_quotas.csv</pre>
   <div class="highlight"><strong>Prepare once, cascade many.</strong> Each region's hierarchy is built and validated once; Q1 and Q2 then cascade against the same prepared structure with identical shares (Q2 = Q1 × target ratio). With <code class="inline">group_keys</code> like <code class="inline">["st1_sales_type", "base_product_r4f", "regional"]</code> the same call scales to hundreds of combinations — replacing the ~150-line bespoke loop from issue #4. Since v0.15.0, <code class="inline">gate_metrics</code> may also be a <em>callable</em> evaluated per combination (<code class="inline">lambda g: DC_GATE if g['st1_sales_type'] == 'Migration' else None</code>) — conditional gating in one call instead of a split-and-concat pair, exactly equivalent number-for-number (pinned by test).</div>
 
   <div class="takeaway"><strong>Everything travels with the rows.</strong> The long output carries group keys, sub-target columns, the input target, <code class="inline">cascaded_quota</code>, <code class="inline">base_quota</code> (un-hedged), and the gate audit columns — ready for <code class="inline">.to_csv()</code>, <code class="inline">.to_sql()</code>, or a BI tool, no post-hoc tagging.</div>
+
+  <div class="callout"><strong>Level-by-level cascading (v0.18.0, issue #30).</strong> When each level needs different behavior, <code class="inline">cascade_levels</code> chains one-level cascades with per-transition kwargs — different metric blends, gates, hedges, or pins at every step — threading each level's BASE output into the next level's targets:
+
+<pre class="code" style="margin-top:8px;"><code>lvl = cascade_levels(df, na_target,
+    taxonomy=['Region', 'RVP', 'Director'], target_col='q_target',
+    level_kwargs=[dict(metrics=ACV_SPECS),                       # Region -> RVP
+                  dict(metrics=CLOUD_SPECS, hedge_multiplier=1.05)])  # RVP -> Director</code></pre>
+<pre class="output" style="margin-top:8px;">   level        node_id   parent  base_quota  cascaded_quota
+     RVP       RVP_NA_1       NA  6659029.61      6659029.61
+     RVP       RVP_NA_2       NA  3340970.39      3340970.39
+Director Dir_RVP_NA_1_1 RVP_NA_1  2535350.99      2662118.54
+Base conserved at every level: True (RVPs by ACV, Directors by CloudSeats +5%)</pre>
+Each transition hedges only its own step; base conservation holds per parent at every level; sub-target keys (quarters) thread through; dropped targets carry a <code class="inline">level</code> tag. With uniform kwargs the result equals a single full-tree <code class="inline">cascade_many</code> (pinned test) — and the one-level primitive itself is just <code class="inline">cascade_many(df, targets, group_keys=[parent_col], taxonomy=[parent_col, child_col])</code>.</div>
 
   <div class="callout"><strong>Aggregate pins across cascades (v0.16.0).</strong> "This territory carries exactly $500k in TOTAL across every product and quarter" is one call on the batch output: <code class="inline">apply_pins(quotas_long, pins=[Pin(node, 500_000)], freeze_nodes=[...])</code>. The pinned node keeps its baseline mix across combos; siblings absorb each cascade's delta proportionally (manager pins and manager absorbers rescale whole subtrees, parents conserve, floors at $0 — never negative); frozen/excluded nodes are never touched (issue #24); infeasible pins land in the feasibility report with the unabsorbed amount; <code class="inline">is_pinned</code>/<code class="inline">pin_type</code> mark provenance. All math on the base layer, hedged re-derived per row:
 
