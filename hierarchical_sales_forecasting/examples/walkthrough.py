@@ -59,6 +59,8 @@ from b2b_revenue_forecasting import (
     cascade_many,
     route_targets,
     HedgeByDepth,
+    Pin,
+    apply_pins,
 )
 
 # Pretty separators for the printed walkthrough
@@ -977,6 +979,29 @@ print(leaf_routed[['node_id', 'base_quota', 'cascaded_quota']]
 print(f"Routed base per depth all equal $500,000: "
       f"{(abs(routed.groupby('depth')['base_quota'].sum() - 500_000) < 0.05).all()}")
 # full plan = pd.concat([q_gov, routed]) — additive by construction
+
+# NEW in v0.16.0 (issues #22/#31/#24): pin a node to an EXACT TOTAL
+# across every cascade it appears in, conserved at the parent.
+print(f"\n--- Aggregate pins across cascades (v0.16.0) ---")
+pin_ic = gov_recipients[0]
+before = quotas_long[quotas_long.node_id == pin_ic]['base_quota'].sum()
+pinned_df, feasibility = apply_pins(
+    quotas_long,
+    pins=[Pin(pin_ic, 500_000.0)],          # total across all 6 cascades
+    freeze_nodes=[gov_recipients[1]],        # this rep never absorbs (#24)
+)
+after = pinned_df[pinned_df.node_id == pin_ic]['base_quota'].sum()
+print(f"{pin_ic}: ${before:,.2f} -> ${after:,.2f} total "
+      f"(baseline mix preserved across Region x quarter)")
+print(feasibility[['pin_node', 'pin_type', 'requested_total',
+                   'achieved_total', 'unabsorbed', 'feasible']]
+      .to_string(index=False))
+frozen_same = (pinned_df[pinned_df.node_id == gov_recipients[1]]['base_quota']
+               .reset_index(drop=True)
+               .equals(quotas_long[quotas_long.node_id == gov_recipients[1]]
+                       ['base_quota'].reset_index(drop=True)))
+print(f"Frozen rep untouched: {frozen_same} · "
+      f"is_pinned rows: {int(pinned_df['is_pinned'].sum())}")
 
 
 # ======================================================================

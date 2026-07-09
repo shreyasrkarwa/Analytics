@@ -21,6 +21,25 @@ Unlike traditional bottom-up time-series libraries (which are strictly built for
 | **`CommitReconciler`** | Detect sandbagging and "happy ears" bias via historical Bias Quotients, then auto-correct forecasts |
 | **`PipelineAdjuster`** | Diagnose pipeline health with per-region thresholds and redistribute IC quotas using zero-sum logic |
 
+### What's New in v0.16.0 — pin exact totals across cascades ([#22](https://github.com/shreyasrkarwa/Analytics/issues/22) · [#31](https://github.com/shreyasrkarwa/Analytics/issues/31) · [#24](https://github.com/shreyasrkarwa/Analytics/issues/24))
+
+"This territory carries exactly $2.6M in total across all products and quarters" is now one call on the batch output:
+
+```python
+from b2b_revenue_forecasting import Pin, apply_pins
+
+edited, feasibility = apply_pins(
+    quotas_long,
+    pins=[Pin('AMER_EAST_East1_4', 2_600_000),           # leaf, total across combos
+          Pin('LATAM', 10_500_000),                       # manager subtree total
+          Pin('UKI1_1', 400_000, scope={'fiscal_quarter': 1},
+              exclude=['UKI1_3'])],                       # Q1 only, protect UKI1_3
+    freeze_nodes=['East1_1'],                             # never absorbs, never changes
+)
+```
+
+The pinned node keeps its baseline mix across combos; siblings absorb each cascade's delta proportionally (subtrees rescale, parents conserve, floors at $0 — never negative); infeasible pins are flagged in the feasibility report with the unabsorbed amount; `is_pinned`/`pin_type` mark provenance; and everything runs on the base layer with hedged values derived from each row's own ratio. For per-cascade pins, hedging basis, and post-edit re-hedging, see v0.13.0's `new_ic_overrides`/`override_basis`/`rehedge`.
+
 ### What's New in v0.15.0 — conditional gating per combination ([issue #14](https://github.com/shreyasrkarwa/Analytics/issues/14))
 
 `cascade_many`'s `gate_metrics` now accepts a callable evaluated per combination with its group-key dict — so a DC-seat gate can apply to Migration only, never Expansion, in one call:

@@ -11,8 +11,9 @@ from b2b_revenue_forecasting.commit_reconciler import CommitReconciler
 from b2b_revenue_forecasting.pipeline_adjuster import PipelineAdjuster
 from b2b_revenue_forecasting.metric_spec import MetricSpec
 from b2b_revenue_forecasting.batch import cascade_many, route_targets
+from b2b_revenue_forecasting.pins import Pin, apply_pins
 
-__version__ = "0.15.0"
+__version__ = "0.16.0"
 
 __all__ = [
     "SalesHierarchy",
@@ -25,5 +26,7 @@ __all__ = [
     "MetricSpec",
     "cascade_many",
     "route_targets",
+    "Pin",
+    "apply_pins",
     "__version__",
 ]

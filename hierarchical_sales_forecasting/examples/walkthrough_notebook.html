@@ -76,12 +76,12 @@
 <div class="container">
 
 <header>
-  <div class="eyebrow">b2b_revenue_forecasting · v0.15.0</div>
+  <div class="eyebrow">b2b_revenue_forecasting · v0.16.0</div>
   <h1>Multi-Metric Cascading &amp; Reconciliation — Walkthrough</h1>
   <p class="subtitle">End-to-end notebook: how an analyst takes one CSV of historical performance + pipeline data and produces a quota plan, a pipeline diagnosis, a redistributed plan, and a bias-corrected forecast — with full visibility into how each metric actually influences allocation.</p>
   <div class="meta">
     <span><strong>Package:</strong> b2b-revenue-forecasting</span>
-    <span><strong>Version:</strong> 0.15.0</span>
+    <span><strong>Version:</strong> 0.16.0</span>
     <span><strong>Dataset:</strong> 170 ICs · 217 hierarchy nodes</span>
     <span><strong>Macro target:</strong> $50,000,000</span>
   </div>
@@ -957,6 +957,14 @@ Wrote examples/data/output_batch_cascaded_quotas.csv</pre>
   <div class="highlight"><strong>Prepare once, cascade many.</strong> Each region's hierarchy is built and validated once; Q1 and Q2 then cascade against the same prepared structure with identical shares (Q2 = Q1 × target ratio). With <code class="inline">group_keys</code> like <code class="inline">["st1_sales_type", "base_product_r4f", "regional"]</code> the same call scales to hundreds of combinations — replacing the ~150-line bespoke loop from issue #4. Since v0.15.0, <code class="inline">gate_metrics</code> may also be a <em>callable</em> evaluated per combination (<code class="inline">lambda g: DC_GATE if g['st1_sales_type'] == 'Migration' else None</code>) — conditional gating in one call instead of a split-and-concat pair, exactly equivalent number-for-number (pinned by test).</div>
 
   <div class="takeaway"><strong>Everything travels with the rows.</strong> The long output carries group keys, sub-target columns, the input target, <code class="inline">cascaded_quota</code>, <code class="inline">base_quota</code> (un-hedged), and the gate audit columns — ready for <code class="inline">.to_csv()</code>, <code class="inline">.to_sql()</code>, or a BI tool, no post-hoc tagging.</div>
+
+  <div class="callout"><strong>Aggregate pins across cascades (v0.16.0).</strong> "This territory carries exactly $500k in TOTAL across every product and quarter" is one call on the batch output: <code class="inline">apply_pins(quotas_long, pins=[Pin(node, 500_000)], freeze_nodes=[...])</code>. The pinned node keeps its baseline mix across combos; siblings absorb each cascade's delta proportionally (manager pins and manager absorbers rescale whole subtrees, parents conserve, floors at $0 — never negative); frozen/excluded nodes are never touched (issue #24); infeasible pins land in the feasibility report with the unabsorbed amount; <code class="inline">is_pinned</code>/<code class="inline">pin_type</code> mark provenance. All math on the base layer, hedged re-derived per row:
+
+<pre class="output" style="margin-top:8px;">IC_Mgr_Dir_RVP_NA_1_1_1_1: $313,505.99 -> $500,000.00 total (mix preserved)
+                 pin_node pin_type  requested_total  achieved_total  unabsorbed  feasible
+IC_Mgr_Dir_RVP_NA_1_1_1_1     leaf         500000.0        500000.0         0.0      True
+Frozen rep untouched: True · is_pinned rows: 2</pre>
+(Per-cascade pins, hedge basis, and post-edit re-hedging live in v0.13.0's <code class="inline">new_ic_overrides</code>/<code class="inline">override_basis</code>/<code class="inline">rehedge</code>.)</div>
 
   <div class="callout"><strong>No target left behind (v0.14.0).</strong> Targets whose combination has NO hierarchy branch (a Government segment with no Government subtree) are returned as <em>data</em>: <code class="inline">cascade_many(..., return_dropped=True)</code> yields a third frame with every dropped row plus a <code class="inline">reason</code> column (always also on <code class="inline">quotas_long.attrs['dropped_targets']</code>). Route that money onto named recipients anywhere in the tree with <code class="inline">route_targets(dropped, quotas, recipients=[...], target_col=..., recipient_keys={...})</code>:
 

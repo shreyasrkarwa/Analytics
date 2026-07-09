@@ -3,6 +3,46 @@
 All notable changes to `b2b_revenue_forecasting` are documented here.
 This project loosely follows [Semantic Versioning](https://semver.org/).
 
+## [0.16.0] — 2026-07
+
+The aggregate-pinning release — closes
+[#22](https://github.com/shreyasrkarwa/Analytics/issues/22),
+[#31](https://github.com/shreyasrkarwa/Analytics/issues/31), and
+[#24](https://github.com/shreyasrkarwa/Analytics/issues/24).
+Note several premises of #22/#31 were already addressed in v0.13.0
+(any-level per-cascade pins, parent conservation, `override_basis`,
+`rehedge`); what remained — and ships here — is pinning a node to an
+exact total ACROSS many cascades.
+
+### Added (issues #22/#31 — aggregate pins)
+- **`Pin(node, total, basis='base'|'cascaded', scope={...},
+  exclude=[...])`** and
+  **`apply_pins(quotas_long, pins, freeze_nodes=None, row_keys=None)
+  -> (edited_df, feasibility_report)`**, both exported at package root.
+  Post-cascade on the long frame:
+  - the pinned node's rows are scaled to SUM to the total,
+    proportional to its baseline mix (products/quarters keep their
+    shape); `scope` narrows which rows count (e.g. Q1 only);
+  - within each cascade the delta is absorbed by eligible siblings
+    proportional to their base — manager pins and manager absorbers
+    rescale their whole subtrees, so every depth stays consistent;
+  - parents conserve exactly wherever absorption succeeds; siblings
+    floor at $0 (never negative), and anything unabsorbable is
+    reported in the feasibility frame (`unabsorbed`,
+    `feasible=False`) plus a warning;
+  - all math on the BASE layer; hedged values re-derived from each
+    row's own original ratio (`basis='cascaded'` totals the hedged
+    layer instead, base derived);
+  - provenance: `is_pinned` / `pin_type` ('leaf'/'subtree') columns;
+    pins apply in order and pinned nodes never absorb for each other.
+  Replaces the consumer's ~200-line rescale workaround.
+
+### Added (issue #24 — freeze/exclude absorbers)
+- Per-pin **`exclude=[...]`** and global **`freeze_nodes=[...]`**:
+  protected nodes are never absorbers and never modified. (The same
+  protection exists in-cascade via `PipelineAdjuster.adjust(
+  locked_nodes=...)` for pipeline redistribution.)
+
 ## [0.15.0] — 2026-07
 
 Implements [issue #14](https://github.com/shreyasrkarwa/Analytics/issues/14):
