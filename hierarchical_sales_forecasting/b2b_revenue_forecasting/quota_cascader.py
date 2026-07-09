@@ -178,6 +178,11 @@ class QuotaCascader:
         self.unallocated = 0.0
         self.unallocated_nodes = {}
         self.gate_relaxed_nodes = set()
+        # Overrides exceeding a parent's pool (issue #28): conservation is
+        # mathematically impossible there, so the excess is reported
+        # loudly instead of producing negative sibling quotas.
+        self.overpinned = 0.0
+        self.overpinned_nodes = {}
         # Inputs/outputs of the most recent cascade_quota call, kept so
         # gating_report() (issue #10) can reconcile without re-running.
         self.last_target = None
@@ -583,6 +588,7 @@ class QuotaCascader:
         new_ic_rule: Optional[str] = None,
         gate_metrics: Optional[List[MetricSpec]] = None,
         gate_fallback: str = "redistribute",
+        override_basis: str = "base",
         verbose: bool = True,
     ) -> Dict[str, float]:
         """
@@ -619,8 +625,34 @@ class QuotaCascader:
             dicts are impossible (node ids aren't visible).
             Defaults to 1.0 (no hedge).
         new_ic_overrides : Optional[Dict[str, float]]
-            IC IDs mapped to fixed quota amounts that bypass the algorithm.
-            (CRO-mandated quotas.)
+            Node IDs mapped to fixed quota amounts that bypass the
+            algorithm (CRO-mandated pins).
+
+            Since v0.13.0 (issue #28) pins work at ANY level: pinning a
+            MANAGER fixes that subtree's total (the pin then cascades
+            normally within the subtree), and pins on leaves in jagged
+            hierarchies (an IC whose siblings are managers) are honored
+            too — both were silently ignored before. Conservation rules:
+            pins are paid first; unpinned siblings share the remainder
+            with renormalized weights (so the parent total is conserved
+            exactly); the brand-new equal-share carve-out is capped at
+            the remaining pool. If pins alone EXCEED the parent's pool,
+            conservation is impossible: siblings get $0 (never negative
+            quotas), a warning fires, and the excess is reported via
+            self.overpinned / self.overpinned_nodes and gating_report().
+        override_basis : str
+            What a pin amount MEANS when hedging is in play (issue #23).
+            "base" (default) — the pin is the UN-HEDGED plan number:
+                base_quota == pin, and the hedged cascaded_quota is
+                derived as pin x the node's compound hedge factor
+                (product of its ancestors' hedges) — same treatment as
+                every other node, so both layers conserve.
+            "cascaded" — the pin is the EXACT final number the rep
+                carries: cascaded_quota == pin, base_quota is derived
+                as pin / compound hedge factor.
+            Pre-v0.13.0 the same raw number was used in both layers
+            (pinned reps silently received no hedge). With
+            hedge_multiplier=1.0 the two bases are identical.
         metrics : Optional[List[MetricSpec]]
             If provided, switches to multi-metric cascading. If None, the
             legacy single-metric ('_Attainment') path is used.
@@ -783,6 +815,12 @@ class QuotaCascader:
                 f"before cascading."
             )
 
+        if override_basis not in ("base", "cascaded"):
+            raise ValueError(
+                f"override_basis must be 'base' or 'cascaded', "
+                f"got '{override_basis}'."
+            )
+
         # ---- Per-depth hedge resolution (issue #13) ---------------------
         # A HedgeByDepth spec is materialized into an ordinary per-node
         # dict against THIS graph, so everything downstream (base layer,
@@ -792,6 +830,14 @@ class QuotaCascader:
         # construction per combination.
         if isinstance(hedge_multiplier, HedgeByDepth):
             hedge_multiplier = hedge_multiplier.resolve(self.graph)
+
+        def _real_hedge_at(n: str) -> float:
+            """The ACTUAL hedge configured at node n (independent of which
+            pass — hedged or base — is running). Used to compute compound
+            hedge factors for override_basis conversion (issue #23)."""
+            if isinstance(hedge_multiplier, dict):
+                return float(hedge_multiplier.get(n, 1.0))
+            return float(hedge_multiplier)
 
         # Choose which weight engine to use for THIS cascade.
         # In multi-metric mode we close over `metrics`; in legacy mode we use
@@ -870,7 +916,8 @@ class QuotaCascader:
             # Legacy path: capacity == 0
             return self._calculate_node_historical_capacity(node_id) == 0.0
 
-        def run_cascade(effective_hedge, track_diagnostics: bool) -> Dict[str, float]:
+        def run_cascade(effective_hedge, track_diagnostics: bool,
+                        hedged_run: bool = True) -> Dict[str, float]:
             """
             One full top-down distribution pass.
 
@@ -887,10 +934,16 @@ class QuotaCascader:
                 self.unallocated = 0.0
                 self.unallocated_nodes = {}
                 self.gate_relaxed_nodes = set()
+                self.overpinned = 0.0
+                self.overpinned_nodes = {}
 
             # The root is NEVER gated to $0 — a fully-gated tree is handled
             # per gate_fallback below, not by silently dropping the target.
             quotas = {root_node: macro_target}
+            # Compound REAL hedge factor per node (product of ancestors'
+            # configured hedges) — used to convert pin amounts between the
+            # base and cascaded layers (issue #23).
+            cum_hedge = {root_node: 1.0}
 
             # Traverse top-down through the organization
             for node in nx.topological_sort(self.graph):
@@ -952,54 +1005,114 @@ class QuotaCascader:
                 # Apply the hedge/overassignment buffer for this layer of management
                 target_to_distribute = current_target * current_hedge
 
-                # Check if we're at the leaf level (all children are ICs)
-                at_leaf_level = all(self.graph.out_degree(c) == 0 for c in children)
+                # Compound REAL hedge factor for this node's children —
+                # basis conversion for pins (issue #23). Computed from the
+                # CONFIGURED hedge regardless of which pass is running.
+                child_factor = cum_hedge.get(node, 1.0) * _real_hedge_at(node)
+                for c in children:
+                    if c not in cum_hedge or child_factor < cum_hedge[c]:
+                        cum_hedge[c] = child_factor
+
+                # ---- Pins at ANY level (issues #28 / #23) ---------------
+                pinned = [c for c in children if c in new_ic_overrides]
+                unpinned = [c for c in children if c not in new_ic_overrides]
+
+                pin_total = 0.0
+                for c in pinned:
+                    raw = float(new_ic_overrides[c])
+                    if override_basis == "base":
+                        # Pin is the un-hedged plan number; the hedged
+                        # layer derives it via the compound factor.
+                        value = raw * child_factor if hedged_run else raw
+                    else:  # "cascaded"
+                        # Pin is the exact final number; the base layer
+                        # derives it by dividing the factor back out.
+                        value = raw if hedged_run else raw / child_factor
+                    quotas[c] = value
+                    pin_total += value
+
+                pool_left = target_to_distribute - pin_total
+                if pool_left < -0.005:
+                    # Pins exceed the parent's pool: conservation is
+                    # impossible. Never emit negative sibling quotas —
+                    # report the excess loudly instead (issue #28).
+                    if track_diagnostics:
+                        self.overpinned += -pool_left
+                        self.overpinned_nodes[node] = -pool_left
+                        warnings.warn(
+                            f"Overrides under '{node}' total "
+                            f"{pin_total:,.2f}, exceeding its pool of "
+                            f"{target_to_distribute:,.2f} by "
+                            f"{-pool_left:,.2f}. Unpinned siblings receive "
+                            f"$0 (never negative quotas); children will sum "
+                            f"ABOVE the parent. See cascader.overpinned_nodes "
+                            f"/ gating_report().",
+                            UserWarning,
+                            stacklevel=3,
+                        )
+                    pool_left = 0.0
+
+                if not unpinned:
+                    # Every child pinned. Any leftover pool cannot flow —
+                    # report it, mirroring gate stranding semantics.
+                    if track_diagnostics and pool_left > 0.005:
+                        self.unallocated += pool_left
+                        self.unallocated_nodes[node] = pool_left
+                        warnings.warn(
+                            f"All children of '{node}' are pinned; "
+                            f"{pool_left:,.2f} of its pool cannot be "
+                            f"distributed (see cascader.unallocated_nodes).",
+                            UserWarning,
+                            stacklevel=3,
+                        )
+                    continue
+
+                # Leaf-level semantics (brand-new carve-out) apply when all
+                # UNPINNED children are ICs.
+                at_leaf_level = all(self.graph.out_degree(c) == 0
+                                    for c in unpinned)
 
                 if at_leaf_level:
-                    # Handle CRO overrides — carve out fixed quotas first
-                    override_ics = [c for c in children if c in new_ic_overrides]
-                    override_total = sum(new_ic_overrides[c] for c in override_ics)
-
-                    # Identify brand-new ICs (no override) — give them equal share
-                    remaining_children = [c for c in children if c not in override_ics]
-                    new_ics = [c for c in remaining_children if is_new_ic(c)]
-                    experienced_ics = [c for c in remaining_children if c not in new_ics]
-
-                    # Assign override quotas
-                    for ic in override_ics:
-                        quotas[ic] = new_ic_overrides[ic]
+                    new_ics = [c for c in unpinned if is_new_ic(c)]
+                    experienced_ics = [c for c in unpinned if c not in new_ics]
 
                     if new_ics:
-                        # Equal share for brand-new ICs (from total pool, not remainder)
-                        equal_share = target_to_distribute / len(children)
+                        # Equal share for brand-new ICs — historically a
+                        # share of the TOTAL pool (len(children) incl.
+                        # pinned), but capped so the pool is never
+                        # overdrawn (issue #28); when no experienced
+                        # siblings exist, the whole remaining pool is
+                        # split equally so the parent still conserves.
+                        intended = target_to_distribute / len(children)
+                        if experienced_ics:
+                            equal_share = min(intended,
+                                              pool_left / len(new_ics))
+                        else:
+                            equal_share = pool_left / len(new_ics)
                         for ic in new_ics:
                             quotas[ic] = equal_share
 
-                        # Distribute remainder proportionally among experienced ICs
-                        remaining = (target_to_distribute - override_total
-                                     - (equal_share * len(new_ics)))
-
+                        remaining = pool_left - equal_share * len(new_ics)
                         if experienced_ics:
                             weights = child_weights(experienced_ics)
                             for ic in experienced_ics:
                                 quotas[ic] = remaining * weights[ic]
                     else:
-                        # No new ICs — standard distribution (minus overrides)
-                        remaining = target_to_distribute - override_total
-                        if experienced_ics:
-                            weights = child_weights(experienced_ics)
-                            for ic in experienced_ics:
-                                quotas[ic] = remaining * weights[ic]
+                        weights = child_weights(unpinned)
+                        for ic in unpinned:
+                            quotas[ic] = pool_left * weights[ic]
                 else:
-                    # Non-leaf level — standard proportional distribution
-                    weights = child_weights(children)
-                    for child in children:
-                        quotas[child] = target_to_distribute * weights[child]
+                    # Standard proportional distribution among unpinned
+                    # children (weights renormalize automatically).
+                    weights = child_weights(unpinned)
+                    for child in unpinned:
+                        quotas[child] = pool_left * weights[child]
 
             return quotas
 
         # Primary (hedged) pass — diagnostics reflect this pass.
-        quotas = run_cascade(hedge_multiplier, track_diagnostics=True)
+        quotas = run_cascade(hedge_multiplier, track_diagnostics=True,
+                             hedged_run=True)
 
         # Base (un-hedged) pass, computed in the SAME call so
         # hedged = base + hedge buffer decomposes without a second
@@ -1007,7 +1120,8 @@ class QuotaCascader:
         if isinstance(hedge_multiplier, (int, float)) and float(hedge_multiplier) == 1.0:
             self.base_quotas = dict(quotas)
         else:
-            self.base_quotas = run_cascade(1.0, track_diagnostics=False)
+            self.base_quotas = run_cascade(1.0, track_diagnostics=False,
+                                           hedged_run=False)
 
         # Remembered for gating_report() (issue #10)
         self.last_target = float(macro_target)
@@ -1287,8 +1401,54 @@ class QuotaCascader:
             "leaf_quota_sum": leaf_quota_sum,
             "leaf_base_sum": leaf_base_sum,
             "base_gap": float(base_gap),
+            # Overrides exceeding a parent's pool (issue #28) — when
+            # nonzero, children legitimately sum ABOVE their parent and
+            # reconciles will be False.
+            "overpinned_amount": float(self.overpinned),
+            "overpinned_nodes": dict(self.overpinned_nodes),
             "reconciles": abs(base_gap) <= tolerance,
         }
+
+    def hedge_ratios(self) -> Dict[str, float]:
+        """
+        Per-node hedge ratio (cascaded / base) from the most recent
+        cascade (issue #21). 1.0 where the base is 0. This is the factor
+        that converts an EDITED base_quota back into the hedged layer.
+        """
+        if self.last_quotas is None or self.base_quotas is None:
+            raise RuntimeError(
+                "hedge_ratios() requires a prior cascade_quota call."
+            )
+        return {
+            n: (self.last_quotas[n] / self.base_quotas[n]
+                if self.base_quotas.get(n) else 1.0)
+            for n in self.last_quotas
+        }
+
+    def rehedge(self, edited_base: Dict[str, float]) -> Dict[str, float]:
+        """
+        Recompute the HEDGED layer from an edited base layer (issue #21).
+
+        The supported editing workflow after any post-cascade adjustment
+        (manual pins, reallocations, ...):
+
+          1. Edit `base_quota` values — the un-hedged plan is the ONLY
+             layer that conserves at every depth, so all pin math and
+             parent rollups belong there (roll parents up as the SUM of
+             their children's base).
+          2. Call rehedge(edited_base) to derive the hedged layer:
+             cascaded = base x that node's ORIGINAL hedge ratio.
+
+        Summing HEDGED leaves into a parent instead double-counts the
+        buffer up the tree (depth 0/1 suddenly show leaf-level
+        overassignment) — that is the failure mode this helper exists to
+        prevent. Nodes absent from the last cascade get ratio 1.0.
+
+        Returns a new dict; neither input nor cached state is mutated.
+        """
+        ratios = self.hedge_ratios()
+        return {n: float(v) * ratios.get(n, 1.0)
+                for n, v in edited_base.items()}
 
     def reconciliation_report(
         self,

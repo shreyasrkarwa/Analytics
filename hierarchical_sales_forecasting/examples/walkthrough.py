@@ -342,12 +342,18 @@ print("regardless of what the algorithm would assign.\n")
 
 strategic_ic = veterans[0]   # pick a real IC id for the demo
 override = {strategic_ic: 1_200_000.0}
+# v0.13.0 (issues #23/#28): pins work at ANY level (ICs, managers, jagged
+# leaves) and carry a BASIS. "The rep must carry exactly $1.2M" is a
+# final-number statement -> override_basis='cascaded'. The default
+# ('base') pins the un-hedged plan number instead, with the hedged value
+# derived via the node's compound hedge factor.
 quotas_with_override = cascader.cascade_quota(
     'Global_Corp', MACRO_TARGET,
     hedge_multiplier=per_node_hedge,
     metrics=cascade_metrics,
     new_ic_attr='_is_brand_new',
     new_ic_overrides=override,
+    override_basis='cascaded',
 )
 print(f"  {strategic_ic} algorithmic quota:   ${quotas[strategic_ic]:>12,.2f}")
 print(f"  {strategic_ic} CRO-locked quota:    ${quotas_with_override[strategic_ic]:>12,.2f}")

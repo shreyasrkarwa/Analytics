@@ -3,6 +3,60 @@
 All notable changes to `b2b_revenue_forecasting` are documented here.
 This project loosely follows [Semantic Versioning](https://semver.org/).
 
+## [0.13.0] — 2026-07
+
+The override release — closes
+[#28](https://github.com/shreyasrkarwa/Analytics/issues/28),
+[#21](https://github.com/shreyasrkarwa/Analytics/issues/21), and
+[#23](https://github.com/shreyasrkarwa/Analytics/issues/23) together
+(pins x hedges x conservation).
+
+### Fixed (issue #28 — override-path hardening)
+- Verification first: the reported mechanism ("remainder split by
+  shares of ALL children") does NOT exist — unpinned siblings were
+  already renormalized, and the issue's 5-rep/$2.6M-pin repro conserves
+  the parent exactly (now a pinned regression test). Probing the path
+  surfaced four REAL defects, all fixed:
+  - **Manager pins were silently ignored.** Pins now work at ANY
+    level: pinning a manager fixes that subtree's total, which then
+    cascades normally within the subtree.
+  - **Jagged-leaf pins were silently ignored** (an IC whose siblings
+    are managers). Now honored.
+  - **Pin + all-remaining-brand-new over-distributed** (e.g. $6.6M
+    from a $5M pool). The brand-new equal-share carve-out is now
+    capped at the remaining pool; with no experienced siblings the
+    pool splits equally. Parents conserve exactly.
+  - **Pins exceeding the pool produced NEGATIVE sibling quotas,
+    silently.** Siblings now floor at $0, a warning fires, and the
+    excess is reported via `cascader.overpinned` /
+    `cascader.overpinned_nodes` and new `overpinned_amount` /
+    `overpinned_nodes` keys in `gating_report()` (whose `reconciles`
+    goes False — children legitimately sum above the parent).
+  - If EVERY child of a funded node is pinned and pool remains, the
+    leftover is reported via the unallocated machinery instead of
+    vanishing.
+
+### Added (issue #23 — pin basis)
+- **`override_basis` on `cascade_quota`** (flows through
+  `cascade_many`): `"base"` *(default)* — the pin is the un-hedged
+  plan number; the hedged value derives as pin x the node's compound
+  hedge factor, so pinned nodes hedge like everyone else and BOTH
+  layers conserve. `"cascaded"` — the pin is the exact final number;
+  the base derives by dividing the factor out. Pre-0.13.0 the raw pin
+  was used in both layers (pinned reps silently received no hedge);
+  with no hedging the bases are identical, so unhedged flows are
+  unaffected.
+
+### Added (issue #21 — post-cascade edits)
+- **`cascader.hedge_ratios()`** — per-node cascaded/base ratio from
+  the last run.
+- **`cascader.rehedge(edited_base)`** — recompute the hedged layer
+  from an edited base layer, preserving each node's original hedge
+  ratio. Documented workflow: do ALL pin math and parent rollups on
+  `base_quota`, then derive `cascaded_quota` via `rehedge` — never sum
+  hedged leaves into parents (that double-counts buffers up the tree,
+  the #21 failure mode). Replaces the consumer's ~40-line workaround.
+
 ## [0.12.0] — 2026-07
 
 Fixes [issue #33](https://github.com/shreyasrkarwa/Analytics/issues/33):
