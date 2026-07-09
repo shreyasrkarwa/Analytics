@@ -21,6 +21,22 @@ Unlike traditional bottom-up time-series libraries (which are strictly built for
 | **`CommitReconciler`** | Detect sandbagging and "happy ears" bias via historical Bias Quotients, then auto-correct forecasts |
 | **`PipelineAdjuster`** | Diagnose pipeline health with per-region thresholds and redistribute IC quotas using zero-sum logic |
 
+### What's New in v0.19.0 — mixed weight strategies per combination ([issue #35](https://github.com/shreyasrkarwa/Analytics/issues/35))
+
+`cascade_many`'s `metrics=` now accepts a callable evaluated per combination — fix some groups' slates verbatim while others use suggested weights, in one call:
+
+```python
+DC_ONLY = [MetricSpec('dc_seats', direction='proportional', weight=1.0)]
+quotas, weights = cascade_many(
+    hierarchy_df, target_df, group_keys=['st1_sales_type', 'regional'], ...,
+    metrics=lambda g: DC_ONLY if g['st1_sales_type'] == 'Migration' else None,
+    suggest_config=dict(target_column=..., candidate_metrics=[...]),
+    weights_mode='per_group',
+)   # Migration: guaranteed pure DC-seat share · everything else: suggested
+```
+
+`None` without a `suggest_config` falls to the legacy path; bad policies flow through `on_error`; `weights_long` shows what each combination actually used; equivalence with the two-call workaround is pinned by test. (For single cascades nothing changed — fixed specs were always honored verbatim; see v0.17.0.)
+
 ### What's New in v0.18.1 — the pin absorption policy, stated and pinned ([issue #37](https://github.com/shreyasrkarwa/Analytics/issues/37))
 
 Docs release. When you pin children (`new_ic_overrides`), the remainder flows to the **non-pinned siblings proportional to their baseline (un-pinned) cascade** — that's not a mode to request, it's an algebraic identity of renormalized shares, now stated in the docstring and locked by a regression test (the DACH scenario: $50M with two teams pinned on base totals; non-pinned siblings match baseline-proportional to the penny, base conserves at every depth, hedged derives per node). The rest of #37's proposed API already existed: `pins=` → `new_ic_overrides` (any level, v0.13.0), `pin_basis` → `override_basis` (default `'base'`), cross-combo totals → `apply_pins` (v0.16.0).

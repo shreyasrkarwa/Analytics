@@ -3,6 +3,34 @@
 All notable changes to `b2b_revenue_forecasting` are documented here.
 This project loosely follows [Semantic Versioning](https://semver.org/).
 
+## [0.19.0] — 2026-07
+
+Implements [issue #35](https://github.com/shreyasrkarwa/Analytics/issues/35):
+mixed weight strategies in the batch path. Review notes: the
+`cascade_quota` half of the ticket ("honor already-weighted specs
+verbatim" / `weighting='fixed'`) has always been the only behavior —
+verified and documented in v0.17.0 (issue #34). What was genuinely
+missing: per-COMBINATION strategy in `cascade_many`, where a static
+`metrics=` list and `suggest_config=` were mutually exclusive for the
+whole batch.
+
+### Added
+- **`cascade_many(metrics=...)` accepts a callable** — evaluated per
+  combination with the group-key dict; returning a list of MetricSpecs
+  fixes that combination's slate VERBATIM, returning None falls
+  through to `suggest_config` (global or per_group) or, without one,
+  to the legacy '_Attainment' path (matching
+  `cascade_quota(metrics=None)`). Mirrors the v0.15.0 gate_metrics
+  callable:
+  `metrics=lambda g: DC_ONLY if g['st1_sales_type'] == 'Migration'
+  else None`.
+- A callable may coexist with `suggest_config`; a STATIC list still
+  may not (unchanged validation). Bad returns / raising policies flow
+  through `on_error` + the dropped-targets frame. `weights_long`
+  records whichever slate each combination actually used. Exact
+  equivalence with the split-and-concat two-call workaround is pinned
+  by test; `cascade_levels` inherits the capability via level_kwargs.
+
 ## [0.18.1] — 2026-07
 
 Closes [issue #37](https://github.com/shreyasrkarwa/Analytics/issues/37)

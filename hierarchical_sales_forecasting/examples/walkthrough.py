@@ -929,6 +929,10 @@ quotas_long, weights_long = cascade_many(
     # v0.15.0 (issue #14): gate_metrics also accepts a CALLABLE evaluated
     # per combination — e.g. gate only one sales type:
     #   gate_metrics=lambda g: DC_GATE if g['Region'] == 'NA' else None
+    # v0.19.0 (issue #35): metrics= accepts the same shape for MIXED
+    # weight strategies — fix some combos' slates verbatim, let others
+    # use suggest_config:
+    #   metrics=lambda g: DC_ONLY if g['Region'] == 'NA' else None
 )
 
 n_cascades = quotas_long.groupby(['Region', 'fiscal_quarter']).ngroups

@@ -29,7 +29,10 @@ def cascade_many(
     group_keys: List[str],
     target_col: str,
     taxonomy: List[str],
-    metrics: Optional[List[MetricSpec]] = None,
+    metrics: Optional[Union[
+        List[MetricSpec],
+        Callable[[Dict[str, Any]], Optional[List[MetricSpec]]],
+    ]] = None,
     gate_metrics: Optional[Union[
         List[MetricSpec],
         Callable[[Dict[str, Any]], Optional[List[MetricSpec]]],
@@ -82,9 +85,28 @@ def cascade_many(
     taxonomy : list[str]
         Hierarchy columns from root to leaf, passed to
         SalesHierarchy.from_dataframe(path_cols=...).
-    metrics : list[MetricSpec], optional
-        Fixed metric slate used for every combination. Mutually
-        exclusive with `suggest_config`.
+    metrics : list[MetricSpec] | callable, optional
+        Fixed metric slate used for every combination. A STATIC list is
+        mutually exclusive with `suggest_config`.
+
+        Mixed strategies (issue #35, v0.19.0): pass a CALLABLE that
+        receives the combination's group-key dict and returns that
+        combination's fixed slate — honored verbatim — or None to fall
+        through. With `suggest_config` present, None means "use the
+        suggested weights for this combination" (global or per_group
+        per `weights_mode`); without it, None means the legacy
+        '_Attainment' path, matching cascade_quota(metrics=None)::
+
+            DC_ONLY = [MetricSpec('dc_seats', direction='proportional',
+                                  weight=1.0)]
+            cascade_many(...,
+                metrics=lambda g: (DC_ONLY
+                                   if g['st1_sales_type'] == 'Migration'
+                                   else None),
+                suggest_config=dict(...), weights_mode='per_group')
+
+        Errors raised by the callable follow `on_error` (skip +
+        dropped-targets frame, or raise).
     gate_metrics : list[MetricSpec] | callable, optional
         Gate metrics, passed straight to cascade_quota. All
         gate_fallback semantics (v0.5.0) apply; override the fallback
@@ -176,10 +198,14 @@ def cascade_many(
     if on_error not in _ON_ERROR:
         raise ValueError(f"on_error must be one of {_ON_ERROR}, "
                          f"got '{on_error}'.")
-    if metrics is not None and suggest_config is not None:
+    if (metrics is not None and not callable(metrics)
+            and suggest_config is not None):
         raise ValueError(
             "Pass either metrics=[MetricSpec, ...] (fixed slate) OR "
-            "suggest_config={...} (data-driven weights) — not both."
+            "suggest_config={...} (data-driven weights) — not both. "
+            "(A CALLABLE metrics= policy may coexist with suggest_config: "
+            "combinations where it returns None use the suggested "
+            "weights — issue #35.)"
         )
     missing_keys = [k for k in group_keys if k not in target_df.columns]
     if missing_keys:
@@ -209,7 +235,9 @@ def cascade_many(
         return suggested
 
     # Global weights resolved once, if applicable
-    global_metrics: Optional[List[MetricSpec]] = metrics
+    metrics_policy = metrics if callable(metrics) else None
+    global_metrics: Optional[List[MetricSpec]] = (
+        None if callable(metrics) else metrics)
     if suggest_config is not None and weights_mode == "global":
         global_metrics = _suggest(hierarchy_df)
 
@@ -261,11 +289,29 @@ def cascade_many(
                              metadata_cols=metadata_cols)
             cascader = QuotaCascader(h)
 
-            # 4. Resolve weights for this combination
-            if suggest_config is not None and weights_mode == "per_group":
-                combo_metrics = _suggest(df_slice)
-            else:
-                combo_metrics = global_metrics
+            # 4. Resolve weights for this combination. A callable metrics
+            # policy (issue #35) wins when it returns a slate; None falls
+            # through to suggest_config (if any) or the legacy path.
+            combo_metrics = None
+            policy_decided = False
+            if metrics_policy is not None:
+                combo_metrics = metrics_policy(dict(combo_dict))
+                if combo_metrics is not None:
+                    if not (isinstance(combo_metrics, list)
+                            and all(isinstance(m, MetricSpec)
+                                    for m in combo_metrics)):
+                        raise ValueError(
+                            f"metrics callable must return a list of "
+                            f"MetricSpec or None for combination "
+                            f"{combo_dict}, got "
+                            f"{type(combo_metrics).__name__}."
+                        )
+                    policy_decided = True
+            if not policy_decided:
+                if suggest_config is not None and weights_mode == "per_group":
+                    combo_metrics = _suggest(df_slice)
+                else:
+                    combo_metrics = global_metrics
 
             # 4b. Resolve gates for this combination (issue #14) —
             # a callable policy is evaluated against the group-key dict.
