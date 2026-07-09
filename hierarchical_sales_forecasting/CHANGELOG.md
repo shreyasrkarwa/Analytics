@@ -3,6 +3,32 @@
 All notable changes to `b2b_revenue_forecasting` are documented here.
 This project loosely follows [Semantic Versioning](https://semver.org/).
 
+## [0.19.2] — 2026-07
+
+Closes [issue #16](https://github.com/shreyasrkarwa/Analytics/issues/16):
+"quotas_long_df omits the metric values used in the cascade." Review
+verdict: solved since v0.8.0 — `metadata_cols` (issue #7) carries ANY
+hierarchy column onto leaf rows, metric values included, even the
+column driving the cascade. The gap was discoverability, so this is a
+docs + pinned-test release; no behavior changes.
+
+### Added
+- Regression test (`test_output_metadata.py` test 7): metric columns
+  carried via `metadata_cols` are emitted on leaf rows (NaN on
+  non-leaves), and the cascade numbers are identical with and without
+  the carry — including when the carried column is the driving metric
+  of an explicit `MetricSpec`.
+
+### Docs
+- `cascade_many(metadata_cols=...)` docstring now states it carries
+  metric columns too ("despite the name"), that explicit MetricSpecs
+  still resolve carried columns, and documents the two KEY IDENTITIES:
+  hierarchy leaf = deepest taxonomy column (+ group_keys present in
+  hierarchy_df); cascade row = group_keys + sub-target columns.
+  Target-frame-only columns are not join keys for leaf-grain data.
+- README "What's New in v0.19.2" mapping the requested
+  `carry_metric_cols` API onto `metadata_cols`.
+
 ## [0.19.1] — 2026-07
 
 Closes [issue #36](https://github.com/shreyasrkarwa/Analytics/issues/36):

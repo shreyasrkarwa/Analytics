@@ -536,6 +536,10 @@ print(ic_rows[['node_id', 'Rep_Name', 'cascaded_quota']]
       .head(3).to_string(index=False))
 # (from_dataframe(metadata_cols=[...]) + quotas_to_dataframe(
 #  metadata_cols=[...]) does the same for columns in the analyst CSV)
+# v0.19.2 (#16): metadata_cols carries METRIC columns too — list
+# knowledge_workers there and leaf rows emit its value even while an
+# explicit MetricSpec uses the same column to drive the split; the
+# cascade numbers are identical either way.
 
 # 2) Normalized weights — what stakeholders see
 weights_path = os.path.join(OUT_DIR, 'output_normalized_weights.csv')

@@ -21,6 +21,12 @@ Unlike traditional bottom-up time-series libraries (which are strictly built for
 | **`CommitReconciler`** | Detect sandbagging and "happy ears" bias via historical Bias Quotients, then auto-correct forecasts |
 | **`PipelineAdjuster`** | Diagnose pipeline health with per-region thresholds and redistribute IC quotas using zero-sum logic |
 
+### What's New in v0.19.2 — carrying metric values into quotas_long_df ([issue #16](https://github.com/shreyasrkarwa/Analytics/issues/16))
+
+No new code — new clarity. The capability #16 requested (`carry_metric_cols`) has existed since v0.8.0 under a name that hid it: **`metadata_cols` carries ANY hierarchy column onto leaf rows, metric values included.** List `knowledge_workers` in `metadata_cols` and every leaf row of quotas_long_df carries its value — even while that same column drives the cascade via an explicit `MetricSpec` (carried columns are excluded from *auto* ingestion only; cascade numbers are identical either way, now pinned by test). No re-join against the source frame needed.
+
+The related footgun is **key identity**: hierarchy leaves are identified by the deepest taxonomy column (plus group_keys present in `hierarchy_df`); cascade rows are identified by group_keys + sub-target columns. Columns that live only in the target frame (a sales type, a fiscal quarter) are not valid join keys for leaf-grain data — joining on them KeyErrors. Documented in `cascade_many`.
+
 ### What's New in v0.19.1 — metric-grain guardrails ([issue #36](https://github.com/shreyasrkarwa/Analytics/issues/36))
 
 Metric columns must be at **leaf grain** — an account- or region-level value repeated onto every leaf row double-counts under sum rollups and collapses sibling shares to equal splits, silently. The cascader now detects the signature (values identical across ≥90% of leaf-sibling groups) and warns, naming the column, for both cascade metrics and gates. Booleans and all-zero cases are exempt, it's once-per-metric, and it's warning-only. Auto-deduping via a `grain`/`dedup_key` was deliberately not added — the correct collapse (e.g. MAX per account → SUM per rep) is source-data semantics that belongs in your feed query; see the new "Metric Grain" section under Key Concepts.

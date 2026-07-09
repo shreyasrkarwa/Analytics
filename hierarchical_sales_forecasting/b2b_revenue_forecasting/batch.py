@@ -154,9 +154,23 @@ def cascade_many(
         Passed to from_dataframe for each slice; combine with
         new_ic_attr='_is_brand_new' in **cascade_kwargs.
     metadata_cols : list[str], optional
-        Descriptive columns (rep name, segment, geo, ...) carried
-        through to the leaf rows of quotas_long_df (issue #7). They are
-        excluded from metric aggregation.
+        Columns carried through to the LEAF rows of quotas_long_df
+        (issue #7) — and despite the name, that includes METRIC columns
+        (issue #16): list `knowledge_workers` here and every leaf row
+        carries its value, so pipeline-coverage / capacity analysis
+        needs no re-join against the source frame. Carried columns are
+        excluded from AUTO metric ingestion, but explicit MetricSpecs
+        still resolve them (they remain node attributes) — so a column
+        can drive the cascade AND ride along in the output; cascade
+        numbers are identical either way (pinned by test). Non-leaf
+        rows show NaN: these are leaf-grain values.
+
+        Key identities (the #16 footgun): a HIERARCHY LEAF is
+        identified by the deepest taxonomy column (plus any group_keys
+        that exist in hierarchy_df); a CASCADE ROW is identified by
+        group_keys + sub-target columns (e.g. fiscal_quarter). Columns
+        that live only in target_df (a sales type not present in
+        hierarchy_df) are NOT valid join keys for leaf-grain data.
     on_error : str
         "skip" (default) — a failing combination emits a warning and is
         excluded from the outputs; a summary warning lists all failures

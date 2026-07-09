@@ -188,6 +188,45 @@ def test_cascade_many_metadata():
     assert abs(r3['cascaded_quota'] - 600_000.0) < 0.01
 
 
+# ----------------------------------------------------------------------
+# 7. Issue #16 — metadata_cols carries METRIC values, incl. the driving
+#    metric, with cascade numbers unchanged
+# ----------------------------------------------------------------------
+def test_issue16_metric_values_carried():
+    print(f"\n\n{SEPARATOR}")
+    print("TEST 7: #16 — carry metric columns via metadata_cols; the "
+          "driving metric still cascades identically")
+    print(SEPARATOR)
+    rows = [dict(st='NN', regional='EMEA', team=f'T{i//2+1}', rep=f'r{i+1}',
+                 knowledge_workers=[100, 200, 300, 400][i],
+                 cloud_seats=[10, 20, 30, 40][i]) for i in range(4)]
+    hdf = pd.DataFrame(rows)
+    targets = pd.DataFrame([dict(st='NN', regional='EMEA',
+                                 fiscal_quarter=1, q=1_000_000.0)])
+    KW16 = [MetricSpec('knowledge_workers', direction='proportional',
+                       weight=1.0, columns=['knowledge_workers'])]
+    kwargs = dict(group_keys=['st', 'regional'], target_col='q',
+                  taxonomy=['regional', 'team', 'rep'], metrics=KW16)
+    qa, _ = cascade_many(hdf, targets, **kwargs)
+    qb, _ = cascade_many(hdf, targets,
+                         metadata_cols=['knowledge_workers', 'cloud_seats'],
+                         **kwargs)
+    # Values emitted on leaf rows — including the metric DRIVING the split
+    leaf = qb[qb.is_leaf].set_index('node_id')
+    assert leaf.loc['r1', 'knowledge_workers'] == 100
+    assert leaf.loc['r4', 'cloud_seats'] == 40
+    # Non-leaf rows: NaN (leaf-grain values)
+    assert qb[~qb.is_leaf.astype(bool)]['knowledge_workers'].isna().all()
+    # Cascade numbers identical with/without the carry
+    for n in qa['node_id']:
+        a = qa[qa.node_id == n]['base_quota'].iloc[0]
+        b = qb[qb.node_id == n]['base_quota'].iloc[0]
+        assert abs(a - b) < 0.005, n
+    assert abs(leaf.loc['r1', 'base_quota'] - 100_000.0) < 0.05
+    print("  values carried on leaves · driving metric unaffected · "
+          "numbers identical")
+
+
 if __name__ == '__main__':
     test_metadata_roundtrip()
     test_metadata_not_a_signal()
