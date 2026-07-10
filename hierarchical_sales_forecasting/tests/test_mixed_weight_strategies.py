@@ -132,9 +132,12 @@ def test_none_falls_to_legacy():
     exp = quotas[quotas.st1_sales_type == 'Expansion'].set_index('node_id')
     # Legacy capacity split: r1 = 10/100
     assert abs(exp.loc['Expansion_R_r1', 'base_quota'] - 100_000.0) < 0.05
-    # No weights rows recorded for the legacy combo
-    assert (weights.empty
-            or 'Expansion' not in set(weights.get('st1_sales_type', [])))
+    # v0.28.0 (#50): legacy combos are no longer silently absent from
+    # weights_long — they get an explicit '_Attainment' provenance row.
+    leg = weights[weights['st1_sales_type'] == 'Expansion']
+    assert len(leg[leg.role == 'blend']) == 1
+    assert leg.iloc[0]['metric'] == '_Attainment'
+    assert leg.iloc[0]['weights_source'] == 'default_attainment'
     print(f"  Expansion r1: ${exp.loc['Expansion_R_r1', 'base_quota']:,.2f} "
           f"(legacy attainment split)")
 

@@ -1097,6 +1097,20 @@ print(combo_rep[['Region', 'skipped', 'targets_matched', 'rows_produced',
                  'n_gated_nodes', 'unallocated_total', 'weights_source']]
       .to_string(index=False))
 
+# NEW in v0.28.0 (issues #50/#38): weights_long — cascade_many's second
+# return — is the complete authoritative record (blend + gate rows,
+# provenance, degenerate flags); and every output row now carries
+# share_of_parent, the effective share at each sibling split.
+print(f"\n--- Weights record + per-node shares (v0.28.0) ---")
+print(weights_long[weights_long.Region == 'NA']
+      [['metric', 'role', 'normalized_share', 'weights_source']]
+      .to_string(index=False))
+share_view = quotas_long[(quotas_long.Region == 'NA')
+                         & (quotas_long.fiscal_quarter == 1)
+                         & (quotas_long.depth <= 2)]
+print(share_view[['node_id', 'parent', 'base_quota', 'share_of_parent']]
+      .head(5).to_string(index=False))
+
 # NEW in v0.18.0 (issue #30): level-by-level cascading with DIFFERENT
 # behavior per transition — e.g. split Region->RVP by NetNewACV but
 # RVP->Director by CloudSeats, hedging only the second step.

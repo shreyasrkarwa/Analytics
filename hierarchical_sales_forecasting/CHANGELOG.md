@@ -3,6 +3,42 @@
 All notable changes to `b2b_revenue_forecasting` are documented here.
 This project loosely follows [Semantic Versioning](https://semver.org/).
 
+## [0.28.0] — 2026-07
+
+Closes [issue #50](https://github.com/shreyasrkarwa/Analytics/issues/50)
+and [issue #38](https://github.com/shreyasrkarwa/Analytics/issues/38).
+Review verdict on #50: the requested export has existed since v0.7.0 —
+cascade_many's SECOND return value (weights_long) is built from the
+exact slates passed to each cascade, so there is nothing to re-derive
+and nothing to drift. But the ask exposed three real holes in it, all
+fixed here.
+
+### Changed — weights_long is now the complete authoritative record
+- **Gate slates included** (#50's "gated flag"): one row per gate spec
+  per combo, role='gate', with gate_threshold and gate_mode; blend
+  rows carry role='blend'.
+- **Legacy combos no longer silently absent**: combinations on the
+  default '_Attainment' path get an explicit provenance row
+  (metric='_Attainment', weights_source='default_attainment').
+- New columns: weights_source ('fixed' | 'policy' |
+  'suggested_global' | 'suggested_per_group' | 'default_attainment')
+  and per-metric `degenerate` (True where the v0.12.0 suggest fallback
+  fired for that metric).
+
+### Added — per-node shares (#38)
+- **`share_of_parent`** column in quotas_to_dataframe (hence every
+  single-cascade and batch output): the effective share the cascade
+  applied at each node's sibling split, on the base layer. Root = 1.0,
+  sums to 1 per sibling group, gated nodes show 0. Combined with
+  v0.26.0's `<metric>_subtree` columns, "why did this node get this
+  share?" is a two-column comparison — no more reverse-engineering
+  quota_share / seat_share by hand.
+- `tests/test_weights_explainability.py` — 4 tests: roles + gates +
+  provenance, legacy row + degenerate flags, share_of_parent
+  invariants (root/sums/gated, single + batch), and the decomposition
+  identity (share_of_parent == metric-subtree share for a pure
+  single-metric cascade).
+
 ## [0.27.0] — 2026-07
 
 Closes [issue #20](https://github.com/shreyasrkarwa/Analytics/issues/20)

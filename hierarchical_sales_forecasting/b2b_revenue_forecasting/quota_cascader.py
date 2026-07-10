@@ -1322,6 +1322,11 @@ class QuotaCascader:
                                omitted (e.g., 'Region', 'IC')
           is_leaf            — True iff this is an IC / leaf node
           cascaded_quota     — the assigned quota dollar amount
+          share_of_parent    — the effective share this node received
+                               of its parent's quota (issue #38): base
+                               layer when unhedged_quotas is given,
+                               else the hedged layer. Root = 1.0; sums
+                               to 1 per sibling group; gated nodes 0.
 
         If unhedged_quotas is provided, three additional audit columns:
           unhedged_quota     — what the quota would be if no hedge / no
@@ -1441,6 +1446,21 @@ class QuotaCascader:
                 row["hedge_buffer"] = round(buffer, 2)
                 row["overassignment_pct"] = round(pct, 4)
 
+            # share_of_parent (issue #38): the effective share the
+            # cascade applied at this node's sibling split, on the BASE
+            # layer when available (falls back to the hedged layer).
+            # Root = 1.0; parent with $0 -> NaN. Sums to 1 per sibling
+            # group; a gated node shows 0 directly.
+            layer = (unhedged_quotas if unhedged_quotas is not None
+                     else quotas)
+            if parent is None:
+                row["share_of_parent"] = 1.0
+            else:
+                pval = float(layer.get(parent, 0.0))
+                nval = float(layer.get(node, 0.0))
+                row["share_of_parent"] = (round(nval / pval, 6)
+                                          if pval != 0 else float("nan"))
+
             # Flag gated nodes so analysts can distinguish "0 because gated"
             # from "0 because no signal." Only populated when the most recent
             # cascade_quota call used gate_metrics.
@@ -1464,6 +1484,7 @@ class QuotaCascader:
         col_order += ["parent", "is_leaf", "cascaded_quota"]
         if unhedged_quotas is not None:
             col_order += ["unhedged_quota", "hedge_buffer", "overassignment_pct"]
+        col_order.append("share_of_parent")   # issue #38
         for optional_col in ("is_gated", "gate_relaxed", "is_unallocated"):
             if optional_col in df.columns:
                 col_order.append(optional_col)

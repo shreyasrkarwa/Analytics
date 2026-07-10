@@ -76,12 +76,12 @@
 <div class="container">
 
 <header>
-  <div class="eyebrow">b2b_revenue_forecasting · v0.27.0</div>
+  <div class="eyebrow">b2b_revenue_forecasting · v0.28.0</div>
   <h1>Multi-Metric Cascading &amp; Reconciliation — Walkthrough</h1>
   <p class="subtitle">End-to-end notebook: how an analyst takes one CSV of historical performance + pipeline data and produces a quota plan, a pipeline diagnosis, a redistributed plan, and a bias-corrected forecast — with full visibility into how each metric actually influences allocation.</p>
   <div class="meta">
     <span><strong>Package:</strong> b2b-revenue-forecasting</span>
-    <span><strong>Version:</strong> 0.27.0</span>
+    <span><strong>Version:</strong> 0.28.0</span>
     <span><strong>Dataset:</strong> 170 ICs · 217 hierarchy nodes</span>
     <span><strong>Macro target:</strong> $50,000,000</span>
   </div>
@@ -1012,7 +1012,13 @@ Dir_RVP_NA_1_1      3  5690101.81           NaN            5277302.32</pre></div
 <pre class="output" style="margin-top:8px;">Region  skipped  targets_matched  rows_produced  n_gated_nodes  unallocated_total weights_source
     NA    False                2            244              0                0.0          fixed
   EMEA    False                2             70              0                0.0          fixed
-  APAC    False                2            124              0                0.0          fixed</pre></div>
+  APAC    False                2            124              0                0.0          fixed</pre>
+And the weights record is now complete (v0.28.0, issues #50/#38): <code class="inline">weights_long</code> &mdash; <code class="inline">cascade_many</code>'s <em>second return value</em> since v0.7.0 &mdash; carries blend rows <em>and</em> gate rows (<code class="inline">role</code>, <code class="inline">gate_threshold</code>, <code class="inline">gate_mode</code>), an explicit <code class="inline">_Attainment</code> row for legacy combos (no combination is silently missing), <code class="inline">weights_source</code> provenance and per-metric <code class="inline">degenerate</code> fallback flags &mdash; the authoritative record of what drove the run, no callable re-invocation needed. Plus every output row now has <code class="inline">share_of_parent</code>: the effective base-layer share at each sibling split (root&nbsp;=&nbsp;1.0, sums to 1 per sibling group, gated nodes 0). &ldquo;Why did this node get this share?&rdquo; = compare it against <code class="inline">&lt;metric&gt;_subtree</code> shares (v0.26.0):
+<pre class="output" style="margin-top:8px;">    node_id      parent  base_quota  share_of_parent
+Global_Corp        None 25000000.00         1.000000
+         NA Global_Corp 25000000.00         1.000000
+   RVP_NA_1          NA 15285338.72         0.611414
+   RVP_NA_2          NA  9714661.28         0.388586</pre></div>
 
   <div class="callout"><strong>No target left behind (v0.14.0).</strong> Targets whose combination has NO hierarchy branch (a Government segment with no Government subtree) are returned as <em>data</em>: <code class="inline">cascade_many(..., return_dropped=True)</code> yields a third frame with every dropped row plus a <code class="inline">reason</code> column (always also on <code class="inline">quotas_long.attrs['dropped_targets']</code>). Route that money onto named recipients anywhere in the tree with <code class="inline">route_targets(dropped, quotas, recipients=[...], target_col=..., recipient_keys={...})</code>:
 

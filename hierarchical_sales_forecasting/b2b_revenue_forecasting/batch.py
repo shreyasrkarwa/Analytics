@@ -380,6 +380,7 @@ def cascade_many(
                         )
                     policy_decided = True
             combo_report_flags: Tuple[List[str], bool] = ([], False)
+            _rep: Dict[str, Any] = {}
             if policy_decided:
                 weights_source = "policy"
             elif suggest_config is not None and weights_mode == "per_group":
@@ -416,12 +417,45 @@ def cascade_many(
             else:
                 combo_gates = gate_metrics
 
-            # Record the weights actually used (once per combination)
+            # Record the weights actually used (once per combination) —
+            # the AUTHORITATIVE record of what drove the run (issue
+            # #50): blend slate (or the legacy default), gate slate,
+            # provenance, and per-metric suggest-fallback flags. Never
+            # re-derive by re-invoking your callables.
             if combo_metrics:
                 wdf = MetricSpec.normalized_weights(combo_metrics)
-                for k, v in combo_dict.items():
-                    wdf[k] = v
-                weight_frames.append(wdf)
+            else:                     # legacy '_Attainment' default path
+                wdf = pd.DataFrame([{
+                    "metric": "_Attainment",
+                    "direction": "proportional",
+                    "input_weight": 1.0, "normalized_share": 1.0,
+                    "active": True,
+                }])
+            wdf["role"] = "blend"
+            wdf["gate_threshold"] = None
+            wdf["gate_mode"] = None
+            if combo_gates:
+                gdf = pd.DataFrame([{
+                    "metric": g.name, "direction": g.direction,
+                    "input_weight": None, "normalized_share": None,
+                    "active": True, "role": "gate",
+                    "gate_threshold": g.gate_threshold,
+                    "gate_mode": g.gate_mode,
+                } for g in combo_gates])
+                wdf = pd.concat([wdf, gdf], ignore_index=True)
+            wdf["weights_source"] = weights_source
+            deg_map: Dict[str, bool] = {}
+            if weights_source == "suggested_per_group":
+                deg_map = {n: bool(r.get("degenerate"))
+                           for n, r in (_rep or {}).items()}
+            elif weights_source == "suggested_global":
+                deg_map = {n: bool(r.get("degenerate"))
+                           for n, r in (_global_report or {}).items()}
+            wdf["degenerate"] = (wdf["metric"].map(deg_map).fillna(False)
+                                 if deg_map else False)
+            for k, v in combo_dict.items():
+                wdf[k] = v
+            weight_frames.append(wdf)
 
             # 5. Cascade every sub-target row against the prepared group
             _rows_produced = 0
