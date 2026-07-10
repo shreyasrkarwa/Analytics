@@ -15,9 +15,9 @@ from b2b_revenue_forecasting.batch import (
     cascade_levels,
     route_targets,
 )
-from b2b_revenue_forecasting.pins import Pin, apply_pins, redistribute
+from b2b_revenue_forecasting.pins import Pin, apply_pins, redistribute, concentrate
 
-__version__ = "0.23.0"
+__version__ = "0.24.0"
 
 __all__ = [
     "SalesHierarchy",
@@ -34,5 +34,6 @@ __all__ = [
     "Pin",
     "apply_pins",
     "redistribute",
+    "concentrate",
     "__version__",
 ]

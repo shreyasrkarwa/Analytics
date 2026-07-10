@@ -63,6 +63,7 @@ from b2b_revenue_forecasting import (
     Pin,
     apply_pins,
     redistribute,
+    concentrate,
 )
 
 # Pretty separators for the printed walkthrough
@@ -1051,6 +1052,15 @@ red_df, red_report = redistribute(quotas_long, donor)
 print(f"redistribute('{donor}') -> source zeroed, siblings grew "
       f"proportionally:")
 print(red_report[['node', 'role', 'baseline_total', 'achieved_total',
+                  'exact']].to_string(index=False))
+
+# NEW in v0.24.0 (issue #47): concentrate() — the inverse: collapse
+# the siblings back ONTO one node (zeroing them), same report contract.
+print(f"\n--- Concentrate onto one sibling (v0.24.0) ---")
+con_df, con_report = concentrate(quotas_long, donor)
+print(f"concentrate('{donor}') -> siblings zeroed, '{donor}' holds the "
+      f"whole group:")
+print(con_report[['node', 'role', 'baseline_total', 'achieved_total',
                   'exact']].to_string(index=False))
 
 # NEW in v0.18.0 (issue #30): level-by-level cascading with DIFFERENT

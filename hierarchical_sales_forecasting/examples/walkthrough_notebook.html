@@ -76,12 +76,12 @@
 <div class="container">
 
 <header>
-  <div class="eyebrow">b2b_revenue_forecasting · v0.23.0</div>
+  <div class="eyebrow">b2b_revenue_forecasting · v0.24.0</div>
   <h1>Multi-Metric Cascading &amp; Reconciliation — Walkthrough</h1>
   <p class="subtitle">End-to-end notebook: how an analyst takes one CSV of historical performance + pipeline data and produces a quota plan, a pipeline diagnosis, a redistributed plan, and a bias-corrected forecast — with full visibility into how each metric actually influences allocation.</p>
   <div class="meta">
     <span><strong>Package:</strong> b2b-revenue-forecasting</span>
-    <span><strong>Version:</strong> 0.23.0</span>
+    <span><strong>Version:</strong> 0.24.0</span>
     <span><strong>Dataset:</strong> 170 ICs · 217 hierarchy nodes</span>
     <span><strong>Macro target:</strong> $50,000,000</span>
   </div>
@@ -992,7 +992,13 @@ Frozen rep untouched: True · is_pinned rows: 2</pre>
 node        role  baseline_total  achieved_total  exact
   NA      source      52500000.0             0.0   True
 EMEA destination      25200000.0      50400000.0   True
-APAC destination      27300000.0      54600000.0   True</pre></div>
+APAC destination      27300000.0      54600000.0   True</pre>
+And the inverse (v0.24.0, issue #47): <code class="inline">concentrate(quotas_long, to_node, from_nodes=None, scope=...)</code> collapses siblings' scoped quota <em>onto</em> one sibling, zeroing them &mdash; no per-rep pins, no <code class="inline">exclude</code>, no hand-computed group total. Same contract and the same roles report (destination/source/bystander, all <code class="inline">exact</code>-verified); internally the sources zero <em>before</em> the destination pin lands, so a bystander buffer never transits $0 and its rep mix survives:
+<pre class="output" style="margin-top:8px;">concentrate('NA') -> siblings zeroed, 'NA' holds the whole group:
+node        role  baseline_total  achieved_total  exact
+  NA destination      52500000.0     105000000.0   True
+EMEA      source      25200000.0             0.0   True
+APAC      source      27300000.0             0.0   True</pre></div>
 
   <div class="callout"><strong>No target left behind (v0.14.0).</strong> Targets whose combination has NO hierarchy branch (a Government segment with no Government subtree) are returned as <em>data</em>: <code class="inline">cascade_many(..., return_dropped=True)</code> yields a third frame with every dropped row plus a <code class="inline">reason</code> column (always also on <code class="inline">quotas_long.attrs['dropped_targets']</code>). Route that money onto named recipients anywhere in the tree with <code class="inline">route_targets(dropped, quotas, recipients=[...], target_col=..., recipient_keys={...})</code>:
 

@@ -21,6 +21,19 @@ Unlike traditional bottom-up time-series libraries (which are strictly built for
 | **`CommitReconciler`** | Detect sandbagging and "happy ears" bias via historical Bias Quotients, then auto-correct forecasts |
 | **`PipelineAdjuster`** | Diagnose pipeline health with per-region thresholds and redistribute IC quotas using zero-sum logic |
 
+### What's New in v0.24.0 — `concentrate()`: the inverse of `redistribute` ([issue #47](https://github.com/shreyasrkarwa/Analytics/issues/47))
+
+"All of CENTRAL's Migration lands on the CENTRAL6-MIGRATION team; every other CENTRAL team = 0" is one call:
+
+```python
+edited, report = concentrate(quotas_long, 'CENTRAL6-MIGRATION',
+                             scope={'st1_sales_type': 'Migration'})
+# or collapse only some siblings:
+edited, report = concentrate(quotas_long, 'CENTRAL6-MIGRATION', from_nodes=['C1', 'C2'], ...)
+```
+
+Same construction as `redistribute` — thin sugar that writes the pins (destination → group total, sources → $0) — so source subtrees zero and the destination subtree grows at every depth with its internal mix preserved, the parent conserves, hedge ratios hold per row, other scopes stay untouched. No per-rep pins, no `exclude`, no hand-computed group total (the ~40-line workaround collapses to one line). The report tags each node destination/source/bystander with an `exact` flag; unlisted siblings are verified to stay at baseline to the cent. One ordering subtlety handled internally: sources zero *before* the destination pin lands, so a bystander buffer inflates-then-sheds and never transits $0 (which would have equal-split its reps).
+
 ### What's New in v0.23.0 — `redistribute()`: move a region's quota to its siblings ([issue #43](https://github.com/shreyasrkarwa/Analytics/issues/43))
 
 "MM_AMER_EAST gets zero Migration; move it to CENTRAL/WEST proportionally" is now one call:

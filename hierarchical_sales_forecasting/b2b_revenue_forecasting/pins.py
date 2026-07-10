@@ -523,6 +523,39 @@ def apply_pins(
     return df, pd.DataFrame(report_rows)
 
 
+def _scope_mask(df: pd.DataFrame,
+                scope: Optional[Dict[str, Any]]) -> pd.Series:
+    """Row mask for Pin-style scope filters (shared by redistribute /
+    concentrate)."""
+    mask = pd.Series(True, index=df.index)
+    for col, val in (scope or {}).items():
+        if col not in df.columns:
+            raise ValueError(f"scope column '{col}' not in quotas_long.")
+        mask &= df[col] == val
+    return mask
+
+
+def _run_pins_quietly(df: pd.DataFrame, pins: List[Pin],
+                      freeze_nodes: Optional[List[str]],
+                      row_keys: Optional[List[str]]) -> pd.DataFrame:
+    """apply_pins, with internal absorption noise suppressed.
+
+    redistribute/concentrate emit pin packages that are conservation-
+    neutral BY CONSTRUCTION; when every sibling is pinned there is no
+    buffer to 'absorb', so apply_pins' unabsorbed warnings would be
+    false alarms. The callers verify conservation explicitly instead
+    (the report's `exact` column). All other warnings re-emit.
+    """
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        edited, _ = apply_pins(df, pins, freeze_nodes=freeze_nodes,
+                               row_keys=row_keys)
+    for w in caught:
+        if "could not be absorbed" not in str(w.message):
+            warnings.warn(w.message, w.category, stacklevel=3)
+    return edited
+
+
 def redistribute(
     quotas_long: pd.DataFrame,
     from_node: str,
@@ -609,11 +642,7 @@ def redistribute(
         raise ValueError("weights must be 'proportional', 'equal', or a "
                          f"dict of node->share, got {type(weights)}.")
 
-    mask = pd.Series(True, index=df.index)
-    for col, val in (scope or {}).items():
-        if col not in df.columns:
-            raise ValueError(f"scope column '{col}' not in quotas_long.")
-        mask &= df[col] == val
+    mask = _scope_mask(df, scope)
 
     src = df[(df["node_id"] == from_node) & mask]
     if src.empty:
@@ -683,21 +712,10 @@ def redistribute(
     # ---- Compose the pins and run ----------------------------------
     pins = [Pin(from_node, 0.0, scope=scope)]
     pins += [Pin(d, base[d] + share[d] * e0, scope=scope) for d in dests]
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        edited, _ = apply_pins(df, pins, freeze_nodes=freeze_nodes,
-                               row_keys=row_keys)
-    for w in caught:
-        # Internal routing noise: when every sibling is a recipient
-        # there is no buffer to "absorb", but the pins are conservation-
-        # neutral by construction — verified below instead.
-        if "could not be absorbed" not in str(w.message):
-            warnings.warn(w.message, w.category, stacklevel=2)
+    edited = _run_pins_quietly(df, pins, freeze_nodes, row_keys)
 
     # ---- Verify + report --------------------------------------------
-    emask = pd.Series(True, index=edited.index)
-    for col, val in (scope or {}).items():
-        emask &= edited[col] == val
+    emask = _scope_mask(edited, scope)
 
     def _after(node):
         return float(edited.loc[(edited["node_id"] == node) & emask,
@@ -729,5 +747,160 @@ def redistribute(
             f"redistribute('{from_node}'): {off} did not land exactly "
             f"on target (frozen mass or $0 floors in the way) — see "
             f"the returned report.",
+            UserWarning, stacklevel=2)
+    return edited, report
+
+
+def concentrate(
+    quotas_long: pd.DataFrame,
+    to_node: str,
+    from_nodes: Optional[List[str]] = None,
+    scope: Optional[Dict[str, Any]] = None,
+    freeze_nodes: Optional[List[str]] = None,
+    row_keys: Optional[List[str]] = None,
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Collapse siblings' (scoped) quota ONTO one sibling, zeroing them —
+    the inverse of `redistribute` (issue #47).
+
+    "All of CENTRAL's Migration lands on the CENTRAL6-MIGRATION team;
+    every other CENTRAL team = 0" is::
+
+        edited, report = concentrate(quotas_long, 'CENTRAL6-MIGRATION',
+                                     scope={'st1_sales_type': 'Migration'})
+
+    Thin sugar over `apply_pins`, exactly like `redistribute`: it pins
+    `to_node` to the summed scoped baseline of `to_node + from_nodes`
+    and pins each source to $0, so the whole pin contract applies —
+    source subtrees zero and the destination subtree grows AT EVERY
+    DEPTH (its internal mix preserved), the parent conserves, hedged
+    values re-derive from each row's own ratio (#21), other scopes stay
+    untouched, frozen nodes never move. No per-rep pins, no `exclude`,
+    no hand-computed group total.
+
+    Parameters
+    ----------
+    quotas_long : pd.DataFrame
+        cascade_many output (or equivalent long frame).
+    to_node : str
+        The sibling that receives the whole group total (not a root).
+    from_nodes : list[str], optional
+        Which siblings to zero. Default: every unfrozen sibling of
+        `to_node`. Siblings NOT listed become bystanders and are
+        verified to stay exactly at baseline.
+    scope : dict, optional
+        Column=value filters (Pin.scope): only matching cascades move.
+    freeze_nodes : list[str], optional
+        Passed to apply_pins; frozen nodes are never zeroed and never
+        modified (and are excluded from the default `from_nodes`).
+    row_keys : list[str], optional
+        Passed to apply_pins (rarely needed — cascade_many outputs
+        carry .attrs['cascade_row_keys']).
+
+    Returns
+    -------
+    (edited_df, report)
+        report — one row per involved node: node, role
+        ('destination'/'source'/'bystander'), baseline_total,
+        target_total, achieved_total, exact. Any inexact row warns.
+
+    Notes
+    -----
+    Sources must be SIBLINGS of `to_node` (same parent) — pulling value
+    across different parents changes both parents' totals, which is
+    route_targets' job, not a concentration.
+    """
+    df = quotas_long
+    if not to_node or not isinstance(to_node, str):
+        raise ValueError(f"to_node must be a node id string, "
+                         f"got {to_node!r}.")
+    mask = _scope_mask(df, scope)
+
+    dest = df[(df["node_id"] == to_node) & mask]
+    if dest.empty:
+        raise ValueError(f"concentrate: '{to_node}' matches no rows "
+                         f"(after scope {scope or {}}).")
+    dest_parents = {p for p in dest["parent"] if pd.notna(p)}
+    if not dest_parents:
+        raise ValueError(
+            f"concentrate: '{to_node}' is a root — there is no sibling "
+            f"group to collapse. Use route_targets for cross-tree "
+            f"moves.")
+
+    frozen = set(freeze_nodes or [])
+    sib_rows = df[mask & df["parent"].isin(dest_parents)
+                  & (df["node_id"] != to_node)]
+    all_sibs = [n for n in sib_rows["node_id"].unique()
+                if n not in frozen]
+
+    sources = list(from_nodes) if from_nodes is not None else all_sibs
+    if not sources:
+        raise ValueError(f"concentrate: no eligible sources for "
+                         f"'{to_node}' (no unfrozen siblings).")
+    bad = [s for s in sources
+           if s == to_node or s in frozen
+           or df[(df["node_id"] == s) & mask].empty
+           or set(df.loc[(df["node_id"] == s) & mask, "parent"].dropna())
+           != dest_parents]
+    if bad:
+        raise ValueError(
+            f"concentrate: {bad} are not eligible sources — each must "
+            f"be an unfrozen SIBLING of '{to_node}' (same parent, "
+            f"present in the scoped rows). For cross-parent moves use "
+            f"route_targets.")
+    if len(set(sources)) != len(sources):
+        raise ValueError("concentrate: duplicate nodes in from_nodes.")
+
+    def _base(node, frame=df, m=mask):
+        return float(frame.loc[(frame["node_id"] == node) & m,
+                               "base_quota"].sum())
+
+    d0 = _base(to_node)
+    src_base = {s: _base(s) for s in sources}
+    group_total = d0 + sum(src_base.values())
+
+    # Sources FIRST, destination last (all same depth, so list order is
+    # application order): with a bystander buffer present, zeroing the
+    # sources first INFLATES the buffer and the destination pin then
+    # sheds it back — the buffer never floors at $0, so its internal
+    # mix survives. Destination-first would transiently floor the
+    # buffer and equal-split its reps on the way back up.
+    pins = [Pin(s, 0.0, scope=scope) for s in sources]
+    pins += [Pin(to_node, group_total, scope=scope)]
+    edited = _run_pins_quietly(df, pins, freeze_nodes, row_keys)
+
+    # ---- Verify + report --------------------------------------------
+    emask = _scope_mask(edited, scope)
+
+    def _after(node):
+        return float(edited.loc[(edited["node_id"] == node) & emask,
+                                "base_quota"].sum())
+
+    rows = [{"node": to_node, "role": "destination",
+             "baseline_total": round(d0, 2),
+             "target_total": round(group_total, 2),
+             "achieved_total": round(_after(to_node), 2)}]
+    for s in sources:
+        rows.append({"node": s, "role": "source",
+                     "baseline_total": round(src_base[s], 2),
+                     "target_total": 0.0,
+                     "achieved_total": round(_after(s), 2)})
+    for b in all_sibs:
+        if b in sources:
+            continue
+        b0 = _base(b)
+        rows.append({"node": b, "role": "bystander",
+                     "baseline_total": round(b0, 2),
+                     "target_total": round(b0, 2),
+                     "achieved_total": round(_after(b), 2)})
+    report = pd.DataFrame(rows)
+    report["exact"] = (report["achieved_total"]
+                       - report["target_total"]).abs() <= 0.05
+    if not report["exact"].all():
+        off = report.loc[~report["exact"], "node"].tolist()
+        warnings.warn(
+            f"concentrate('{to_node}'): {off} did not land exactly on "
+            f"target (frozen mass or $0 floors in the way) — see the "
+            f"returned report.",
             UserWarning, stacklevel=2)
     return edited, report

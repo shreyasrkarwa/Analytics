@@ -3,6 +3,48 @@
 All notable changes to `b2b_revenue_forecasting` are documented here.
 This project loosely follows [Semantic Versioning](https://semver.org/).
 
+## [0.24.0] — 2026-07
+
+Closes [issue #47](https://github.com/shreyasrkarwa/Analytics/issues/47):
+`concentrate()` — collapse siblings' scoped quota onto one sibling,
+the inverse of `redistribute`. Review verdict: expressible today as
+direct pins or chained redistribute (verified identical), and the
+filer's ~40-line workaround is over-built (manager zero-pins zero the
+whole subtree; no per-rep pins, no `exclude` needed). The real gaps —
+hand-computed group total, spurious unabsorbed noise in the no-buffer
+report, no single roles report — are what the helper closes.
+
+### Added
+- **`concentrate(quotas_long, to_node, from_nodes=, scope=,
+  freeze_nodes=, row_keys=)`** — pins `to_node` to the summed scoped
+  baseline of the group and zeroes the sources (default: all unfrozen
+  siblings), via the same quiet-run + verify machinery as
+  redistribute. Full pin contract: per-depth reshaping (destination's
+  internal mix preserved), parent conservation, per-row hedge
+  re-derivation, scope isolation, freeze honored. Returns
+  (edited_df, report) with destination/source/bystander roles and an
+  `exact` flag; bystanders (unlisted siblings) are verified to stay at
+  baseline to the cent.
+- Sources must be siblings; cross-parent pulls error with a
+  route_targets pointer.
+- `tests/test_concentrate.py` — 5 tests: three-spelling equivalence
+  (helper == direct pins == chained redistribute), subset + bystander,
+  freeze defaults, inverse-composition anchor (team level identical;
+  rep-level equal-split after transiting $0, as documented),
+  validation suite.
+
+### Fixed (design detail worth knowing)
+- Inside `concentrate`, sources are zeroed BEFORE the destination pin
+  lands (same depth, stable order): with a bystander buffer present,
+  the buffer inflates then sheds and never floors at $0 — so its
+  internal rep mix survives. Destination-first would transiently floor
+  the buffer and equal-split its reps. Caught by test 2 during
+  development.
+
+### Internal
+- Shared `_scope_mask` / `_run_pins_quietly` helpers now back both
+  redistribute and concentrate (no behavior change; full suite green).
+
 ## [0.23.0] — 2026-07
 
 Closes [issue #43](https://github.com/shreyasrkarwa/Analytics/issues/43):
