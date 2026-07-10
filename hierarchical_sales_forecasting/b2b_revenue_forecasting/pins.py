@@ -121,6 +121,28 @@ def apply_pins(
          its descendants roll up to pinned x the cross-level hedge —
          each depth keeps its hedge ratio relative to the pinned value.
 
+    REMAINDER PINS (issue #42) — "these children are fixed, the
+    unpinned one(s) take the rest" needs NO special mode; it is plain
+    pin composition::
+
+        # remainder to unpinned siblings, parent conserved as-is:
+        apply_pins(quotas, [Pin('T1', 500_000), Pin('T2', 1_500_000)])
+
+        # the parent's total is pinned too (the requested
+        # Pin(parent, total, children={...}, remainder='auto')):
+        apply_pins(quotas, [Pin('EMEA', 5_000_000),
+                            Pin('T1', 500_000), Pin('T2', 1_500_000)])
+
+    Why this is exactly the requested semantics: pinned nodes never
+    absorb for other pins (#24), so every pin's delta lands entirely on
+    the UNPINNED siblings; proportional absorption preserves their
+    ratios, so the remainder splits at baseline proportions (the same
+    identity as issue #37); and depth-ordered application (#41) makes
+    the parent pin land before its children regardless of list order.
+    If the pinned children exceed the parent's pin, free siblings floor
+    at $0 and every unplaced dollar appears in the feasibility report
+    (unabsorbed / subtree_shortfall) — never hidden.
+
     LIST ORDER NEVER MATTERS (issue #41). Pinned values have been
     order-independent since v0.20.0 (every pin's node is protected from
     every other pin's rescales, #39); since v0.22.0 application is also

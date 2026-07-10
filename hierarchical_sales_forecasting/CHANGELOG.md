@@ -3,6 +3,34 @@
 All notable changes to `b2b_revenue_forecasting` are documented here.
 This project loosely follows [Semantic Versioning](https://semver.org/).
 
+## [0.22.1] — 2026-07
+
+Closes [issue #42](https://github.com/shreyasrkarwa/Analytics/issues/42):
+"no native remainder-to-unpinned-siblings pin mode." Review verdict:
+the mode exists — as plain pin composition — and became reliable with
+the v0.20.0/v0.22.0 pin fixes (the issue predates them). No new API:
+a `children=`/`remainder_node=` parameter would be a second spelling
+of a three-line pin list. Docs + pinned tests only.
+
+### Docs
+- "Remainder pins (issue #42)" recipe in the apply_pins docstring and
+  README: `[Pin('T1', x), Pin('T2', y)]` sends the leftover to the
+  unpinned siblings at baseline proportions with the parent conserved;
+  add `Pin(parent, total)` for the requested
+  `Pin(parent, total, children={...}, remainder='auto')`. Why it is
+  exact: pinned nodes never absorb for other pins (#24), proportional
+  absorption preserves unpinned ratios (the #37 identity), and
+  depth-ordered application (#41) lands the parent first regardless
+  of list order.
+
+### Added
+- `tests/test_remainder_pins.py` — 3 tests: sibling-only remainder
+  with NON-canceling deltas (proportionality genuinely exercised),
+  parent-total + fixed children (per-quarter conservation + internal
+  mix of remainder teams preserved), and over-pinned children
+  (parent-child gap exactly equals reported subtree_shortfall +
+  child unabsorbed; no negatives).
+
 ## [0.22.0] — 2026-07
 
 Closes [issue #41](https://github.com/shreyasrkarwa/Analytics/issues/41):

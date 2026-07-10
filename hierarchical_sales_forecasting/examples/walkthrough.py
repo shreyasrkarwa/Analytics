@@ -1036,6 +1036,10 @@ print(f"Frozen rep untouched: {frozen_same} · "
 # canonical depth order (managers before leaves) internally, so the
 # whole output frame is identical for any ordering; the feasibility
 # report stays in your list order.
+# v0.22.1 (#42): "remainder to the unpinned sibling" is plain
+# composition — [Pin('T1', x), Pin('T2', y)] sends the leftover to the
+# unpinned teams at baseline proportions (add Pin(parent, total) to fix
+# the envelope too). No remainder-team computation needed.
 
 # NEW in v0.18.0 (issue #30): level-by-level cascading with DIFFERENT
 # behavior per transition — e.g. split Region->RVP by NetNewACV but

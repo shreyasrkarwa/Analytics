@@ -21,6 +21,20 @@ Unlike traditional bottom-up time-series libraries (which are strictly built for
 | **`CommitReconciler`** | Detect sandbagging and "happy ears" bias via historical Bias Quotients, then auto-correct forecasts |
 | **`PipelineAdjuster`** | Diagnose pipeline health with per-region thresholds and redistribute IC quotas using zero-sum logic |
 
+### What's New in v0.22.1 — remainder pins are just pin composition ([issue #42](https://github.com/shreyasrkarwa/Analytics/issues/42))
+
+"Pin some children exactly; the unpinned sibling takes the rest" needs no special mode — it's a pin list:
+
+```python
+# remainder to unpinned siblings, parent conserved as-is
+apply_pins(quotas, [Pin('T1', 500_000), Pin('T2', 1_500_000)])
+
+# the requested Pin(parent, total, children={...}, remainder='auto')
+apply_pins(quotas, [Pin('EMEA', 5_000_000), Pin('T1', 500_000), Pin('T2', 1_500_000)])
+```
+
+This is exact, not approximate: pinned nodes never absorb for other pins, proportional absorption preserves the unpinned siblings' ratios (the issue #37 identity), and depth-ordered application lands the parent pin first regardless of list order. The composition became reliable with the v0.20.0/v0.22.0 pin fixes — the remainder-team + envelope + `exclude` workaround is obsolete. If pinned children exceed the parent's pin, free siblings floor at $0 and the gap is reported (`subtree_shortfall` + unabsorbed), never hidden. All three patterns are pinned by regression tests.
+
 ### What's New in v0.22.0 — pin list order never matters ([issue #41](https://github.com/shreyasrkarwa/Analytics/issues/41))
 
 The reported symptom — a leaf pin overwritten by a later manager-pin rescale — was already fixed by v0.20.0's protection-aware rescale (verified across all 24 orderings of the filer's scenario: every pin held, every parent conserved). What remained: *absorber* rows could still differ by list order. `apply_pins` now applies pins in canonical depth order — shallowest pinned node first, managers before leaves, stable within a depth — so the entire output frame is identical for any ordering of `pins`, and leaf-pin allocations are computed against post-manager-rescale baselines. The feasibility report stays in the caller's pin order. The managers-before-leaves workaround is now simply what the package does internally.
