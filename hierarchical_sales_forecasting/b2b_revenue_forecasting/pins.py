@@ -137,10 +137,14 @@ def apply_pins(
         never modified, for every pin.
     row_keys : Optional[List[str]]
         Columns identifying ONE cascade (group keys + sub-target columns
-        like fiscal_quarter). Inferred as "every non-structural column"
-        when omitted — pass explicitly if your frame carries extra
-        per-node columns (e.g. metadata_cols), which would confuse the
-        inference.
+        like fiscal_quarter). When omitted (issue #40): cascade_many
+        outputs (v0.21.0+) carry the exact keys in
+        .attrs['cascade_row_keys'] and those are used automatically;
+        otherwise every non-structural column is inferred. Either way a
+        wrong key set can no longer corrupt silently — if any row's
+        parent exists in the frame but not under the same cascade key,
+        apply_pins raises, naming the per-node columns poisoning the
+        identity and suggesting the corrected row_keys.
 
     Returns
     -------
@@ -164,9 +168,23 @@ def apply_pins(
     if "pin_type" not in df.columns:
         df["pin_type"] = None
 
-    keys = (list(row_keys) if row_keys is not None
-            else [c for c in df.columns if c not in _STRUCTURAL_COLS])
-    key_of = (df[keys].apply(tuple, axis=1) if keys
+    if row_keys is not None:
+        keys = list(row_keys)
+    else:
+        # Prefer the cascade-identity stamp cascade_many leaves on its
+        # output (issue #40) — exact group_keys + sub-target columns.
+        stamped = quotas_long.attrs.get("cascade_row_keys")
+        if (isinstance(stamped, (list, tuple))
+                and all(isinstance(c, str) and c in df.columns
+                        for c in stamped)):
+            keys = list(stamped)
+        else:
+            keys = [c for c in df.columns if c not in _STRUCTURAL_COLS]
+    # NaN normalized to None so tuples compare by value (NaN != NaN
+    # would silently split key groups — issue #40 hygiene).
+    key_of = (df[keys].apply(
+                  lambda r: tuple(None if pd.isna(v) else v for v in r),
+                  axis=1) if keys
               else pd.Series([()] * len(df), index=df.index))
 
     # Uniqueness: one row per (cascade, node)
@@ -259,6 +277,43 @@ def apply_pins(
             shortfall += _rescale_subtree(k, df.at[c, "node_id"], share,
                                           protected)
         return shortfall
+
+    # Orphan guard (issue #40): under CORRECT cascade keys, every row's
+    # parent (when the parent node exists in the frame at all) has a row
+    # in the SAME key tuple — a cascade always contains the parent. An
+    # "orphan" (parent present elsewhere in the frame but not in this
+    # row's key group) proves the keys are wrong: per-node columns (e.g.
+    # metadata_cols) are poisoning the cascade identity. Before v0.21.0
+    # this silently downgraded manager pins to leaf pins and mis-grouped
+    # absorbers; now it's a hard error naming the poison columns.
+    all_node_ids = set(df["node_id"])
+    orphans = [idx for idx in df.index
+               if pd.notna(df.at[idx, "parent"])
+               and df.at[idx, "parent"] in all_node_ids
+               and (key_of.at[idx], df.at[idx, "parent"]) not in row_ix]
+    if orphans:
+        poison = set()
+        for idx in orphans[:20]:
+            parent_rows = df.index[df["node_id"] == df.at[idx, "parent"]]
+            for col in keys:
+                v = df.at[idx, col]
+                if all(not (df.at[p, col] == v
+                            or (pd.isna(df.at[p, col]) and pd.isna(v)))
+                       for p in parent_rows):
+                    poison.add(col)
+        suggested = [c for c in keys if c not in poison]
+        raise ValueError(
+            f"apply_pins: {len(orphans)} row(s) have a parent that exists "
+            f"in the frame but NOT under the same cascade key — the "
+            f"row_keys are wrong, so manager/subtree pins and sibling "
+            f"absorption would silently misbehave. Keys in use: {keys}. "
+            f"Columns that vary per node and are poisoning the cascade "
+            f"identity: {sorted(poison)}. Pass "
+            f"row_keys={suggested or '[<group keys + sub-target columns>]'} "
+            f"(group keys + sub-target columns like fiscal_quarter only). "
+            f"cascade_many outputs since v0.21.0 carry the correct keys "
+            f"in .attrs['cascade_row_keys'] and need no row_keys at all."
+        )
 
     frozen = set(freeze_nodes or [])
     all_pinned = {p.node for p in pins}

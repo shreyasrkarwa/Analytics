@@ -185,6 +185,12 @@ def cascade_many(
         dicts — reconstruct with pd.DataFrame(...)), regardless of
         this flag. Feed the frame to route_targets() to place the
         money on chosen recipients (issues #25/#32).
+
+        The output also carries .attrs['cascade_row_keys'] (v0.21.0,
+        issue #40): the exact columns identifying one cascade
+        (group_keys + sub-target columns). apply_pins reads it when
+        row_keys= is omitted, so pins Just Work on this frame even
+        when metadata_cols add per-node columns.
     on_collision : str
         Passed to from_dataframe (v0.6.0 duplicate-level policy).
     verbose : bool
@@ -430,6 +436,13 @@ def cascade_many(
     # two cascade outputs raise "truth value is ambiguous". Reconstruct
     # with pd.DataFrame(quotas_long.attrs['dropped_targets']).
     quotas_long.attrs["dropped_targets"] = dropped_long.to_dict("records")
+    # Cascade-identity stamp (issue #40): the columns that identify ONE
+    # cascade in this frame. apply_pins(row_keys=None) reads this instead
+    # of inferring keys from "every non-structural column" — which broke
+    # silently when per-node columns (metadata_cols) were present.
+    # Stored as a plain list of strings (attrs-concat safe).
+    quotas_long.attrs["cascade_row_keys"] = list(group_keys) + \
+        [c for c in passthrough_cols if c in quotas_long.columns]
 
     if return_dropped:
         return quotas_long, weights_long, dropped_long

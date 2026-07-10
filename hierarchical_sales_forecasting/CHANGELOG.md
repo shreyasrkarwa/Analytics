@@ -3,6 +3,36 @@
 All notable changes to `b2b_revenue_forecasting` are documented here.
 This project loosely follows [Semantic Versioning](https://semver.org/).
 
+## [0.21.0] — 2026-07
+
+Closes [issue #40](https://github.com/shreyasrkarwa/Analytics/issues/40):
+apply_pins without `row_keys` inferred the cascade key from every
+non-structural column, so per-node columns (metadata_cols) split
+parent and child rows into different key tuples — manager pins
+silently downgraded to pin_type='leaf' (descendants never followed the
+pin) and, worse than reported, sibling absorption mis-grouped too.
+Both halves of the issue's Ask are implemented.
+
+### Added
+- **Cascade-identity stamp (Ask a).** cascade_many outputs carry
+  `.attrs['cascade_row_keys']` — the exact group_keys + sub-target
+  columns. `apply_pins(row_keys=None)` uses it automatically, so pins
+  Just Work on batch outputs even with metadata_cols present.
+- **Orphan guard (Ask b).** Wrong keys are now a hard error, never
+  silent corruption: if any row's parent exists in the frame but not
+  under the same cascade key (impossible under correct keys — a
+  cascade always contains the parent row), apply_pins raises a
+  ValueError naming the per-node columns poisoning the identity and
+  suggesting the corrected row_keys. Catches wrong EXPLICIT row_keys
+  too. Leaf-only frames (parents absent entirely) remain allowed.
+- `tests/test_pin_row_keys.py` — 6 tests: stamp contents, no-row_keys
+  subtree pin with metadata, poison diagnosis, wrong explicit keys,
+  the filer's workaround, leaf-only frames.
+
+### Fixed
+- Cascade-key tuples normalize NaN to None, so legitimately-NaN key
+  values no longer split a cascade into per-row groups (NaN != NaN).
+
 ## [0.20.0] — 2026-07
 
 Closes [issue #39](https://github.com/shreyasrkarwa/Analytics/issues/39):

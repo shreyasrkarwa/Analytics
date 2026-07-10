@@ -1028,6 +1028,10 @@ print(f"Frozen rep untouched: {frozen_same} · "
 # values while free siblings stretch (pin order no longer matters), and
 # absorption is weighted by FREE capacity. If protected mass exceeds a
 # pin, the feasibility report's subtree_shortfall column says so.
+# v0.21.0 (#40): no row_keys needed here — cascade_many stamps the
+# cascade identity on .attrs['cascade_row_keys'] and apply_pins reads
+# it; wrong/poisoned keys now raise (naming the per-node columns)
+# instead of silently downgrading manager pins to leaf pins.
 
 # NEW in v0.18.0 (issue #30): level-by-level cascading with DIFFERENT
 # behavior per transition — e.g. split Region->RVP by NetNewACV but
