@@ -3,6 +3,40 @@
 All notable changes to `b2b_revenue_forecasting` are documented here.
 This project loosely follows [Semantic Versioning](https://semver.org/).
 
+## [0.23.0] — 2026-07
+
+Closes [issue #43](https://github.com/shreyasrkarwa/Analytics/issues/43):
+cross-sibling redistribution that reshapes source AND destination at
+every depth. Review verdict: the capability already existed as scoped
+pin composition — `apply_pins(q, [Pin('EAST', 0, scope=...)])` zeroes
+the source subtree at every depth and grows the unpinned siblings at
+baseline proportions, hedge ratios preserved per row (verified, incl.
+the filer's manual proportional-share computation being unnecessary).
+The genuine gap was ergonomics: custom `weights=` required reading
+baselines out of the frame and hand-computing destination pins.
+
+### Added
+- **`redistribute(quotas_long, from_node, to_nodes=, weights=,
+  scope=, freeze_nodes=, row_keys=)`** — the requested API, built as
+  thin sugar over `apply_pins` (it writes the pins for you; no new
+  engine). `weights='proportional'` (default) | `'equal'` | dict
+  (normalized). Inherits the full pin contract: per-depth subtree
+  reshaping, parent conservation, per-row hedge re-derivation (#21),
+  scope isolation, freeze honored, $0 floors. Returns
+  (edited_df, report) with per-node roles
+  (source/destination/bystander) and an `exact` flag — bystander rows
+  VERIFY the cancellation identity (non-recipients end exactly at
+  baseline) rather than assuming it.
+- Recipients must be siblings of the source; cross-parent moves get a
+  clear error pointing at route_targets.
+- Internal absorption noise is suppressed only for redistribute's own
+  conservation-neutral pin package and replaced by explicit
+  verification; genuine failures (frozen mass, floors) still warn via
+  the report's `exact` column.
+- `tests/test_redistribute.py` — 5 tests: default == single scoped
+  Pin (the identity), dict weights with bystander-exact check,
+  no-buffer silence, equal split, validation suite.
+
 ## [0.22.1] — 2026-07
 
 Closes [issue #42](https://github.com/shreyasrkarwa/Analytics/issues/42):

@@ -12,7 +12,7 @@ frame (all math on the BASE layer, hedged values derived from each
 row's own ratio — the issue #21 contract).
 """
 import warnings
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import pandas as pd
 
@@ -521,3 +521,213 @@ def apply_pins(
             )
 
     return df, pd.DataFrame(report_rows)
+
+
+def redistribute(
+    quotas_long: pd.DataFrame,
+    from_node: str,
+    to_nodes: Optional[List[str]] = None,
+    weights: Union[str, Dict[str, float]] = "proportional",
+    scope: Optional[Dict[str, Any]] = None,
+    freeze_nodes: Optional[List[str]] = None,
+    row_keys: Optional[List[str]] = None,
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Move a node's ENTIRE (optionally scoped) quota to its siblings,
+    reshaping source and destination subtrees at every depth (#43).
+
+    "MM_AMER_EAST gets zero Migration; move it to CENTRAL/WEST
+    proportionally" is::
+
+        edited, report = redistribute(quotas_long, 'EAST',
+                                      scope={'st1_sales_type': 'Migration'})
+
+    Custom split (the issue's `weights=`)::
+
+        edited, report = redistribute(quotas_long, 'EAST',
+                                      weights={'CENTRAL': .7, 'WEST': .3},
+                                      scope={'st1_sales_type': 'Migration'})
+
+    This is a thin convenience over `apply_pins` — it writes the pins
+    for you (source pinned to $0, each destination pinned to
+    baseline + share x source), so it inherits the whole pin contract:
+    subtrees rescale at every depth, parents conserve, each row's
+    hedged value re-derives from its own hedge ratio (#21), other
+    scopes untouched, frozen nodes never move, floors at $0. Siblings
+    that are neither source nor destination end EXACTLY at baseline
+    (sequential proportional absorption cancels — verified, not
+    assumed: the returned report checks it).
+
+    Parameters
+    ----------
+    quotas_long : pd.DataFrame
+        cascade_many output (or equivalent long frame).
+    from_node : str
+        Source node (leaf or manager; not a root). Its scoped subtree
+        goes to $0.
+    to_nodes : list[str], optional
+        Restrict recipients. Default: every unfrozen sibling. Ignored
+        for dict `weights` (the keys are the recipients).
+    weights : 'proportional' | 'equal' | dict[node, weight]
+        How the source total splits across recipients.
+        'proportional' (default) — by the recipients' baseline mix;
+        'equal' — evenly; dict — explicit shares (normalized). All-zero
+        recipient baselines fall back to equal, with a warning.
+    scope : dict, optional
+        Column=value filters (Pin.scope): only matching cascades move.
+    freeze_nodes : list[str], optional
+        Passed to apply_pins; frozen nodes are never recipients and
+        never modified.
+    row_keys : list[str], optional
+        Passed to apply_pins (rarely needed — cascade_many outputs
+        carry .attrs['cascade_row_keys']).
+
+    Returns
+    -------
+    (edited_df, report)
+        report — one row per involved node: node, role
+        ('source'/'destination'/'bystander'), baseline_total,
+        target_total, achieved_total, exact. Destinations land on
+        their targets by construction; bystander rows verify the
+        cancellation identity. Any inexact row warns.
+
+    Notes
+    -----
+    Recipients must be SIBLINGS of `from_node` (same parent) — moving
+    value across different parents changes both parents' totals, which
+    is route_targets' job, not a redistribution.
+    """
+    df = quotas_long
+    if not from_node or not isinstance(from_node, str):
+        raise ValueError(f"from_node must be a node id string, "
+                         f"got {from_node!r}.")
+    if isinstance(weights, str):
+        if weights not in ("proportional", "equal"):
+            raise ValueError("weights must be 'proportional', 'equal', "
+                             f"or a dict, got '{weights}'.")
+    elif not isinstance(weights, dict):
+        raise ValueError("weights must be 'proportional', 'equal', or a "
+                         f"dict of node->share, got {type(weights)}.")
+
+    mask = pd.Series(True, index=df.index)
+    for col, val in (scope or {}).items():
+        if col not in df.columns:
+            raise ValueError(f"scope column '{col}' not in quotas_long.")
+        mask &= df[col] == val
+
+    src = df[(df["node_id"] == from_node) & mask]
+    if src.empty:
+        raise ValueError(f"redistribute: '{from_node}' matches no rows "
+                         f"(after scope {scope or {}}).")
+    src_parents = {p for p in src["parent"] if pd.notna(p)}
+    if not src_parents:
+        raise ValueError(
+            f"redistribute: '{from_node}' is a root — there is no "
+            f"sibling group to conserve against. Reduce the root's "
+            f"target (or use route_targets) instead.")
+    e0 = float(src["base_quota"].sum())
+
+    frozen = set(freeze_nodes or [])
+    sib_rows = df[mask & df["parent"].isin(src_parents)
+                  & (df["node_id"] != from_node)]
+    all_sibs = [n for n in sib_rows["node_id"].unique()
+                if n not in frozen]
+
+    # ---- Resolve recipients + shares -------------------------------
+    if isinstance(weights, dict):
+        if to_nodes is not None and set(to_nodes) != set(weights):
+            raise ValueError("to_nodes and dict weights disagree — pass "
+                             "one or the other (the dict keys are the "
+                             "recipients).")
+        dests = list(weights)
+        raw = {d: float(weights[d]) for d in dests}
+        if any(v < 0 for v in raw.values()) or sum(raw.values()) <= 0:
+            raise ValueError("dict weights must be non-negative and sum "
+                             "to a positive number.")
+    else:
+        dests = list(to_nodes) if to_nodes is not None else all_sibs
+        raw = None
+    if not dests:
+        raise ValueError(f"redistribute: no eligible recipients for "
+                         f"'{from_node}' (all siblings frozen?).")
+    bad = [d for d in dests
+           if d == from_node or d in frozen
+           or df[(df["node_id"] == d) & mask].empty
+           or set(df.loc[(df["node_id"] == d) & mask, "parent"].dropna())
+           != src_parents]
+    if bad:
+        raise ValueError(
+            f"redistribute: {bad} are not eligible recipients — each "
+            f"must be an unfrozen SIBLING of '{from_node}' (same "
+            f"parent, present in the scoped rows). For cross-parent "
+            f"moves use route_targets.")
+
+    base = {d: float(df.loc[(df["node_id"] == d) & mask,
+                            "base_quota"].sum()) for d in dests}
+    if raw is not None:
+        total_w = sum(raw.values())
+        share = {d: raw[d] / total_w for d in dests}
+    elif weights == "equal":
+        share = {d: 1.0 / len(dests) for d in dests}
+    else:                                     # proportional
+        pool = sum(base.values())
+        if pool > 0:
+            share = {d: base[d] / pool for d in dests}
+        else:
+            warnings.warn(
+                f"redistribute: recipients of '{from_node}' have an "
+                f"all-zero baseline — splitting equally.",
+                UserWarning, stacklevel=2)
+            share = {d: 1.0 / len(dests) for d in dests}
+
+    # ---- Compose the pins and run ----------------------------------
+    pins = [Pin(from_node, 0.0, scope=scope)]
+    pins += [Pin(d, base[d] + share[d] * e0, scope=scope) for d in dests]
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        edited, _ = apply_pins(df, pins, freeze_nodes=freeze_nodes,
+                               row_keys=row_keys)
+    for w in caught:
+        # Internal routing noise: when every sibling is a recipient
+        # there is no buffer to "absorb", but the pins are conservation-
+        # neutral by construction — verified below instead.
+        if "could not be absorbed" not in str(w.message):
+            warnings.warn(w.message, w.category, stacklevel=2)
+
+    # ---- Verify + report --------------------------------------------
+    emask = pd.Series(True, index=edited.index)
+    for col, val in (scope or {}).items():
+        emask &= edited[col] == val
+
+    def _after(node):
+        return float(edited.loc[(edited["node_id"] == node) & emask,
+                                "base_quota"].sum())
+
+    rows = [{"node": from_node, "role": "source",
+             "baseline_total": round(e0, 2), "target_total": 0.0,
+             "achieved_total": round(_after(from_node), 2)}]
+    for d in dests:
+        rows.append({"node": d, "role": "destination",
+                     "baseline_total": round(base[d], 2),
+                     "target_total": round(base[d] + share[d] * e0, 2),
+                     "achieved_total": round(_after(d), 2)})
+    for b in all_sibs:
+        if b in dests:
+            continue
+        b0 = float(df.loc[(df["node_id"] == b) & mask,
+                          "base_quota"].sum())
+        rows.append({"node": b, "role": "bystander",
+                     "baseline_total": round(b0, 2),
+                     "target_total": round(b0, 2),
+                     "achieved_total": round(_after(b), 2)})
+    report = pd.DataFrame(rows)
+    report["exact"] = (report["achieved_total"]
+                       - report["target_total"]).abs() <= 0.05
+    if not report["exact"].all():
+        off = report.loc[~report["exact"], "node"].tolist()
+        warnings.warn(
+            f"redistribute('{from_node}'): {off} did not land exactly "
+            f"on target (frozen mass or $0 floors in the way) — see "
+            f"the returned report.",
+            UserWarning, stacklevel=2)
+    return edited, report

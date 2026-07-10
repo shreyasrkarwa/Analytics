@@ -62,6 +62,7 @@ from b2b_revenue_forecasting import (
     HedgeByDepth,
     Pin,
     apply_pins,
+    redistribute,
 )
 
 # Pretty separators for the printed walkthrough
@@ -1040,6 +1041,17 @@ print(f"Frozen rep untouched: {frozen_same} · "
 # composition — [Pin('T1', x), Pin('T2', y)] sends the leftover to the
 # unpinned teams at baseline proportions (add Pin(parent, total) to fix
 # the envelope too). No remainder-team computation needed.
+
+# NEW in v0.23.0 (issue #43): redistribute() — move a node's scoped
+# quota to its siblings, reshaping BOTH subtrees at every depth.
+# Thin sugar over apply_pins: it writes the pins for you.
+print(f"\n--- Cross-sibling redistribution (v0.23.0) ---")
+donor = quotas_long[quotas_long.depth == 1]['node_id'].iloc[0]
+red_df, red_report = redistribute(quotas_long, donor)
+print(f"redistribute('{donor}') -> source zeroed, siblings grew "
+      f"proportionally:")
+print(red_report[['node', 'role', 'baseline_total', 'achieved_total',
+                  'exact']].to_string(index=False))
 
 # NEW in v0.18.0 (issue #30): level-by-level cascading with DIFFERENT
 # behavior per transition — e.g. split Region->RVP by NetNewACV but

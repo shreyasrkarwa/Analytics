@@ -21,6 +21,19 @@ Unlike traditional bottom-up time-series libraries (which are strictly built for
 | **`CommitReconciler`** | Detect sandbagging and "happy ears" bias via historical Bias Quotients, then auto-correct forecasts |
 | **`PipelineAdjuster`** | Diagnose pipeline health with per-region thresholds and redistribute IC quotas using zero-sum logic |
 
+### What's New in v0.23.0 — `redistribute()`: move a region's quota to its siblings ([issue #43](https://github.com/shreyasrkarwa/Analytics/issues/43))
+
+"MM_AMER_EAST gets zero Migration; move it to CENTRAL/WEST proportionally" is now one call:
+
+```python
+edited, report = redistribute(quotas_long, 'EAST', scope={'st1_sales_type': 'Migration'})
+# custom split:
+edited, report = redistribute(quotas_long, 'EAST', weights={'CENTRAL': .7, 'WEST': .3},
+                              scope={'st1_sales_type': 'Migration'})
+```
+
+It's thin sugar over `apply_pins` — it writes the pins for you (source → $0, destinations → baseline + share × source), so everything the pin engine guarantees comes along: the source subtree zeroes and destination subtrees grow *at every depth*, parents conserve, each row's hedged value re-derives from its own hedge ratio, other scopes stay untouched, frozen nodes never move. `weights=` takes `'proportional'` (default), `'equal'`, or a dict; recipients must be siblings (cross-parent moves are `route_targets`' job — the error says so). The returned report tags every involved node source/destination/bystander with an `exact` flag — bystanders are *verified* to land back at baseline to the cent, not assumed. The scoped-region-Pins workaround still works; this just spells it.
+
 ### What's New in v0.22.1 — remainder pins are just pin composition ([issue #42](https://github.com/shreyasrkarwa/Analytics/issues/42))
 
 "Pin some children exactly; the unpinned sibling takes the rest" needs no special mode — it's a pin list:

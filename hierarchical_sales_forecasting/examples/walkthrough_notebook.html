@@ -76,12 +76,12 @@
 <div class="container">
 
 <header>
-  <div class="eyebrow">b2b_revenue_forecasting · v0.22.1</div>
+  <div class="eyebrow">b2b_revenue_forecasting · v0.23.0</div>
   <h1>Multi-Metric Cascading &amp; Reconciliation — Walkthrough</h1>
   <p class="subtitle">End-to-end notebook: how an analyst takes one CSV of historical performance + pipeline data and produces a quota plan, a pipeline diagnosis, a redistributed plan, and a bias-corrected forecast — with full visibility into how each metric actually influences allocation.</p>
   <div class="meta">
     <span><strong>Package:</strong> b2b-revenue-forecasting</span>
-    <span><strong>Version:</strong> 0.22.1</span>
+    <span><strong>Version:</strong> 0.23.0</span>
     <span><strong>Dataset:</strong> 170 ICs · 217 hierarchy nodes</span>
     <span><strong>Macro target:</strong> $50,000,000</span>
   </div>
@@ -986,6 +986,13 @@ Each transition hedges only its own step; base conservation holds per parent at 
 IC_Mgr_Dir_RVP_NA_1_1_1_1     leaf         500000.0        500000.0         0.0      True
 Frozen rep untouched: True · is_pinned rows: 2</pre>
 (Per-cascade pins, hedge basis, and post-edit re-hedging live in v0.13.0's <code class="inline">new_ic_overrides</code>/<code class="inline">override_basis</code>/<code class="inline">rehedge</code>.)</div>
+
+  <div class="callout"><strong>Cross-sibling redistribution (v0.23.0, issue #43).</strong> &ldquo;This region gets zero Migration; move it to its siblings proportionally&rdquo; is one call &mdash; <code class="inline">redistribute(quotas_long, 'EAST', scope={'st1_sales_type': 'Migration'})</code>, or with an explicit split <code class="inline">weights={'CENTRAL': .7, 'WEST': .3}</code> (also <code class="inline">'equal'</code>, or <code class="inline">to_nodes=[...]</code> to restrict recipients). Thin sugar over <code class="inline">apply_pins</code> &mdash; it writes the pins for you &mdash; so the source subtree zeroes and destination subtrees grow at <em>every</em> depth, parents conserve, hedged values re-derive from each row's own ratio, other scopes stay untouched, and recipients must be siblings (cross-parent moves are <code class="inline">route_targets</code>' job; the error says so). The returned report tags each node source/destination/bystander with an <code class="inline">exact</code> flag &mdash; bystanders are <em>verified</em> back at baseline to the cent:
+<pre class="output" style="margin-top:8px;">redistribute('NA') -> source zeroed, siblings grew proportionally:
+node        role  baseline_total  achieved_total  exact
+  NA      source      52500000.0             0.0   True
+EMEA destination      25200000.0      50400000.0   True
+APAC destination      27300000.0      54600000.0   True</pre></div>
 
   <div class="callout"><strong>No target left behind (v0.14.0).</strong> Targets whose combination has NO hierarchy branch (a Government segment with no Government subtree) are returned as <em>data</em>: <code class="inline">cascade_many(..., return_dropped=True)</code> yields a third frame with every dropped row plus a <code class="inline">reason</code> column (always also on <code class="inline">quotas_long.attrs['dropped_targets']</code>). Route that money onto named recipients anywhere in the tree with <code class="inline">route_targets(dropped, quotas, recipients=[...], target_col=..., recipient_keys={...})</code>:
 
