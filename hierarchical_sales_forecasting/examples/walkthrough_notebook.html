@@ -76,12 +76,12 @@
 <div class="container">
 
 <header>
-  <div class="eyebrow">b2b_revenue_forecasting · v0.19.2</div>
+  <div class="eyebrow">b2b_revenue_forecasting · v0.20.0</div>
   <h1>Multi-Metric Cascading &amp; Reconciliation — Walkthrough</h1>
   <p class="subtitle">End-to-end notebook: how an analyst takes one CSV of historical performance + pipeline data and produces a quota plan, a pipeline diagnosis, a redistributed plan, and a bias-corrected forecast — with full visibility into how each metric actually influences allocation.</p>
   <div class="meta">
     <span><strong>Package:</strong> b2b-revenue-forecasting</span>
-    <span><strong>Version:</strong> 0.19.2</span>
+    <span><strong>Version:</strong> 0.20.0</span>
     <span><strong>Dataset:</strong> 170 ICs · 217 hierarchy nodes</span>
     <span><strong>Macro target:</strong> $50,000,000</span>
   </div>
@@ -979,7 +979,7 @@ Director Dir_RVP_NA_1_1 RVP_NA_1  2535350.99      2662118.54
 Base conserved at every level: True (RVPs by ACV, Directors by CloudSeats +5%)</pre>
 Each transition hedges only its own step; base conservation holds per parent at every level; sub-target keys (quarters) thread through; dropped targets carry a <code class="inline">level</code> tag. With uniform kwargs the result equals a single full-tree <code class="inline">cascade_many</code> (pinned test) — and the one-level primitive itself is just <code class="inline">cascade_many(df, targets, group_keys=[parent_col], taxonomy=[parent_col, child_col])</code>.</div>
 
-  <div class="callout"><strong>Aggregate pins across cascades (v0.16.0).</strong> "This territory carries exactly $500k in TOTAL across every product and quarter" is one call on the batch output: <code class="inline">apply_pins(quotas_long, pins=[Pin(node, 500_000)], freeze_nodes=[...])</code>. The pinned node keeps its baseline mix across combos; siblings absorb each cascade's delta proportionally (manager pins and manager absorbers rescale whole subtrees, parents conserve, floors at $0 — never negative); frozen/excluded nodes are never touched (issue #24); infeasible pins land in the feasibility report with the unabsorbed amount; <code class="inline">is_pinned</code>/<code class="inline">pin_type</code> mark provenance. All math on the base layer, hedged re-derived per row:
+  <div class="callout"><strong>Aggregate pins across cascades (v0.16.0).</strong> "This territory carries exactly $500k in TOTAL across every product and quarter" is one call on the batch output: <code class="inline">apply_pins(quotas_long, pins=[Pin(node, 500_000)], freeze_nodes=[...])</code>. The pinned node keeps its baseline mix across combos; siblings absorb each cascade's delta proportionally (manager pins and manager absorbers rescale whole subtrees, parents conserve, floors at $0 — never negative); frozen/excluded nodes are never touched (issue #24) — and since v0.20.0 (issue #39) that protection reaches <em>inside</em> subtrees: a manager pin rescales AROUND descendants that are separately pinned, frozen, or excluded (free siblings stretch to fill, so pin order no longer matters), absorption is weighted by free capacity, and a <code class="inline">basis='cascaded'</code> manager pin under <code class="inline">HedgeByDepth</code> rolls descendants up to pinned &times; the cross-level hedge (pinned by test); infeasible pins land in the feasibility report with the unabsorbed amount (plus <code class="inline">subtree_shortfall</code> when protected descendants exceed the pin); <code class="inline">is_pinned</code>/<code class="inline">pin_type</code> mark provenance. All math on the base layer, hedged re-derived per row:
 
 <pre class="output" style="margin-top:8px;">IC_Mgr_Dir_RVP_NA_1_1_1_1: $313,505.99 -> $500,000.00 total (mix preserved)
                  pin_node pin_type  requested_total  achieved_total  unabsorbed  feasible

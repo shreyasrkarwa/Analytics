@@ -21,6 +21,12 @@ Unlike traditional bottom-up time-series libraries (which are strictly built for
 | **`CommitReconciler`** | Detect sandbagging and "happy ears" bias via historical Bias Quotients, then auto-correct forecasts |
 | **`PipelineAdjuster`** | Diagnose pipeline health with per-region thresholds and redistribute IC quotas using zero-sum logic |
 
+### What's New in v0.20.0 — protection-aware pin rescaling ([issue #39](https://github.com/shreyasrkarwa/Analytics/issues/39))
+
+The reported symptom — hedged-layer manager pins not propagating the cross-level buffer — does not reproduce: `apply_pins` scales descendant *base* values and re-derives cascaded from each row's own hedge *ratio*, so a `basis='cascaded'` team pin under `HedgeByDepth` already rolls reps up to pinned × cross-level hedge (now pinned by test). The investigation did surface three real defects in the subtree rescale, fixed here: a later manager pin used to trample an earlier pin on one of its descendants (pin order mattered — almost certainly the wrong rollup actually observed); `freeze_nodes` inside a pinned or absorbing subtree were scaled despite the "never modified" contract; and `exclude` didn't protect descendants of a manager pin.
+
+The rescale is now protection-aware: descendants pinned by another pin, frozen, or excluded keep their values while free siblings stretch to fill — proportional to base, exactly the old rescale when nothing is protected. Absorption is weighted by free capacity, so absorbers never push deltas onto protected rows. If protected values alone exceed a pin, free rows floor at $0 and the feasibility report's new `subtree_shortfall` column says so, with a warning.
+
 ### What's New in v0.19.2 — carrying metric values into quotas_long_df ([issue #16](https://github.com/shreyasrkarwa/Analytics/issues/16))
 
 No new code — new clarity. The capability #16 requested (`carry_metric_cols`) has existed since v0.8.0 under a name that hid it: **`metadata_cols` carries ANY hierarchy column onto leaf rows, metric values included.** List `knowledge_workers` in `metadata_cols` and every leaf row of quotas_long_df carries its value — even while that same column drives the cascade via an explicit `MetricSpec` (carried columns are excluded from *auto* ingestion only; cascade numbers are identical either way, now pinned by test). No re-join against the source frame needed.

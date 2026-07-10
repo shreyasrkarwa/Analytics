@@ -3,6 +3,51 @@
 All notable changes to `b2b_revenue_forecasting` are documented here.
 This project loosely follows [Semantic Versioning](https://semver.org/).
 
+## [0.20.0] — 2026-07
+
+Closes [issue #39](https://github.com/shreyasrkarwa/Analytics/issues/39):
+"pins on the hedged layer don't propagate the cross-level buffer."
+Review verdict: the HEADLINE claim does not reproduce — a
+cascaded-basis manager pin under `HedgeByDepth` already rolls
+descendants up to pinned x cross-level hedge, because `apply_pins`
+scales descendant BASE values and re-derives cascaded from each row's
+own hedge RATIO (now pinned by test). But probing the filer's
+workaround ("separately-pinned/zeroed reps") exposed three real
+defects in the subtree rescale, all fixed here.
+
+### Fixed
+- **Later subtree pins no longer trample earlier descendant pins.**
+  Every pin's node is protected from every other pin's rescales, so
+  pin order no longer changes where pinned nodes land (this was almost
+  certainly the wrong rollup behind #39's symptom).
+- **`freeze_nodes` honored inside subtrees.** The docstring promised
+  frozen nodes are "never modified" — but a frozen node inside a
+  pinned (or absorbing) manager's subtree was scaled. Now it holds.
+- **`Pin.exclude` protects descendants of a manager pin** (the #39
+  Ask), not just sibling absorbers.
+
+### Changed
+- `_scale_subtree` replaced by a protection-aware recursive rescale:
+  protected children keep their values, free children scale to fill
+  the remainder proportional to their base (equal split when the free
+  baseline is $0 — which also means a zero-baseline subtree pin now
+  DISTRIBUTES instead of sitting on the manager row). With nothing
+  protected, identical to the old proportional rescale (pinned by
+  test).
+- Sibling absorption is weighted by FREE capacity (base minus
+  protected mass inside the subtree), so absorbers never push deltas
+  onto protected descendants.
+- Feasibility report gains a `subtree_shortfall` column: when
+  protected descendants alone exceed the pinned total, free rows floor
+  at $0, `feasible=False`, and a warning names the column — never
+  hidden.
+
+### Added
+- `tests/test_hedged_layer_pins.py` — 7 tests: the disproven #39
+  identity, order-independence, frozen/excluded descendants,
+  infeasible shortfall, absorber-subtree protection, unprotected
+  equivalence.
+
 ## [0.19.2] — 2026-07
 
 Closes [issue #16](https://github.com/shreyasrkarwa/Analytics/issues/16):

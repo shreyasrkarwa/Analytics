@@ -1023,6 +1023,11 @@ frozen_same = (pinned_df[pinned_df.node_id == gov_recipients[1]]['base_quota']
                        ['base_quota'].reset_index(drop=True)))
 print(f"Frozen rep untouched: {frozen_same} · "
       f"is_pinned rows: {int(pinned_df['is_pinned'].sum())}")
+# v0.20.0 (#39): the subtree rescale is protection-aware — descendants
+# pinned by another Pin, in freeze_nodes, or in Pin.exclude keep their
+# values while free siblings stretch (pin order no longer matters), and
+# absorption is weighted by FREE capacity. If protected mass exceeds a
+# pin, the feasibility report's subtree_shortfall column says so.
 
 # NEW in v0.18.0 (issue #30): level-by-level cascading with DIFFERENT
 # behavior per transition — e.g. split Region->RVP by NetNewACV but
