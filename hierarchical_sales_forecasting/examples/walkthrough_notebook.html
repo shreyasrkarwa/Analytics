@@ -76,12 +76,12 @@
 <div class="container">
 
 <header>
-  <div class="eyebrow">b2b_revenue_forecasting · v0.26.0</div>
+  <div class="eyebrow">b2b_revenue_forecasting · v0.27.0</div>
   <h1>Multi-Metric Cascading &amp; Reconciliation — Walkthrough</h1>
   <p class="subtitle">End-to-end notebook: how an analyst takes one CSV of historical performance + pipeline data and produces a quota plan, a pipeline diagnosis, a redistributed plan, and a bias-corrected forecast — with full visibility into how each metric actually influences allocation.</p>
   <div class="meta">
     <span><strong>Package:</strong> b2b-revenue-forecasting</span>
-    <span><strong>Version:</strong> 0.26.0</span>
+    <span><strong>Version:</strong> 0.27.0</span>
     <span><strong>Dataset:</strong> 170 ICs · 217 hierarchy nodes</span>
     <span><strong>Macro target:</strong> $50,000,000</span>
   </div>
@@ -1007,6 +1007,12 @@ APAC      source      27300000.0             0.0   True</pre></div>
       RVP_NA_1      2 15285338.72           NaN           13600063.28
       RVP_NA_2      2  9714661.28           NaN            6274941.81
 Dir_RVP_NA_1_1      3  5690101.81           NaN            5277302.32</pre></div>
+
+  <div class="callout"><strong>Auditable batch runs (v0.27.0, issues #20/#19).</strong> Every <code class="inline">cascade_many</code> output carries <code class="inline">attrs['combo_report']</code> &mdash; one record per combination: <code class="inline">skipped</code>+<code class="inline">reason</code>, <code class="inline">targets_matched</code>, <code class="inline">rows_produced</code>, <code class="inline">n_gated_nodes</code>, <code class="inline">gate_relaxed</code>, <code class="inline">unallocated_total</code>, <code class="inline">weights_source</code> (fixed / policy / suggested_global / suggested_per_group / default_attainment), <code class="inline">direction_mismatches</code>, <code class="inline">degenerate_fallback</code>. Reconstruct with <code class="inline">pd.DataFrame(q.attrs['combo_report'])</code>. And the per-group direction-mismatch warning flood is gone: unless <code class="inline">warn_on_direction_mismatch</code> is set explicitly, one batch-level summary (&ldquo;'kw' in 7/12 combinations&rdquo;) replaces N&times;M warnings &mdash; the per-combo detail lives in the report either way:
+<pre class="output" style="margin-top:8px;">Region  skipped  targets_matched  rows_produced  n_gated_nodes  unallocated_total weights_source
+    NA    False                2            244              0                0.0          fixed
+  EMEA    False                2             70              0                0.0          fixed
+  APAC    False                2            124              0                0.0          fixed</pre></div>
 
   <div class="callout"><strong>No target left behind (v0.14.0).</strong> Targets whose combination has NO hierarchy branch (a Government segment with no Government subtree) are returned as <em>data</em>: <code class="inline">cascade_many(..., return_dropped=True)</code> yields a third frame with every dropped row plus a <code class="inline">reason</code> column (always also on <code class="inline">quotas_long.attrs['dropped_targets']</code>). Route that money onto named recipients anywhere in the tree with <code class="inline">route_targets(dropped, quotas, recipients=[...], target_col=..., recipient_keys={...})</code>:
 

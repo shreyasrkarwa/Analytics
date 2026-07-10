@@ -143,6 +143,15 @@ def cascade_many(
         Shape: {"target_column": str, "candidate_metrics": [...],
                 ...any other suggest_weights kwargs}.
         Mutually exclusive with `metrics`.
+
+        Direction-mismatch warnings in per_group mode (issue #19,
+        v0.27.0): unless you explicitly set
+        warn_on_direction_mismatch here, per-combination warnings are
+        summarized into ONE batch-level warning ("metric X in N/M
+        combinations"), with per-combo detail in
+        attrs['combo_report']. Explicit True keeps per-group warnings;
+        explicit False silences everything — the report column is
+        populated either way.
     weights_mode : str
         "global" (default) — suggest once on the FULL hierarchy_df and
         reuse for every combination. "per_group" — re-suggest on each
@@ -199,6 +208,15 @@ def cascade_many(
         (group_keys + sub-target columns). apply_pins reads it when
         row_keys= is omitted, so pins Just Work on this frame even
         when metadata_cols add per-node columns.
+
+        And .attrs['combo_report'] (v0.27.0, issue #20): one record per
+        group-key combination — skipped + reason, targets_matched,
+        rows_produced, n_gated_nodes, gate_relaxed, unallocated_total,
+        weights_source ('fixed' | 'policy' | 'suggested_global' |
+        'suggested_per_group' | 'default_attainment'),
+        direction_mismatches (issue #19) and degenerate_fallback.
+        Reconstruct with pd.DataFrame(q.attrs['combo_report']) — the
+        batch run, auditable at a glance.
     on_collision : str
         Passed to from_dataframe (v0.6.0 duplicate-level policy).
     verbose : bool
@@ -252,27 +270,53 @@ def cascade_many(
     # group_keys that can actually slice hierarchy_df
     filter_keys = [k for k in group_keys if k in hierarchy_df.columns]
 
-    def _suggest(df_slice: pd.DataFrame) -> List[MetricSpec]:
+    # Direction-mismatch policy (issue #19): with per_group suggestion,
+    # a warning per (group x metric) floods the output. Unless the
+    # caller EXPLICITLY set warn_on_direction_mismatch, per-combo runs
+    # are silenced and one aggregated summary is emitted after the
+    # loop; the per-combo mismatches always land in
+    # attrs['combo_report'] (data, not noise).
+    _user_set_dir_warn = (suggest_config is not None
+                          and "warn_on_direction_mismatch"
+                          in suggest_config)
+    _summarize_dir = (suggest_config is not None
+                      and weights_mode == "per_group"
+                      and not _user_set_dir_warn)
+
+    def _suggest(df_slice: pd.DataFrame,
+                 silence_direction: bool = False,
+                 ) -> Tuple[List[MetricSpec], Dict[str, Any]]:
         cfg = dict(suggest_config)
-        suggested, _report = MetricSpec.suggest_weights(
+        if silence_direction:
+            cfg["warn_on_direction_mismatch"] = False
+        suggested, report = MetricSpec.suggest_weights(
             df_slice,
             target_column=cfg.pop("target_column"),
             candidate_metrics=cfg.pop("candidate_metrics"),
             **cfg,
         )
-        return suggested
+        return suggested, report
+
+    def _report_flags(report: Dict[str, Any]) -> Tuple[List[str], bool]:
+        mismatches = sorted(
+            n for n, r in (report or {}).items()
+            if r.get("direction_matches_data") is False)
+        degenerate = any(r.get("degenerate") for r in (report or {}).values())
+        return mismatches, degenerate
 
     # Global weights resolved once, if applicable
     metrics_policy = metrics if callable(metrics) else None
     global_metrics: Optional[List[MetricSpec]] = (
         None if callable(metrics) else metrics)
+    _global_report: Dict[str, Any] = {}
     if suggest_config is not None and weights_mode == "global":
-        global_metrics = _suggest(hierarchy_df)
+        global_metrics, _global_report = _suggest(hierarchy_df)
 
     quota_frames: List[pd.DataFrame] = []
     weight_frames: List[pd.DataFrame] = []
     failures: List[Tuple[tuple, str]] = []
     dropped_frames: List[pd.DataFrame] = []
+    combo_records: List[Dict[str, Any]] = []   # issue #20
 
     passthrough_cols = [c for c in target_df.columns
                         if c not in group_keys and c != target_col]
@@ -335,11 +379,26 @@ def cascade_many(
                             f"{type(combo_metrics).__name__}."
                         )
                     policy_decided = True
-            if not policy_decided:
-                if suggest_config is not None and weights_mode == "per_group":
-                    combo_metrics = _suggest(df_slice)
+            combo_report_flags: Tuple[List[str], bool] = ([], False)
+            if policy_decided:
+                weights_source = "policy"
+            elif suggest_config is not None and weights_mode == "per_group":
+                combo_metrics, _rep = _suggest(
+                    df_slice, silence_direction=_summarize_dir
+                    or ("warn_on_direction_mismatch" in suggest_config
+                        and not suggest_config[
+                            "warn_on_direction_mismatch"]))
+                combo_report_flags = _report_flags(_rep)
+                weights_source = "suggested_per_group"
+            elif not policy_decided:
+                combo_metrics = global_metrics
+                if suggest_config is not None:
+                    weights_source = "suggested_global"
+                    combo_report_flags = _report_flags(_global_report)
+                elif global_metrics is not None:
+                    weights_source = "fixed"
                 else:
-                    combo_metrics = global_metrics
+                    weights_source = "default_attainment"
 
             # 4b. Resolve gates for this combination (issue #14) —
             # a callable policy is evaluated against the group-key dict.
@@ -365,6 +424,10 @@ def cascade_many(
                 weight_frames.append(wdf)
 
             # 5. Cascade every sub-target row against the prepared group
+            _rows_produced = 0
+            _gated_union: set = set()
+            _relaxed_any = False
+            _unallocated_total = 0.0
             for _, trow in combo_targets.iterrows():
                 target = float(trow[target_col])
                 quotas = cascader.cascade_quota(
@@ -388,11 +451,40 @@ def cascade_many(
                     qdf[c] = trow[c]
                 qdf[target_col] = target
                 quota_frames.append(qdf)
+                # Per-combination bookkeeping (issue #20)
+                _rows_produced += len(qdf)
+                _gated_union |= set(cascader.gated_nodes)
+                _relaxed_any = _relaxed_any or bool(
+                    cascader.gate_relaxed_nodes)
+                _unallocated_total += float(cascader.unallocated or 0.0)
+
+            combo_records.append({
+                **combo_dict,
+                "skipped": False, "reason": None,
+                "targets_matched": int(len(combo_targets)),
+                "rows_produced": _rows_produced,
+                "n_gated_nodes": len(_gated_union),
+                "gate_relaxed": _relaxed_any,
+                "unallocated_total": round(_unallocated_total, 2),
+                "weights_source": weights_source,
+                "direction_mismatches": combo_report_flags[0],
+                "degenerate_fallback": combo_report_flags[1],
+            })
 
         except Exception as exc:  # noqa: BLE001 — reported per policy
             if on_error == "raise":
                 raise
             failures.append((combo_vals, f"{type(exc).__name__}: {exc}"))
+            combo_records.append({
+                **combo_dict,
+                "skipped": True,
+                "reason": f"{type(exc).__name__}: {exc}",
+                "targets_matched": int(len(combo_targets)),
+                "rows_produced": 0, "n_gated_nodes": 0,
+                "gate_relaxed": False, "unallocated_total": 0.0,
+                "weights_source": None, "direction_mismatches": [],
+                "degenerate_fallback": False,
+            })
             # Issue #26: dropped money must be data, not log noise —
             # keep the full original target rows with the reason.
             dropped_frames.append(
@@ -451,6 +543,32 @@ def cascade_many(
     # Stored as a plain list of strings (attrs-concat safe).
     quotas_long.attrs["cascade_row_keys"] = list(group_keys) + \
         [c for c in passthrough_cols if c in quotas_long.columns]
+    # Per-combination diagnostics (issue #20). Stored as RECORDS
+    # (attrs-concat safe); reconstruct with
+    # pd.DataFrame(quotas_long.attrs['combo_report']).
+    quotas_long.attrs["combo_report"] = combo_records
+
+    # Aggregated direction-mismatch summary (issue #19): one warning
+    # for the whole batch instead of one per (group x metric).
+    if _summarize_dir:
+        n_suggested = sum(1 for r in combo_records
+                          if r["weights_source"] == "suggested_per_group")
+        counts: Dict[str, int] = {}
+        for r in combo_records:
+            for m in r["direction_mismatches"]:
+                counts[m] = counts.get(m, 0) + 1
+        if counts:
+            detail = ", ".join(f"'{m}' in {n}/{n_suggested} combinations"
+                               for m, n in sorted(counts.items()))
+            warnings.warn(
+                f"suggest_weights direction mismatches across the batch: "
+                f"{detail}. Directions were kept as declared. Per-combo "
+                f"detail in quotas_long.attrs['combo_report'] "
+                f"('direction_mismatches'). Set "
+                f"warn_on_direction_mismatch in suggest_config to True "
+                f"for per-group warnings or False to silence.",
+                UserWarning, stacklevel=2,
+            )
 
     # Explainability rollups (issue #49) — see rollup_metrics (#17).
     if attach_metrics:

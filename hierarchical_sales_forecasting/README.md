@@ -21,6 +21,10 @@ Unlike traditional bottom-up time-series libraries (which are strictly built for
 | **`CommitReconciler`** | Detect sandbagging and "happy ears" bias via historical Bias Quotients, then auto-correct forecasts |
 | **`PipelineAdjuster`** | Diagnose pipeline health with per-region thresholds and redistribute IC quotas using zero-sum logic |
 
+### What's New in v0.27.0 — auditable batch runs ([#20](https://github.com/shreyasrkarwa/Analytics/issues/20), [#19](https://github.com/shreyasrkarwa/Analytics/issues/19))
+
+Every `cascade_many` output now carries `attrs['combo_report']` — one record per combination: `skipped` + `reason`, `targets_matched`, `rows_produced`, `n_gated_nodes`, `gate_relaxed`, `unallocated_total`, `weights_source` (fixed / policy / suggested_global / suggested_per_group / default_attainment), `direction_mismatches`, `degenerate_fallback`. `pd.DataFrame(q.attrs['combo_report'])` and the batch is auditable at a glance — assembled from state the loop always had and used to discard. And the per_group direction-mismatch warning flood is gone: unless you explicitly set `warn_on_direction_mismatch`, you get **one** batch-level summary ("`'kw'` in 7/12 combinations") with per-combo detail in the report; explicit `True`/`False` keep the old behaviors, and the report column is populated regardless.
+
 ### What's New in v0.26.0 — subtree metric rollups: the "why" column ([#17](https://github.com/shreyasrkarwa/Analytics/issues/17), [#49](https://github.com/shreyasrkarwa/Analytics/issues/49))
 
 Consumers kept hand-rolling ~30-line rollups to see *why* a node got its quota. Now:

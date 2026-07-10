@@ -1088,6 +1088,15 @@ print("Each node now explains itself — leaf-grain column untouched,")
 print("_subtree column = that node's rollup (issues #17/#49):")
 print(roll_view.to_string(index=False))
 
+# NEW in v0.27.0 (issues #20/#19): every cascade_many output carries a
+# per-combination audit trail on attrs — and per_group direction-
+# mismatch warnings are summarized into ONE batch-level warning.
+print(f"\n--- Per-combination diagnostics (v0.27.0) ---")
+combo_rep = pd.DataFrame(quotas_long.attrs['combo_report'])
+print(combo_rep[['Region', 'skipped', 'targets_matched', 'rows_produced',
+                 'n_gated_nodes', 'unallocated_total', 'weights_source']]
+      .to_string(index=False))
+
 # NEW in v0.18.0 (issue #30): level-by-level cascading with DIFFERENT
 # behavior per transition — e.g. split Region->RVP by NetNewACV but
 # RVP->Director by CloudSeats, hedging only the second step.

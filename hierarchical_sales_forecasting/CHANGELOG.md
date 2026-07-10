@@ -3,6 +3,37 @@
 All notable changes to `b2b_revenue_forecasting` are documented here.
 This project loosely follows [Semantic Versioning](https://semver.org/).
 
+## [0.27.0] — 2026-07
+
+Closes [issue #20](https://github.com/shreyasrkarwa/Analytics/issues/20)
+and [issue #19](https://github.com/shreyasrkarwa/Analytics/issues/19):
+batch runs were hard to audit — the row-level flags exist, but nothing
+summarized WHICH combinations were skipped/relaxed/stranded, and
+per_group weight suggestion flooded the output with one direction-
+mismatch warning per (group x metric).
+
+### Added
+- **`attrs['combo_report']`** (#20) on cascade_many outputs: one
+  record per group-key combination — skipped + reason,
+  targets_matched, rows_produced, n_gated_nodes, gate_relaxed,
+  unallocated_total, weights_source ('fixed' | 'policy' |
+  'suggested_global' | 'suggested_per_group' | 'default_attainment'),
+  direction_mismatches and degenerate_fallback. Stored as records
+  (attrs-concat safe); reconstruct with
+  pd.DataFrame(q.attrs['combo_report']). All assembled from state the
+  loop already had and discarded — no new machinery.
+- **Direction-mismatch summarization** (#19), per_group mode only:
+  unless the caller EXPLICITLY sets warn_on_direction_mismatch in
+  suggest_config, per-combo warnings are silenced and ONE batch-level
+  summary is emitted ("'metric' in N/M combinations"), pointing at the
+  report. Explicit True keeps today's per-group warnings verbatim;
+  explicit False silences everything. The report column is populated
+  in all three cases — the signal is data, not noise.
+- `tests/test_combo_report.py` — 5 tests: shape + skipped reasons,
+  gate bookkeeping (strand_at_root unallocated vs redistribute
+  relaxed), weights_source variants, warning-summary trichotomy,
+  attrs concat safety.
+
 ## [0.26.0] — 2026-07
 
 Closes [issue #17](https://github.com/shreyasrkarwa/Analytics/issues/17)
