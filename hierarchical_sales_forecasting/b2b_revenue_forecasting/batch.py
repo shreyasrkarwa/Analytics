@@ -47,6 +47,7 @@ def cascade_many(
     on_collision: str = "suffix",
     verbose: bool = False,
     return_dropped: bool = False,
+    attach_metrics: Union[bool, List[str]] = False,
     **cascade_kwargs: Any,
 ) -> Union[Tuple[pd.DataFrame, pd.DataFrame],
            Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]]:
@@ -171,6 +172,13 @@ def cascade_many(
         group_keys + sub-target columns (e.g. fiscal_quarter). Columns
         that live only in target_df (a sales type not present in
         hierarchy_df) are NOT valid join keys for leaf-grain data.
+    attach_metrics : bool | list[str]
+        Explainability rollups (issue #49). True — every numeric
+        metadata_cols column gets a ``<col>_subtree`` companion holding
+        each node's subtree aggregate (sum over descendant leaves) for
+        its cascade; or pass an explicit list of carried columns. Thin
+        wrapper over rollup_metrics() (issue #17). The carried columns
+        themselves stay leaf-grain (NaN on managers).
     on_error : str
         "skip" (default) — a failing combination emits a warning and is
         excluded from the outputs; a summary warning lists all failures
@@ -444,6 +452,24 @@ def cascade_many(
     quotas_long.attrs["cascade_row_keys"] = list(group_keys) + \
         [c for c in passthrough_cols if c in quotas_long.columns]
 
+    # Explainability rollups (issue #49) — see rollup_metrics (#17).
+    if attach_metrics:
+        if attach_metrics is True:
+            roll_cols = [c for c in (metadata_cols or [])
+                         if c in quotas_long.columns
+                         and pd.api.types.is_numeric_dtype(
+                             quotas_long[c])]
+            if not roll_cols:
+                raise ValueError(
+                    "attach_metrics=True needs numeric metric columns "
+                    "carried via metadata_cols=[...] (v0.8.0; carries "
+                    "metric values too — issue #16).")
+        else:
+            roll_cols = list(attach_metrics)
+        stamped = dict(quotas_long.attrs)
+        quotas_long = rollup_metrics(quotas_long, roll_cols)
+        quotas_long.attrs.update(stamped)
+
     if return_dropped:
         return quotas_long, weights_long, dropped_long
     return quotas_long, weights_long
@@ -622,6 +648,28 @@ def cascade_levels(
                if dropped_pieces else pd.DataFrame())
     result.attrs["dropped_targets"] = (dropped.to_dict("records")
                                        if len(dropped) else [])
+    # Tag EVERY row with the root-target key columns (issues #17/#49):
+    # deeper transitions only knew their immediate parent, so columns
+    # like the region key were NaN below the first transition. Inherit
+    # them down the parent chain (child-uniqueness is already
+    # validated, so node_id -> value is unambiguous), which makes the
+    # cascade-identity stamp below valid at every depth.
+    root_keys = [c for c in root_targets.columns
+                 if c != target_col and c in result.columns]
+    if len(result):
+        for c in root_keys:
+            for _ in range(max(1, result["depth"].nunique())):
+                missing = result[c].isna()
+                if not missing.any():
+                    break
+                val_of = (result.loc[~result[c].isna()]
+                          .set_index("node_id")[c].to_dict())
+                result.loc[missing, c] = result.loc[missing,
+                                                    "parent"].map(val_of)
+    # Cascade-identity stamp (issues #40/#17): one cascade per original
+    # root-target row; per-node parent columns (e.g. the intermediate
+    # level columns) must never enter the key.
+    result.attrs["cascade_row_keys"] = root_keys
     if return_dropped:
         return result, dropped
     return result
@@ -813,3 +861,155 @@ def route_targets(
         routed = routed.sort_values(["depth", "node_id"],
                                     kind="stable").reset_index(drop=True)
     return routed
+
+
+_ROLLUP_AGGS = ("sum", "mean", "max", "min")
+
+
+def rollup_metrics(
+    quotas_long: pd.DataFrame,
+    metrics: Union[str, List[str]],
+    agg: str = "sum",
+    row_keys: Optional[List[str]] = None,
+) -> pd.DataFrame:
+    """
+    Roll leaf-grain metric columns UP the tree on a cascade output
+    (issues #17 / #49): one new ``<metric>_subtree`` column per metric,
+    holding each node's subtree aggregate for that cascade.
+
+    "Does this team's pipeline cover its quota?" becomes::
+
+        out = rollup_metrics(quotas_long, ['pipeline'])
+        out['coverage'] = out['pipeline_subtree'] / out['base_quota']
+
+    Semantics
+    ---------
+    - Aggregation runs over DESCENDANT LEAVES (frame-local: nodes with
+      no children in the same cascade), so ``agg='mean'``/``'max'`` are
+      well-defined — a manager's value is the mean/max of its leaf
+      values, never a mean of means. ``'sum'`` (default) matches the
+      cascader's own leaf-sum rollup semantics. Leaf rows carry their
+      own value.
+    - The source columns are left untouched: carried metric columns
+      (``metadata_cols``) stay leaf-grain with NaN on managers, per the
+      v0.19.2 contract. NaN leaf values are skipped (all-NaN subtree
+      -> NaN).
+    - Cascade identity comes from ``.attrs['cascade_row_keys']``
+      (stamped by cascade_many/cascade_levels), else ``row_keys=``,
+      else inference — and, as in apply_pins (#40), a broken key set
+      cannot corrupt silently: if any row's parent exists in the frame
+      but not under the same cascade key, this raises naming the
+      per-node columns poisoning the identity.
+
+    Parameters
+    ----------
+    quotas_long : pd.DataFrame
+        cascade_many / cascade_levels output (or any long frame with
+        node_id, parent + the metric columns on leaf rows).
+    metrics : str | list[str]
+        Column(s) to roll up. Must exist and be numeric.
+    agg : str
+        'sum' (default), 'mean', 'max', or 'min' — over descendant
+        leaf values.
+    row_keys : list[str], optional
+        Columns identifying ONE cascade; rarely needed thanks to the
+        attrs stamp.
+
+    Returns
+    -------
+    pd.DataFrame — a copy with the ``<metric>_subtree`` columns added.
+    """
+    from b2b_revenue_forecasting.pins import _STRUCTURAL_COLS
+
+    if isinstance(metrics, str):
+        metrics = [metrics]
+    if not metrics:
+        raise ValueError("rollup_metrics: pass at least one metric "
+                         "column.")
+    if agg not in _ROLLUP_AGGS:
+        raise ValueError(f"agg must be one of {_ROLLUP_AGGS}, "
+                         f"got '{agg}'.")
+    required = {"node_id", "parent"}
+    missing = required - set(quotas_long.columns)
+    if missing:
+        raise ValueError(f"quotas_long is missing required columns "
+                         f"{sorted(missing)}.")
+    absent = [m for m in metrics if m not in quotas_long.columns]
+    if absent:
+        raise ValueError(
+            f"rollup_metrics: {absent} not in quotas_long. Carry metric "
+            f"columns onto leaf rows with cascade_many(metadata_cols="
+            f"[...]) (v0.8.0; despite the name it carries metric "
+            f"values too — issue #16).")
+    non_num = [m for m in metrics
+               if not pd.api.types.is_numeric_dtype(quotas_long[m])]
+    if non_num:
+        raise ValueError(f"rollup_metrics: {non_num} are not numeric.")
+
+    df = quotas_long.copy()
+    if row_keys is not None:
+        keys = list(row_keys)
+    else:
+        stamped = quotas_long.attrs.get("cascade_row_keys")
+        if (isinstance(stamped, (list, tuple))
+                and all(isinstance(c, str) and c in df.columns
+                        for c in stamped)):
+            keys = list(stamped)
+        else:
+            keys = [c for c in df.columns
+                    if c not in _STRUCTURAL_COLS
+                    and c not in metrics
+                    and not c.endswith("_subtree")]
+    key_of = (df[keys].apply(
+                  lambda r: tuple(None if pd.isna(v) else v for v in r),
+                  axis=1) if keys
+              else pd.Series([()] * len(df), index=df.index))
+
+    row_ix: Dict[Any, Any] = {}
+    child_ix: Dict[Any, List[Any]] = {}
+    for idx in df.index:
+        k = key_of.at[idx]
+        row_ix[(k, df.at[idx, "node_id"])] = idx
+        child_ix.setdefault((k, df.at[idx, "parent"]), []).append(idx)
+
+    # Orphan guard (the #40 pattern): wrong keys never corrupt silently.
+    all_node_ids = set(df["node_id"])
+    orphans = [idx for idx in df.index
+               if pd.notna(df.at[idx, "parent"])
+               and df.at[idx, "parent"] in all_node_ids
+               and (key_of.at[idx], df.at[idx, "parent"]) not in row_ix]
+    if orphans:
+        poison = set()
+        for idx in orphans[:20]:
+            parent_rows = df.index[df["node_id"] == df.at[idx, "parent"]]
+            for col in keys:
+                v = df.at[idx, col]
+                if all(not (df.at[p, col] == v
+                            or (pd.isna(df.at[p, col]) and pd.isna(v)))
+                       for p in parent_rows):
+                    poison.add(col)
+        raise ValueError(
+            f"rollup_metrics: {len(orphans)} row(s) have a parent that "
+            f"exists in the frame but NOT under the same cascade key — "
+            f"the row_keys are wrong. Keys in use: {keys}. Per-node "
+            f"columns poisoning the identity: {sorted(poison)}. Pass "
+            f"row_keys= (group keys + sub-target columns only).")
+
+    # Descendant-leaf row indices per row, memoized per key group
+    memo: Dict[Any, List[Any]] = {}
+
+    def _leaf_rows(idx) -> List[Any]:
+        if idx in memo:
+            return memo[idx]
+        k = key_of.at[idx]
+        kids = child_ix.get((k, df.at[idx, "node_id"]), [])
+        out = ([idx] if not kids
+               else [li for c in kids for li in _leaf_rows(c)])
+        memo[idx] = out
+        return out
+
+    for m in metrics:
+        col = f"{m}_subtree"
+        df[col] = [getattr(df.loc[_leaf_rows(idx), m], agg)()
+                   for idx in df.index]
+    return df

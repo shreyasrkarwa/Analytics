@@ -21,6 +21,19 @@ Unlike traditional bottom-up time-series libraries (which are strictly built for
 | **`CommitReconciler`** | Detect sandbagging and "happy ears" bias via historical Bias Quotients, then auto-correct forecasts |
 | **`PipelineAdjuster`** | Diagnose pipeline health with per-region thresholds and redistribute IC quotas using zero-sum logic |
 
+### What's New in v0.26.0 — subtree metric rollups: the "why" column ([#17](https://github.com/shreyasrkarwa/Analytics/issues/17), [#49](https://github.com/shreyasrkarwa/Analytics/issues/49))
+
+Consumers kept hand-rolling ~30-line rollups to see *why* a node got its quota. Now:
+
+```python
+out = rollup_metrics(quotas_long, ['knowledge_workers', 'cloud_seats'])   # <metric>_subtree per node
+out['coverage'] = out['pipeline_subtree'] / out['base_quota']              # #17's use case, one line
+
+quotas, _ = cascade_many(..., metadata_cols=['knowledge_workers'], attach_metrics=True)  # #49's flag
+```
+
+Aggregation runs over descendant *leaves* (so `agg='mean'`/`'max'` are leaf aggregates, never means of means), each cascade is isolated via the `cascade_row_keys` stamp, carried columns stay leaf-grain, and wrong keys raise (the #40 guard) instead of corrupting. Bonus fix the guard caught: `cascade_levels` outputs now inherit root key columns at every depth and carry the stamp, so rollups (and pins) work on them without `row_keys`.
+
 ### What's New in v0.25.1 — #29 and #44 were already fixed; now it's provable ([#29](https://github.com/shreyasrkarwa/Analytics/issues/29), [#44](https://github.com/shreyasrkarwa/Analytics/issues/44))
 
 Both asks are `concentrate()` (v0.24.0), now pinned by regression tests and named in its docs: "route 100% of a parent's quota to a single child" — the survivor gets the full pool with zero leak (the leak in #29 was the pre-pins-era engine) and carries the hedged pool automatically; and "concentrate a group onto one team" — a hyphenated destination like `CENTRAL6-MIGRATION` is detected as a manager from the graph, so its reps carry the money and the team-vs-rep footgun can't happen. No behavior changes.

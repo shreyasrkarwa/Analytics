@@ -76,12 +76,12 @@
 <div class="container">
 
 <header>
-  <div class="eyebrow">b2b_revenue_forecasting · v0.25.1</div>
+  <div class="eyebrow">b2b_revenue_forecasting · v0.26.0</div>
   <h1>Multi-Metric Cascading &amp; Reconciliation — Walkthrough</h1>
   <p class="subtitle">End-to-end notebook: how an analyst takes one CSV of historical performance + pipeline data and produces a quota plan, a pipeline diagnosis, a redistributed plan, and a bias-corrected forecast — with full visibility into how each metric actually influences allocation.</p>
   <div class="meta">
     <span><strong>Package:</strong> b2b-revenue-forecasting</span>
-    <span><strong>Version:</strong> 0.25.1</span>
+    <span><strong>Version:</strong> 0.26.0</span>
     <span><strong>Dataset:</strong> 170 ICs · 217 hierarchy nodes</span>
     <span><strong>Macro target:</strong> $50,000,000</span>
   </div>
@@ -999,6 +999,14 @@ node        role  baseline_total  achieved_total  exact
   NA destination      52500000.0     105000000.0   True
 EMEA      source      25200000.0             0.0   True
 APAC      source      27300000.0             0.0   True</pre></div>
+
+  <div class="callout"><strong>Subtree metric rollups (v0.26.0, issues #17/#49).</strong> The &ldquo;why&rdquo; behind every node's quota, without hand-rolled groupbys: <code class="inline">rollup_metrics(quotas_long, ['knowledge_workers'])</code> adds a <code class="inline">&lt;metric&gt;_subtree</code> column per metric &mdash; leaf rows keep their own value, managers get the subtree aggregate, each cascade isolated via <code class="inline">attrs['cascade_row_keys']</code>. Or one flag on the batch driver: <code class="inline">cascade_many(..., metadata_cols=[...], attach_metrics=True)</code>. Aggregates run over descendant <em>leaves</em> (<code class="inline">agg='mean'|'max'|'min'</code> are leaf aggregates, never means of means), carried columns stay leaf-grain (NaN on managers), and wrong keys raise via the #40 orphan guard instead of corrupting. <code class="inline">cascade_levels</code> outputs now inherit the root key columns at every depth and carry the stamp, so this (and pins) work on them too. Coverage analysis is one line: <code class="inline">out['pipeline_subtree'] / out['base_quota']</code>.
+<pre class="output" style="margin-top:8px;">       node_id  depth  base_quota  Q1_NetNewACV  Q1_NetNewACV_subtree
+   Global_Corp      0 25000000.00           NaN           19875005.09
+            NA      1 25000000.00           NaN           19875005.09
+      RVP_NA_1      2 15285338.72           NaN           13600063.28
+      RVP_NA_2      2  9714661.28           NaN            6274941.81
+Dir_RVP_NA_1_1      3  5690101.81           NaN            5277302.32</pre></div>
 
   <div class="callout"><strong>No target left behind (v0.14.0).</strong> Targets whose combination has NO hierarchy branch (a Government segment with no Government subtree) are returned as <em>data</em>: <code class="inline">cascade_many(..., return_dropped=True)</code> yields a third frame with every dropped row plus a <code class="inline">reason</code> column (always also on <code class="inline">quotas_long.attrs['dropped_targets']</code>). Route that money onto named recipients anywhere in the tree with <code class="inline">route_targets(dropped, quotas, recipients=[...], target_col=..., recipient_keys={...})</code>:
 

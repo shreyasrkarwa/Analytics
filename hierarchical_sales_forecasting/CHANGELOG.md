@@ -3,6 +3,38 @@
 All notable changes to `b2b_revenue_forecasting` are documented here.
 This project loosely follows [Semantic Versioning](https://semver.org/).
 
+## [0.26.0] — 2026-07
+
+Closes [issue #17](https://github.com/shreyasrkarwa/Analytics/issues/17)
+and [issue #49](https://github.com/shreyasrkarwa/Analytics/issues/49)
+(the same request, filed 4 days apart): the package rolls leaf metrics
+up the tree internally everywhere (gates, blend shares, route_targets)
+but never surfaced it, so consumers hand-rolled ~30-line
+depth-descending rollups to answer "why did this node get its quota?".
+
+### Added
+- **`rollup_metrics(quotas_long, metrics, agg='sum', row_keys=None)`**
+  (#17): one `<metric>_subtree` column per metric — leaf rows carry
+  their own value, managers the subtree aggregate, per cascade.
+  Aggregation runs over DESCENDANT LEAVES (mean/max/min are leaf
+  aggregates, never a mean of means); 'sum' matches the cascader's
+  own rollup semantics. Carried source columns stay leaf-grain (NaN
+  on managers — the v0.19.2 contract is untouched). Wrong cascade
+  keys cannot corrupt silently: the #40 orphan guard raises, naming
+  the poison columns.
+- **`cascade_many(..., attach_metrics=True | [cols])`** (#49): the
+  requested flag — rolls up every numeric metadata_cols column (or an
+  explicit list) as a post-step through rollup_metrics; one code path.
+- **cascade_levels outputs now work too**: deeper transitions inherit
+  the root-target key columns down the parent chain (they were NaN
+  below the first transition), and the output carries
+  `.attrs['cascade_row_keys']` like cascade_many's — found by the
+  orphan guard during development, not by a user.
+- `tests/test_rollup_metrics.py` — 5 tests: per-depth sums with
+  quarter isolation + root anchor, attach_metrics equivalence + list
+  form, leaf-grain mean/max, cascade_levels output, validation
+  (missing/non-numeric/poisoned keys).
+
 ## [0.25.1] — 2026-07
 
 Closes [issue #29](https://github.com/shreyasrkarwa/Analytics/issues/29)

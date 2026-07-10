@@ -64,6 +64,7 @@ from b2b_revenue_forecasting import (
     apply_pins,
     redistribute,
     concentrate,
+    rollup_metrics,
 )
 
 # Pretty separators for the printed walkthrough
@@ -1069,6 +1070,23 @@ print(f"concentrate('{donor}') -> siblings zeroed, '{donor}' holds the "
       f"whole group:")
 print(con_report[['node', 'role', 'baseline_total', 'achieved_total',
                   'exact']].to_string(index=False))
+
+# NEW in v0.26.0 (issues #17/#49): subtree metric rollups — the "why"
+# behind every node's quota, without hand-rolled groupbys.
+print(f"\n--- Subtree metric rollups (v0.26.0) ---")
+# quotas_long didn't carry metric columns, so re-run one region with
+# metadata_cols + attach_metrics (the #49 one-flag path):
+na_targets = regional_targets[regional_targets.Region == 'NA']
+q_roll, _ = cascade_many(
+    df, na_targets, group_keys=['Region'], target_col='q_target',
+    taxonomy=taxonomy, metrics=cascade_metrics,
+    metadata_cols=['Q1_NetNewACV'], attach_metrics=True)
+roll_view = (q_roll[q_roll.fiscal_quarter == 1]
+             [['node_id', 'depth', 'base_quota', 'Q1_NetNewACV',
+               'Q1_NetNewACV_subtree']].head(6))
+print("Each node now explains itself — leaf-grain column untouched,")
+print("_subtree column = that node's rollup (issues #17/#49):")
+print(roll_view.to_string(index=False))
 
 # NEW in v0.18.0 (issue #30): level-by-level cascading with DIFFERENT
 # behavior per transition — e.g. split Region->RVP by NetNewACV but
