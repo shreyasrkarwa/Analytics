@@ -3,6 +3,42 @@
 All notable changes to `b2b_revenue_forecasting` are documented here.
 This project loosely follows [Semantic Versioning](https://semver.org/).
 
+## [0.25.0] — 2026-07
+
+Closes [issue #48](https://github.com/shreyasrkarwa/Analytics/issues/48):
+one pin matching zero rows (a product a region doesn't sell, a team
+with no reps in a quarter) aborted the entire apply_pins batch,
+forcing callers to pre-filter pins with hand-rolled scope matching.
+Mirrors the established `on_error='skip'` pattern from
+cascade_many/cascade_levels: dropped intent is data, not an abort.
+
+### Added
+- **`apply_pins(..., on_missing='error'|'skip'|'warn')`** (default
+  'error' — behavior unchanged). 'skip' drops zero-row pins and
+  records them in the feasibility report; 'warn' additionally emits
+  ONE summary warning naming them. New report columns: `skipped`
+  (bool) and `reason` ('node_absent' when the node id is nowhere in
+  the frame; 'empty_scope' when the node exists but Pin.scope matched
+  nothing). Skipped rows keep pin_node/basis/requested_total, zeros
+  elsewhere, feasible=False; report stays in INPUT pin order.
+- **No ghost side-effects** (the design decision the issue left
+  open): a skipped pin is dropped ENTIRELY — excluded from the
+  protection set and the depth ordering — so its node still absorbs
+  for other pins and still rescales inside pinned subtrees. Pinned by
+  test: a batch with a vacuous pin produces a frame identical to the
+  batch without it.
+- A missing Pin.scope COLUMN (typo) still raises regardless of
+  on_missing — that's a programming error, not a missing combination.
+- The default-'error' message now points at on_missing='skip'.
+- `tests/test_pin_on_missing.py` — 5 tests: default unchanged, skip
+  reasons + input order, warn summary, ghost-protection identity,
+  all-skipped no-op + validation.
+
+### Notes
+- `redistribute`/`concentrate` deliberately keep strict validation —
+  they are single planning operations, not batches; a missing node
+  there is a real error.
+
 ## [0.24.0] — 2026-07
 
 Closes [issue #47](https://github.com/shreyasrkarwa/Analytics/issues/47):

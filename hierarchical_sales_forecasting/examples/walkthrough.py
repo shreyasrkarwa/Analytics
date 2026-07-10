@@ -1038,6 +1038,11 @@ print(f"Frozen rep untouched: {frozen_same} · "
 # canonical depth order (managers before leaves) internally, so the
 # whole output frame is identical for any ordering; the feasibility
 # report stays in your list order.
+# v0.25.0 (#48): pins that match ZERO rows (a product a region doesn't
+# sell) no longer have to abort the batch — apply_pins(...,
+# on_missing='skip'|'warn') records them in the feasibility report
+# (skipped=True, reason='node_absent'|'empty_scope') and drops them
+# entirely (no ghost protection side-effects).
 # v0.22.1 (#42): "remainder to the unpinned sibling" is plain
 # composition — [Pin('T1', x), Pin('T2', y)] sends the leftover to the
 # unpinned teams at baseline proportions (add Pin(parent, total) to fix

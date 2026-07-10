@@ -21,6 +21,10 @@ Unlike traditional bottom-up time-series libraries (which are strictly built for
 | **`CommitReconciler`** | Detect sandbagging and "happy ears" bias via historical Bias Quotients, then auto-correct forecasts |
 | **`PipelineAdjuster`** | Diagnose pipeline health with per-region thresholds and redistribute IC quotas using zero-sum logic |
 
+### What's New in v0.25.0 — pins that match nothing no longer abort the batch ([issue #48](https://github.com/shreyasrkarwa/Analytics/issues/48))
+
+In a batch run some (node, scope) combinations legitimately have no rows — a product a region doesn't sell, a team with no reps in a quarter. `apply_pins(..., on_missing='skip')` now drops such pins into the feasibility report instead of raising (new columns: `skipped`, `reason='node_absent'|'empty_scope'`); `'warn'` adds one summary warning naming them; the default stays `'error'`. Same philosophy as `cascade_many`'s `on_error` — dropped intent is data, not an abort. Skipped pins are dropped *entirely*: no protection-set membership, so their nodes still absorb and rescale normally (pinned by test — a vacuous pin leaves the frame bit-identical). Scope-column typos still raise regardless. Your `_pin_has_rows()` guard loop can go.
+
 ### What's New in v0.24.0 — `concentrate()`: the inverse of `redistribute` ([issue #47](https://github.com/shreyasrkarwa/Analytics/issues/47))
 
 "All of CENTRAL's Migration lands on the CENTRAL6-MIGRATION team; every other CENTRAL team = 0" is one call:

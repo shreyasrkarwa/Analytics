@@ -25,6 +25,7 @@ _STRUCTURAL_COLS = {
 }
 
 _PIN_BASES = ("base", "cascaded")
+_ON_MISSING = ("error", "skip", "warn")
 
 
 class Pin:
@@ -83,6 +84,7 @@ def apply_pins(
     pins: List[Pin],
     freeze_nodes: Optional[List[str]] = None,
     row_keys: Optional[List[str]] = None,
+    on_missing: str = "error",
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     Apply aggregate pins to a cascade_many output (issues #22/#31/#24).
@@ -173,6 +175,20 @@ def apply_pins(
         parent exists in the frame but not under the same cascade key,
         apply_pins raises, naming the per-node columns poisoning the
         identity and suggesting the corrected row_keys.
+    on_missing : str
+        What to do with a pin that matches ZERO rows (issue #48) — a
+        product a region doesn't sell, a team with no reps in a
+        quarter. 'error' (default): raise, preserving historic
+        behavior. 'skip': drop the pin and record it in the
+        feasibility report (skipped=True, reason='node_absent' when
+        the node id is nowhere in the frame, 'empty_scope' when the
+        node exists but Pin.scope matched nothing). 'warn': like
+        'skip', plus one summary warning naming the skipped pins.
+        A skipped pin is dropped ENTIRELY — it does not enter the
+        protection set, so its node can still absorb for other pins
+        and still rescales inside pinned subtrees (no ghost
+        side-effects). A missing Pin.scope COLUMN is a programming
+        error and always raises, regardless of on_missing.
 
     Returns
     -------
@@ -180,10 +196,15 @@ def apply_pins(
         edited_df — a copy with updated base_quota / cascaded_quota,
             plus `is_pinned` and `pin_type` ('leaf'/'subtree')
             provenance on the pinned nodes' rows.
-        feasibility_report — one row per pin: pin_node, pin_type,
-            basis, requested_total, baseline_total, achieved_total,
-            rows_affected, absorbed, unabsorbed, feasible.
+        feasibility_report — one row per pin, in INPUT order:
+            pin_node, pin_type, basis, requested_total,
+            baseline_total, achieved_total, rows_affected, absorbed,
+            unabsorbed, subtree_shortfall, feasible, plus (v0.25.0)
+            skipped and reason for on_missing bookkeeping.
     """
+    if on_missing not in _ON_MISSING:
+        raise ValueError(f"on_missing must be one of {_ON_MISSING}, "
+                         f"got '{on_missing}'.")
     required = {"node_id", "parent", "depth", "base_quota",
                 "cascaded_quota"}
     missing = required - set(quotas_long.columns)
@@ -343,8 +364,39 @@ def apply_pins(
             f"in .attrs['cascade_row_keys'] and need no row_keys at all."
         )
 
+    # Missing-pin pre-pass (issue #48): classify BEFORE the protection
+    # set and application order are built, so a skipped pin has no
+    # ghost side-effects (its node may still absorb / rescale freely).
+    skipped_reason: Dict[int, str] = {}
+    for i, pin in enumerate(pins):
+        pmask = df["node_id"] == pin.node
+        for col, val in pin.scope.items():
+            if col not in df.columns:
+                raise ValueError(f"Pin scope column '{col}' not in "
+                                 f"quotas_long.")
+            pmask &= df[col] == val
+        if not pmask.any():
+            if on_missing == "error":
+                raise ValueError(
+                    f"Pin node '{pin.node}' matches no rows (after "
+                    f"scope {pin.scope}). Pass on_missing='skip' (or "
+                    f"'warn') to drop such pins into the feasibility "
+                    f"report instead of aborting the batch.")
+            skipped_reason[i] = ("node_absent"
+                                 if pin.node not in all_node_ids
+                                 else "empty_scope")
+    if skipped_reason and on_missing == "warn":
+        named = [f"{pins[i].node} ({r})"
+                 for i, r in sorted(skipped_reason.items())]
+        warnings.warn(
+            f"apply_pins: skipped {len(skipped_reason)} pin(s) with no "
+            f"matching rows: {', '.join(named)}. See the feasibility "
+            f"report (skipped / reason columns).",
+            UserWarning, stacklevel=2)
+
     frozen = set(freeze_nodes or [])
-    all_pinned = {p.node for p in pins}
+    all_pinned = {p.node for i, p in enumerate(pins)
+                  if i not in skipped_reason}
 
     # Canonical application order (issue #41): shallowest pinned node
     # first — managers before leaves — stable within a depth (same-depth
@@ -362,9 +414,20 @@ def apply_pins(
         depths = df.loc[mask, "depth"]
         return float(depths.min()) if len(depths) else float("inf")
 
-    application_order = sorted(range(len(pins)),
-                               key=lambda i: (_pin_depth(pins[i]), i))
+    application_order = sorted(
+        (i for i in range(len(pins)) if i not in skipped_reason),
+        key=lambda i: (_pin_depth(pins[i]), i))
     report_rows: List[Optional[dict]] = [None] * len(pins)
+    for i, reason in skipped_reason.items():
+        report_rows[i] = {
+            "pin_node": pins[i].node, "pin_type": None,
+            "basis": pins[i].basis,
+            "requested_total": round(pins[i].total, 2),
+            "baseline_total": 0.0, "achieved_total": 0.0,
+            "rows_affected": 0, "absorbed": 0.0, "unabsorbed": 0.0,
+            "subtree_shortfall": 0.0, "feasible": False,
+            "skipped": True, "reason": reason,
+        }
 
     for pin_i in application_order:
         pin = pins[pin_i]
@@ -501,6 +564,7 @@ def apply_pins(
             "subtree_shortfall": round(shortfall_sum, 2),
             "feasible": (abs(unabsorbed_sum) <= 0.01
                          and abs(shortfall_sum) <= 0.01),
+            "skipped": False, "reason": None,
         })  # slot pin_i: report emitted in INPUT pin order (issue #41)
         if unabsorbed_sum > 0.01:
             warnings.warn(
