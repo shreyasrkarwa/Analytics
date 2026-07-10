@@ -3,6 +3,31 @@
 All notable changes to `b2b_revenue_forecasting` are documented here.
 This project loosely follows [Semantic Versioning](https://semver.org/).
 
+## [0.25.1] — 2026-07
+
+Closes [issue #29](https://github.com/shreyasrkarwa/Analytics/issues/29)
+and [issue #44](https://github.com/shreyasrkarwa/Analytics/issues/44) —
+both already resolved by `concentrate()` (v0.24.0); this release pins
+the exact scenarios and makes them findable in the docs.
+
+### Verified (now regression tests)
+- **#29 lone-survivor routing**: `concentrate(q, 'UKI2',
+  scope={'segment': 'Government'})` gives the survivor the FULL parent
+  pool (no leak — the pre-v0.13/v0.16 leak the issue describes is
+  long gone), zeroes the siblings' subtrees, and the survivor carries
+  the hedged pool automatically via per-row ratio re-derivation — no
+  pre-computed hedged pool, no sibling enumeration.
+- **#44 team destination**: a hyphenated id like 'CENTRAL6-MIGRATION'
+  is detected as a MANAGER from the graph (pin_type='subtree'), so
+  the region total lands on its reps and the team-vs-rep footgun
+  cannot happen; every other team's reps zero; region conserved per
+  combo.
+
+### Docs
+- concentrate() docstring now names both phrasings ("route 100% of a
+  parent to a single child", "concentrate a group onto one
+  team/subtree").
+
 ## [0.25.0] — 2026-07
 
 Closes [issue #48](https://github.com/shreyasrkarwa/Analytics/issues/48):

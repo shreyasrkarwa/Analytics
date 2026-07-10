@@ -1061,6 +1061,8 @@ print(red_report[['node', 'role', 'baseline_total', 'achieved_total',
 
 # NEW in v0.24.0 (issue #47): concentrate() — the inverse: collapse
 # the siblings back ONTO one node (zeroing them), same report contract.
+# (v0.25.1: also closes #29 'route 100% to a single child' — survivor
+# gets the full pool, no leak — and #44 'concentrate onto one team'.)
 print(f"\n--- Concentrate onto one sibling (v0.24.0) ---")
 con_df, con_report = concentrate(quotas_long, donor)
 print(f"concentrate('{donor}') -> siblings zeroed, '{donor}' holds the "

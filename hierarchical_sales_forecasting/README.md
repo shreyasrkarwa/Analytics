@@ -21,6 +21,10 @@ Unlike traditional bottom-up time-series libraries (which are strictly built for
 | **`CommitReconciler`** | Detect sandbagging and "happy ears" bias via historical Bias Quotients, then auto-correct forecasts |
 | **`PipelineAdjuster`** | Diagnose pipeline health with per-region thresholds and redistribute IC quotas using zero-sum logic |
 
+### What's New in v0.25.1 — #29 and #44 were already fixed; now it's provable ([#29](https://github.com/shreyasrkarwa/Analytics/issues/29), [#44](https://github.com/shreyasrkarwa/Analytics/issues/44))
+
+Both asks are `concentrate()` (v0.24.0), now pinned by regression tests and named in its docs: "route 100% of a parent's quota to a single child" — the survivor gets the full pool with zero leak (the leak in #29 was the pre-pins-era engine) and carries the hedged pool automatically; and "concentrate a group onto one team" — a hyphenated destination like `CENTRAL6-MIGRATION` is detected as a manager from the graph, so its reps carry the money and the team-vs-rep footgun can't happen. No behavior changes.
+
 ### What's New in v0.25.0 — pins that match nothing no longer abort the batch ([issue #48](https://github.com/shreyasrkarwa/Analytics/issues/48))
 
 In a batch run some (node, scope) combinations legitimately have no rows — a product a region doesn't sell, a team with no reps in a quarter. `apply_pins(..., on_missing='skip')` now drops such pins into the feasibility report instead of raising (new columns: `skipped`, `reason='node_absent'|'empty_scope'`); `'warn'` adds one summary warning naming them; the default stays `'error'`. Same philosophy as `cascade_many`'s `on_error` — dropped intent is data, not an abort. Skipped pins are dropped *entirely*: no protection-set membership, so their nodes still absorb and rescale normally (pinned by test — a vacuous pin leaves the frame bit-identical). Scope-column typos still raise regardless. Your `_pin_has_rows()` guard loop can go.

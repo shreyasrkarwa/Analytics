@@ -187,12 +187,66 @@ def test_validation():
     print("  all raise with clear messages")
 
 
+# ----------------------------------------------------------------------
+# 6. Issues #29 + #44 pinned: lone-survivor routing / team destination
+# ----------------------------------------------------------------------
+def test_issue29_issue44_scenarios():
+    print(f"\n\n{SEPARATOR}")
+    print("TEST 6: #29 lone survivor gets FULL pool (no leak) · #44 "
+          "hyphenated TEAM destination")
+    print(SEPARATOR)
+    # #29: all Government-NORTH -> UKI2; hedged pool follows
+    hdf = pd.DataFrame([
+        dict(segment='Government', region='NORTH', team=t,
+             rep=f'{t}_r{j}', kw=k)
+        for t, ks in [('UKI1', [100, 200]), ('UKI2', [150, 250]),
+                      ('UKI3', [300, 400])]
+        for j, k in enumerate(ks)])
+    targets = pd.DataFrame([dict(segment='Government', tgt=1_400_000.0)])
+    q29, _ = cascade_many(hdf, targets, group_keys=['segment'],
+                          target_col='tgt',
+                          taxonomy=['region', 'team', 'rep'],
+                          metrics=KW, hedge_multiplier=1.1)
+    e, rep = concentrate(q29, 'UKI2', scope={'segment': 'Government'})
+    g = e.set_index('node_id')
+    assert abs(g.loc['UKI2', 'base_quota'] - 1_400_000.0) < 0.05
+    assert (g.loc[['UKI1', 'UKI3', 'UKI1_r0', 'UKI3_r1'],
+                  'base_quota'] == 0).all()
+    assert abs(g.loc['NORTH', 'base_quota'] - 1_400_000.0) < 0.05  # no leak
+    assert abs(g.loc['UKI2', 'cascaded_quota']
+               - g.loc['UKI2', 'base_quota'] * 1.1) < 0.5
+    assert rep['exact'].all()
+    # #44: hyphenated TEAM id as destination -> subtree, reps carry it
+    hdf2 = pd.DataFrame([
+        dict(product='Migration', region='CENTRAL', team=t,
+             rep=f'{t}_r{j}', kw=k)
+        for t, ks in [('CENTRAL1', [100, 300]),
+                      ('CENTRAL6-MIGRATION', [50, 150])]
+        for j, k in enumerate(ks)])
+    t2 = pd.DataFrame([dict(product='Migration', tgt=600_000.0)])
+    q44, _ = cascade_many(hdf2, t2, group_keys=['product'],
+                          target_col='tgt',
+                          taxonomy=['region', 'team', 'rep'], metrics=KW)
+    e2, rep2 = concentrate(q44, 'CENTRAL6-MIGRATION',
+                           scope={'product': 'Migration'})
+    x = e2.set_index('node_id')
+    assert abs(x.loc['CENTRAL6-MIGRATION', 'base_quota'] - 600_000.0) < 0.05
+    assert abs(x.loc[['CENTRAL6-MIGRATION_r0', 'CENTRAL6-MIGRATION_r1'],
+                     'base_quota'].sum() - 600_000.0) < 0.05
+    assert (x.loc[['CENTRAL1', 'CENTRAL1_r0', 'CENTRAL1_r1'],
+                  'base_quota'] == 0).all()
+    assert rep2['exact'].all()
+    print("  survivor = full pool, hedged follows; team subtree carries "
+          "the money; no leaks")
+
+
 if __name__ == '__main__':
     test_equivalences_and_depths()
     test_subset_with_bystander()
     test_freeze_default_sources()
     test_inverse_composition()
     test_validation()
+    test_issue29_issue44_scenarios()
 
     print(f"\n\n{SEPARATOR}")
     print("ALL CONCENTRATE TESTS PASSED")

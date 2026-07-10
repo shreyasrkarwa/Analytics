@@ -833,6 +833,16 @@ def concentrate(
         edited, report = concentrate(quotas_long, 'CENTRAL6-MIGRATION',
                                      scope={'st1_sales_type': 'Migration'})
 
+    This is also the "route 100% of a parent's quota to a single
+    child" mode (issue #29) and the "concentrate a group onto one
+    team/subtree" helper (issue #44): the survivor gets the FULL
+    parent pool (computed for you — no pre-computed hedged pool, no
+    sibling enumeration), nothing leaks, and because hedged values
+    re-derive from each row's own ratio the survivor carries the
+    hedged pool automatically. A manager destination is detected from
+    the graph (pin_type='subtree'), so team-vs-rep misclassification
+    of ids like 'WEST6-MIGRATION' cannot happen.
+
     Thin sugar over `apply_pins`, exactly like `redistribute`: it pins
     `to_node` to the summed scoped baseline of `to_node + from_nodes`
     and pins each source to $0, so the whole pin contract applies —
