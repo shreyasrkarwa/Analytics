@@ -121,10 +121,16 @@ def apply_pins(
          its descendants roll up to pinned x the cross-level hedge —
          each depth keeps its hedge ratio relative to the pinned value.
 
-    Pins are applied in order for absorption, but every pin's node is
-    protected from every OTHER pin's rescales (#39) — so pin order no
-    longer changes where pinned nodes land. A node pinned by ANY pin
-    never absorbs for another.
+    LIST ORDER NEVER MATTERS (issue #41). Pinned values have been
+    order-independent since v0.20.0 (every pin's node is protected from
+    every other pin's rescales, #39); since v0.22.0 application is also
+    canonical — pins are applied by DEPTH of the pinned node,
+    shallowest first (managers before leaves), stable within a depth —
+    so the whole output frame, absorber rows included, is identical for
+    any ordering of `pins`. Leaf-pin allocations are computed against
+    post-manager-rescale baselines. The feasibility report is returned
+    in the INPUT pin order. A node pinned by ANY pin never absorbs for
+    another.
 
     Parameters
     ----------
@@ -317,9 +323,29 @@ def apply_pins(
 
     frozen = set(freeze_nodes or [])
     all_pinned = {p.node for p in pins}
-    report_rows = []
 
-    for pin in pins:
+    # Canonical application order (issue #41): shallowest pinned node
+    # first — managers before leaves — stable within a depth (same-depth
+    # pins keep their list order). Pinned VALUES are order-independent
+    # since v0.20.0 (protection); this makes the ABSORBER rows
+    # deterministic too, so the output frame is identical for any pin
+    # list order. Leaf-pin allocations are computed against
+    # post-manager-rescale baselines, the natural reading. The
+    # feasibility report is returned in the INPUT pin order.
+    def _pin_depth(pin: Pin) -> float:
+        mask = df["node_id"] == pin.node
+        for col, val in pin.scope.items():
+            if col in df.columns:      # missing columns raise in the loop
+                mask &= df[col] == val
+        depths = df.loc[mask, "depth"]
+        return float(depths.min()) if len(depths) else float("inf")
+
+    application_order = sorted(range(len(pins)),
+                               key=lambda i: (_pin_depth(pins[i]), i))
+    report_rows: List[Optional[dict]] = [None] * len(pins)
+
+    for pin_i in application_order:
+        pin = pins[pin_i]
         basis_col = "base_quota" if pin.basis == "base" else "cascaded_quota"
         mask = df["node_id"] == pin.node
         for col, val in pin.scope.items():
@@ -440,7 +466,7 @@ def apply_pins(
         df.loc[node_idx, "pin_type"] = pin_type
 
         achieved = float(df.loc[node_idx, basis_col].sum())
-        report_rows.append({
+        report_rows[pin_i] = ({
             "pin_node": pin.node,
             "pin_type": pin_type,
             "basis": pin.basis,
@@ -453,7 +479,7 @@ def apply_pins(
             "subtree_shortfall": round(shortfall_sum, 2),
             "feasible": (abs(unabsorbed_sum) <= 0.01
                          and abs(shortfall_sum) <= 0.01),
-        })
+        })  # slot pin_i: report emitted in INPUT pin order (issue #41)
         if unabsorbed_sum > 0.01:
             warnings.warn(
                 f"Pin '{pin.node}': {unabsorbed_sum:,.2f} could not be "

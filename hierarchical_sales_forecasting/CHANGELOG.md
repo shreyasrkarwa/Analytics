@@ -3,6 +3,34 @@
 All notable changes to `b2b_revenue_forecasting` are documented here.
 This project loosely follows [Semantic Versioning](https://semver.org/).
 
+## [0.22.0] — 2026-07
+
+Closes [issue #41](https://github.com/shreyasrkarwa/Analytics/issues/41):
+pin list order (managers before leaves) was load-bearing. The reported
+symptom — a leaf pin overwritten by a later manager-pin subtree
+rescale — was already fixed by v0.20.0's protection-aware rescale
+(verified across all 24 orderings of the filer's notebook shape:
+region + team + rep + zero pins, every pin held, every parent
+conserved). This release removes the residual: ABSORBER rows could
+still differ by list order, so two colleagues writing the same pins in
+different order got different plans for the unpinned reps.
+
+### Changed
+- **Canonical application order**: apply_pins sorts pins by the DEPTH
+  of the pinned node, shallowest first (managers before leaves —
+  exactly the ordering the filer found load-bearing), stable within a
+  depth. The output frame, absorber rows included, is now identical
+  for any ordering of `pins`. Leaf-pin allocations are computed
+  against post-manager-rescale baselines.
+- The feasibility report is returned in the INPUT pin order (rows are
+  slotted back), so positional indexing keeps working.
+
+### Added
+- `tests/test_pin_ordering.py` — 4 tests: the literal #41 symptom
+  (leaf pin listed before its covering manager pin), all-24-
+  permutations bit-identical frames + conservation, report-order
+  contract, same-depth stability.
+
 ## [0.21.0] — 2026-07
 
 Closes [issue #40](https://github.com/shreyasrkarwa/Analytics/issues/40):

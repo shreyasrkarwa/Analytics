@@ -1032,6 +1032,10 @@ print(f"Frozen rep untouched: {frozen_same} · "
 # cascade identity on .attrs['cascade_row_keys'] and apply_pins reads
 # it; wrong/poisoned keys now raise (naming the per-node columns)
 # instead of silently downgrading manager pins to leaf pins.
+# v0.22.0 (#41): pin LIST order never matters — pins apply in
+# canonical depth order (managers before leaves) internally, so the
+# whole output frame is identical for any ordering; the feasibility
+# report stays in your list order.
 
 # NEW in v0.18.0 (issue #30): level-by-level cascading with DIFFERENT
 # behavior per transition — e.g. split Region->RVP by NetNewACV but

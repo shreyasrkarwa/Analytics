@@ -17,7 +17,7 @@ from b2b_revenue_forecasting.batch import (
 )
 from b2b_revenue_forecasting.pins import Pin, apply_pins
 
-__version__ = "0.21.0"
+__version__ = "0.22.0"
 
 __all__ = [
     "SalesHierarchy",
