@@ -130,6 +130,13 @@ def cascade_many(
 
         If the callable raises for a combination, that combination is
         handled per `on_error` (skip + dropped-targets frame, or raise).
+
+        Family/edition entitlement bridges (issue #27, e.g. a Cloud
+        product gating on its DC counterpart's seats) are a RECIPE,
+        not an API: compute the bridged column in pandas (consumer-
+        owned edition map; sum-vs-max is your catalog decision) and
+        gate on it here. See README "Recipes"; pinned by
+        tests/test_family_bridge_recipe.py.
     hedge_multiplier : float | dict | HedgeByDepth
         Passed to cascade_quota. A HedgeByDepth spec (issue #13) is
         resolved against EACH combination's freshly built hierarchy —

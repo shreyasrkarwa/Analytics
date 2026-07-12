@@ -3,6 +3,33 @@
 All notable changes to `b2b_revenue_forecasting` are documented here.
 This project loosely follows [Semantic Versioning](https://semver.org/).
 
+## [0.31.1] — 2026-07
+
+Closes [issue #27](https://github.com/shreyasrkarwa/Analytics/issues/27)
+as a documented, regression-pinned RECIPE rather than a new API —
+deliberately (the #36 precedent). A ProductFamily/edition_map utility
+would either hardcode one company's catalog (Jira Cloud<->Jira DC,
+Teamwork -> Jira DC OR Confluence DC, HELA<->ELA — knowledge that
+changes with the product line) or be a parameter-heavy wrapper around
+one pandas lookup; and the genuinely ambiguous choices — WHICH
+counterpart(s), and whether multi-counterpart entitlement sums or
+maxes — are the consumer's to make. Source-data semantics stay in the
+feed layer.
+
+### Docs
+- README "Recipes" section: the family gate-bridge — a 6-line
+  consumer-owned bridge column feeding the v0.15.0 conditional-gate
+  callable, multi-counterpart included. Everything the package DOES
+  own (gate modes, fallbacks, gating_report, per-combo policies)
+  applies unchanged.
+- `gate_metrics` docstring points at the recipe.
+
+### Added
+- `tests/test_family_bridge_recipe.py` — the recipe pinned end to
+  end: Cloud rep inherits its DC counterpart's entitlement, rep
+  without any is gated at $0, multi-counterpart inheritance passes,
+  non-family combos stay ungated.
+
 ## [0.31.0] — 2026-07
 
 Closes [issue #18](https://github.com/shreyasrkarwa/Analytics/issues/18):

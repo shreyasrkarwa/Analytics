@@ -21,6 +21,10 @@ Unlike traditional bottom-up time-series libraries (which are strictly built for
 | **`CommitReconciler`** | Detect sandbagging and "happy ears" bias via historical Bias Quotients, then auto-correct forecasts |
 | **`PipelineAdjuster`** | Diagnose pipeline health with per-region thresholds and redistribute IC quotas using zero-sum logic |
 
+### What's New in v0.31.1 — the family gate-bridge, as a recipe ([#27](https://github.com/shreyasrkarwa/Analytics/issues/27))
+
+The Cloud↔DC entitlement bridge is deliberately a *recipe*, not an API (see Recipes below): the edition map is catalog knowledge that changes with your product line, and whether multi-counterpart entitlement sums or maxes is your call — the same reasoning that kept `grain`/`dedup_key` out in v0.19.1. The generic halves the package owns (per-combination conditional gates, gate modes, gating reports) already compose with a 6-line pandas bridge, now documented and pinned by a regression test so it can't rot.
+
 ### What's New in v0.31.0 — every sanitized id maps back, everywhere ([#18](https://github.com/shreyasrkarwa/Analytics/issues/18))
 
 Collision renames (`on_collision='suffix'`) are for correctness; getting back to your source ids should never require `split('__')[0]` surgery. Three batch-level holes fixed: `original_id` no longer goes NaN for clean combinations in a mixed batch (self-mapping now holds batch-wide), a new `original_parent` column maps the parent side back too (children of a renamed *manager* re-join cleanly), and `attrs['id_map']` carries the per-combination sanitized→original records. The `<id>__<level_column>` suffix format is documented as stable — and as something you should never parse.
@@ -438,6 +442,31 @@ Neither philosophy is "correct" — they answer different questions. The package
 - **GitHub Actions CI/CD**: Automated testing on Python 3.9–3.12
 
 ---
+
+## 🧩 Recipes
+
+### Family / edition gate-bridge (issue #27)
+
+"A Migration DC-seat gate must let a Cloud edition inherit its DC counterpart's entitlement per rep." The mapping is yours; the gate is ours:
+
+```python
+FAMILY = {'Jira Cloud': ['Jira DC'],
+          'Teamwork Collection': ['Jira DC', 'Confluence DC']}   # multi-counterpart is fine
+
+seats = hierarchy_df.set_index(['rep', 'product'])['dc_seats']
+hierarchy_df['family_dc_seats'] = hierarchy_df.apply(
+    lambda r: sum(seats.get((r['rep'], cp), 0)        # sum vs max: YOUR catalog decision
+                  for cp in FAMILY.get(r['product'], [])), axis=1)
+
+quotas, weights = cascade_many(
+    hierarchy_df, targets, group_keys=['product'], ...,
+    gate_metrics=lambda g: ([MetricSpec('family_dc_seats',
+                                        columns=['family_dc_seats'],
+                                        gate_threshold=1.0)]
+                            if g['product'] in FAMILY else None))
+```
+
+Reps inherit entitlement through any counterpart; combos outside the map stay ungated; all gate modes / fallbacks / `gating_report()` apply as usual. Pinned by `tests/test_family_bridge_recipe.py`.
 
 ## 📦 Installation
 

@@ -941,7 +941,10 @@ quotas_long, weights_long = cascade_many(
     # Deepest managers (children are ICs) carry 10%, the level above 5%.
     hedge_multiplier=HedgeByDepth(from_leaves={1: 1.10, 2: 1.05}),
     # v0.15.0 (issue #14): gate_metrics also accepts a CALLABLE evaluated
-    # per combination — e.g. gate only one sales type:
+    # per combination — e.g. gate only one sales type. (v0.31.1, #27:
+    # family/edition gate-bridges — Cloud inheriting DC entitlement —
+    # are a 6-line pandas bridge feeding this callable; see README
+    # Recipes, pinned by test_family_bridge_recipe.py.)
     #   gate_metrics=lambda g: DC_GATE if g['Region'] == 'NA' else None
     # v0.19.0 (issue #35): metrics= accepts the same shape for MIXED
     # weight strategies — fix some combos' slates verbatim, let others
