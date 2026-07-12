@@ -3,6 +3,40 @@
 All notable changes to `b2b_revenue_forecasting` are documented here.
 This project loosely follows [Semantic Versioning](https://semver.org/).
 
+## [0.29.0] — 2026-07
+
+Closes [issue #45](https://github.com/shreyasrkarwa/Analytics/issues/45):
+intentional full-partition pins (every sibling pinned to sum exactly
+to the envelope), root pins, and exclude-all removals flooded the
+feasibility report with feasible=False + a warning each —
+indistinguishable from genuine infeasibility, burying real problems.
+Even our own test suite emitted 24+ of these for intentional root
+pins.
+
+### Added
+- **`unabsorbed_reason`** column in the apply_pins report:
+  'no_siblings' (nothing to absorb exists — root pin),
+  'all_blocked' (the caller's own pins/excludes/freezes emptied the
+  absorber set), or 'floors_at_zero' (free capacity existed but hit
+  $0 — genuine). Worst-across-rows wins per pin; genuine trumps
+  intentional.
+- **`intentional`** column: True when unabsorbed money is entirely
+  explained by the caller's construction (no_siblings/all_blocked,
+  no subtree shortfall). Real problems are now one filter:
+  `report[~report.intentional & ~report.feasible]`.
+
+### Changed
+- The "could not be absorbed" warning fires ONLY for
+  'floors_at_zero'. Intentional cases land in the report silently —
+  data, not noise (the same principle as #26/#48). The
+  subtree_shortfall warning is unchanged (always genuine). `feasible`
+  semantics are unchanged for backward compatibility — it still means
+  "landed with full absorption".
+- `tests/test_feasibility_intent.py` — 6 tests: full partition
+  (conserved to the cent, silent), root pin, exclude-all, genuine
+  floors (warns), frozen-mass shortfall stays genuine, columns on
+  clean/skipped rows.
+
 ## [0.28.0] — 2026-07
 
 Closes [issue #50](https://github.com/shreyasrkarwa/Analytics/issues/50)

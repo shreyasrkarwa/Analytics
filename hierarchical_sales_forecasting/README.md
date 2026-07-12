@@ -21,6 +21,10 @@ Unlike traditional bottom-up time-series libraries (which are strictly built for
 | **`CommitReconciler`** | Detect sandbagging and "happy ears" bias via historical Bias Quotients, then auto-correct forecasts |
 | **`PipelineAdjuster`** | Diagnose pipeline health with per-region thresholds and redistribute IC quotas using zero-sum logic |
 
+### What's New in v0.29.0 — feasibility noise, silenced; real problems, one filter ([#45](https://github.com/shreyasrkarwa/Analytics/issues/45))
+
+Pinning every sibling of a partition to sum exactly to the envelope is a plan, not a problem — but the report used to flag each pin `feasible=False` with a warning, identically to a genuine can't-fit. The report now says *why* money went unabsorbed: `unabsorbed_reason` is `'no_siblings'` (root pin — changing the total is the point), `'all_blocked'` (your own pins/excludes/freezes emptied the absorber set), or `'floors_at_zero'` (genuine). An `intentional` flag marks the first two, and only genuine floors warn — everything else is data, not noise. Triage collapses to `report[~report.intentional & ~report.feasible]`. `feasible` itself is unchanged for backward compatibility.
+
 ### What's New in v0.28.0 — the weights record, complete; shares, direct ([#50](https://github.com/shreyasrkarwa/Analytics/issues/50), [#38](https://github.com/shreyasrkarwa/Analytics/issues/38))
 
 First, the part that already existed: `cascade_many`'s **second return value** (`weights_long`) has been the resolved, normalized per-group weights since v0.7.0 — built from the exact slates each cascade ran with, so re-invoking your callables to rebuild it (and risking drift) was never necessary. What #50 rightly exposed: gates weren't in it, legacy default-attainment combos were silently absent, and it didn't say *how* each slate was chosen. Now every combo appears (legacy ones as an explicit `_Attainment` row), gate specs get `role='gate'` rows with threshold/mode, and each row carries `weights_source` + a per-metric `degenerate` fallback flag.

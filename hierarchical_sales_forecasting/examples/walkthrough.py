@@ -1044,6 +1044,10 @@ print(f"Frozen rep untouched: {frozen_same} · "
 # on_missing='skip'|'warn') records them in the feasibility report
 # (skipped=True, reason='node_absent'|'empty_scope') and drops them
 # entirely (no ghost protection side-effects).
+# v0.29.0 (#45): the report also says WHY money went unabsorbed —
+# unabsorbed_reason 'no_siblings'/'all_blocked' (intentional=True,
+# silent) vs 'floors_at_zero' (genuine, warns). Real problems are
+# report[~report.intentional & ~report.feasible].
 # v0.22.1 (#42): "remainder to the unpinned sibling" is plain
 # composition — [Pin('T1', x), Pin('T2', y)] sends the leftover to the
 # unpinned teams at baseline proportions (add Pin(parent, total) to fix

@@ -26,6 +26,8 @@ _STRUCTURAL_COLS = {
 
 _PIN_BASES = ("base", "cascaded")
 _ON_MISSING = ("error", "skip", "warn")
+_REASON_RANK = {"no_siblings": 1, "all_blocked": 2,
+                "floors_at_zero": 3}   # genuine trumps intentional (#45)
 
 
 class Pin:
@@ -200,7 +202,17 @@ def apply_pins(
             pin_node, pin_type, basis, requested_total,
             baseline_total, achieved_total, rows_affected, absorbed,
             unabsorbed, subtree_shortfall, feasible, plus (v0.25.0)
-            skipped and reason for on_missing bookkeeping.
+            skipped and reason for on_missing bookkeeping, and
+            (v0.29.0, issue #45) unabsorbed_reason + intentional:
+            'no_siblings' (root pin — nothing to absorb, by
+            construction), 'all_blocked' (the caller's own pins /
+            excludes / freezes emptied the absorber set — e.g. a fully
+            specified partition whose deltas cancel), or
+            'floors_at_zero' (GENUINE: free capacity existed but hit
+            $0). Only 'floors_at_zero' warns; intentional=True marks
+            unabsorbed money fully explained by the caller's
+            construction. Real problems are
+            report[~report.intentional & ~report.feasible].
     """
     if on_missing not in _ON_MISSING:
         raise ValueError(f"on_missing must be one of {_ON_MISSING}, "
@@ -426,6 +438,7 @@ def apply_pins(
             "baseline_total": 0.0, "achieved_total": 0.0,
             "rows_affected": 0, "absorbed": 0.0, "unabsorbed": 0.0,
             "subtree_shortfall": 0.0, "feasible": False,
+            "unabsorbed_reason": None, "intentional": False,
             "skipped": True, "reason": reason,
         }
 
@@ -469,6 +482,13 @@ def apply_pins(
         protected = (all_pinned | frozen | set(pin.exclude)) - {pin.node}
 
         absorbed_sum, unabsorbed_sum, shortfall_sum = 0.0, 0.0, 0.0
+        unabsorbed_reason = None   # issue #45
+
+        def _note_reason(r):
+            nonlocal unabsorbed_reason
+            if (unabsorbed_reason is None
+                    or _REASON_RANK[r] > _REASON_RANK[unabsorbed_reason]):
+                unabsorbed_reason = r
         for idx in node_idx:
             k = key_of.at[idx]
             old_base = float(df.at[idx, "base_quota"])
@@ -495,9 +515,11 @@ def apply_pins(
             # not frozen/excluded/pinned (#24). Their capacity is their
             # FREE base (total minus protected mass inside — #39): a
             # subtree can only shed what its unprotected rows carry.
-            sibs = [s for s in child_ix.get((k, df.at[idx, "parent"]), [])
-                    if df.at[s, "node_id"] != pin.node
-                    and df.at[s, "node_id"] not in protected]
+            sib_all = [s for s in child_ix.get((k, df.at[idx, "parent"]),
+                                                [])
+                       if df.at[s, "node_id"] != pin.node]
+            sibs = [s for s in sib_all
+                    if df.at[s, "node_id"] not in protected]
             free_cap = {
                 s: max(float(df.at[s, "base_quota"])
                        - _protected_sum(k, df.at[s, "node_id"], protected),
@@ -521,6 +543,11 @@ def apply_pins(
                             k, df.at[s, "node_id"], s_new, protected)
                 absorbed_sum += absorb
                 unabsorbed_sum += delta - absorb
+                if delta - absorb > 0.005:
+                    # Why could it not fit? (issue #45)
+                    _note_reason("floors_at_zero" if pool > 0
+                                 else ("all_blocked" if sib_all
+                                       else "no_siblings"))
             else:                             # siblings gain
                 gain = -delta
                 if pool > 0:
@@ -546,6 +573,8 @@ def apply_pins(
                         absorbed_sum += gain
                     else:
                         unabsorbed_sum += gain
+                        _note_reason("all_blocked" if sib_all
+                                     else "no_siblings")
 
         df.loc[node_idx, "is_pinned"] = True
         df.loc[node_idx, "pin_type"] = pin_type
@@ -564,14 +593,24 @@ def apply_pins(
             "subtree_shortfall": round(shortfall_sum, 2),
             "feasible": (abs(unabsorbed_sum) <= 0.01
                          and abs(shortfall_sum) <= 0.01),
+            "unabsorbed_reason": (unabsorbed_reason
+                                  if unabsorbed_sum > 0.01 else None),
+            "intentional": bool(
+                unabsorbed_sum > 0.01
+                and unabsorbed_reason in ("no_siblings", "all_blocked")
+                and shortfall_sum <= 0.01),
             "skipped": False, "reason": None,
         })  # slot pin_i: report emitted in INPUT pin order (issue #41)
-        if unabsorbed_sum > 0.01:
+        if (unabsorbed_sum > 0.01
+                and unabsorbed_reason == "floors_at_zero"):
+            # Intentional cases (#45) — root pins (no_siblings) and
+            # caller-specified partitions (all_blocked) — land in the
+            # report (unabsorbed_reason / intentional) WITHOUT a
+            # warning: data, not noise. Only genuine floors warn.
             warnings.warn(
                 f"Pin '{pin.node}': {unabsorbed_sum:,.2f} could not be "
-                f"absorbed by eligible siblings (floors at $0 / no "
-                f"absorbers). Parents will not fully conserve — see the "
-                f"feasibility report.",
+                f"absorbed — free siblings floored at $0. Parents will "
+                f"not fully conserve; see the feasibility report.",
                 UserWarning, stacklevel=2,
             )
         if shortfall_sum > 0.01:
