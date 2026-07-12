@@ -1018,6 +1018,61 @@ def route_targets(
 _ROLLUP_AGGS = ("sum", "mean", "max", "min")
 
 
+def _cascade_key_context(df, row_keys, exclude_cols, caller):
+    """Shared cascade-identity machinery for frame-level tools
+    (rollup_metrics / reconcile): key resolution (explicit ->
+    attrs['cascade_row_keys'] -> inference) + the #40 orphan guard.
+    Returns (keys, key_of, row_ix, child_ix)."""
+    from b2b_revenue_forecasting.pins import _STRUCTURAL_COLS
+
+    if row_keys is not None:
+        keys = list(row_keys)
+    else:
+        stamped = df.attrs.get("cascade_row_keys")
+        if (isinstance(stamped, (list, tuple))
+                and all(isinstance(c, str) and c in df.columns
+                        for c in stamped)):
+            keys = list(stamped)
+        else:
+            keys = [c for c in df.columns
+                    if c not in _STRUCTURAL_COLS
+                    and c not in (exclude_cols or [])
+                    and not c.endswith("_subtree")]
+    key_of = (df[keys].apply(
+                  lambda r: tuple(None if pd.isna(v) else v for v in r),
+                  axis=1) if keys
+              else pd.Series([()] * len(df), index=df.index))
+
+    row_ix, child_ix = {}, {}
+    for idx in df.index:
+        k = key_of.at[idx]
+        row_ix[(k, df.at[idx, "node_id"])] = idx
+        child_ix.setdefault((k, df.at[idx, "parent"]), []).append(idx)
+
+    all_node_ids = set(df["node_id"])
+    orphans = [idx for idx in df.index
+               if pd.notna(df.at[idx, "parent"])
+               and df.at[idx, "parent"] in all_node_ids
+               and (key_of.at[idx], df.at[idx, "parent"]) not in row_ix]
+    if orphans:
+        poison = set()
+        for idx in orphans[:20]:
+            parent_rows = df.index[df["node_id"] == df.at[idx, "parent"]]
+            for col in keys:
+                v = df.at[idx, col]
+                if all(not (df.at[p, col] == v
+                            or (pd.isna(df.at[p, col]) and pd.isna(v)))
+                       for p in parent_rows):
+                    poison.add(col)
+        raise ValueError(
+            f"{caller}: {len(orphans)} row(s) have a parent that exists "
+            f"in the frame but NOT under the same cascade key — the "
+            f"row_keys are wrong. Keys in use: {keys}. Per-node columns "
+            f"poisoning the identity: {sorted(poison)}. Pass row_keys= "
+            f"(group keys + sub-target columns only).")
+    return keys, key_of, row_ix, child_ix
+
+
 def rollup_metrics(
     quotas_long: pd.DataFrame,
     metrics: Union[str, List[str]],
@@ -1099,53 +1154,8 @@ def rollup_metrics(
         raise ValueError(f"rollup_metrics: {non_num} are not numeric.")
 
     df = quotas_long.copy()
-    if row_keys is not None:
-        keys = list(row_keys)
-    else:
-        stamped = quotas_long.attrs.get("cascade_row_keys")
-        if (isinstance(stamped, (list, tuple))
-                and all(isinstance(c, str) and c in df.columns
-                        for c in stamped)):
-            keys = list(stamped)
-        else:
-            keys = [c for c in df.columns
-                    if c not in _STRUCTURAL_COLS
-                    and c not in metrics
-                    and not c.endswith("_subtree")]
-    key_of = (df[keys].apply(
-                  lambda r: tuple(None if pd.isna(v) else v for v in r),
-                  axis=1) if keys
-              else pd.Series([()] * len(df), index=df.index))
-
-    row_ix: Dict[Any, Any] = {}
-    child_ix: Dict[Any, List[Any]] = {}
-    for idx in df.index:
-        k = key_of.at[idx]
-        row_ix[(k, df.at[idx, "node_id"])] = idx
-        child_ix.setdefault((k, df.at[idx, "parent"]), []).append(idx)
-
-    # Orphan guard (the #40 pattern): wrong keys never corrupt silently.
-    all_node_ids = set(df["node_id"])
-    orphans = [idx for idx in df.index
-               if pd.notna(df.at[idx, "parent"])
-               and df.at[idx, "parent"] in all_node_ids
-               and (key_of.at[idx], df.at[idx, "parent"]) not in row_ix]
-    if orphans:
-        poison = set()
-        for idx in orphans[:20]:
-            parent_rows = df.index[df["node_id"] == df.at[idx, "parent"]]
-            for col in keys:
-                v = df.at[idx, col]
-                if all(not (df.at[p, col] == v
-                            or (pd.isna(df.at[p, col]) and pd.isna(v)))
-                       for p in parent_rows):
-                    poison.add(col)
-        raise ValueError(
-            f"rollup_metrics: {len(orphans)} row(s) have a parent that "
-            f"exists in the frame but NOT under the same cascade key — "
-            f"the row_keys are wrong. Keys in use: {keys}. Per-node "
-            f"columns poisoning the identity: {sorted(poison)}. Pass "
-            f"row_keys= (group keys + sub-target columns only).")
+    keys, key_of, row_ix, child_ix = _cascade_key_context(
+        df, row_keys, exclude_cols=list(metrics), caller="rollup_metrics")
 
     # Descendant-leaf row indices per row, memoized per key group
     memo: Dict[Any, List[Any]] = {}
@@ -1165,3 +1175,153 @@ def rollup_metrics(
         df[col] = [getattr(df.loc[_leaf_rows(idx), m], agg)()
                    for idx in df.index]
     return df
+
+
+def reconcile(
+    quotas_long: pd.DataFrame,
+    hedge: Any = None,
+    tolerance: float = 0.05,
+    ratio_tolerance: float = 1e-4,
+    row_keys: Optional[List[str]] = None,
+) -> pd.DataFrame:
+    """
+    One-call validator for cascade outputs (issue #46): per-parent
+    BASE-layer conservation and, when `hedge` is given, per-node hedge
+    identities — the checks everyone hand-writes after a run
+    (d0==d1 sums, d2==base x 1.05, d3==base x 1.155, ...).
+
+        frame = reconcile(quotas_long,
+                          hedge=HedgeByDepth(from_leaves={1: 1.10,
+                                                          2: 1.05}))
+        assert frame.ok.all()
+
+    Checks (one tidy row each; `check` column says which):
+      conservation — every parent's base_quota vs the sum of its
+        children's base_quota, per cascade, within `tolerance` dollars.
+      hedge_ratio  — each node's actual cascaded/base ratio vs the
+        expected CUMULATIVE ratio from `hedge`, within
+        `ratio_tolerance` (relative). Rows with base <= 0 are skipped
+        (a gated node has no ratio).
+
+    `hedge` accepts:
+      float           — flat multiplier; expected = hedge ** depth.
+      dict            — {depth: cumulative_ratio}, exactly the
+                        hand-written identity list (missing depths
+                        default to 1.0).
+      HedgeByDepth    — resolved per cascade with the REAL
+                        HedgeByDepth.resolve() on a graph rebuilt from
+                        the frame's parent links, manager multipliers
+                        compounded root-down — so the expectation
+                        cannot drift from what the engine does.
+
+    Post-edit frames reconcile too: apply_pins / redistribute /
+    concentrate preserve each row's original hedge ratio (the #21
+    contract) and conserve parents, so a clean edit stays clean here.
+
+    Returns a tidy DataFrame: cascade key columns, node_id, parent,
+    depth, check, expected, actual, delta, ok. Emits ONE summary
+    warning when any ok=False; silent otherwise.
+    """
+    from b2b_revenue_forecasting.quota_cascader import HedgeByDepth
+
+    required = {"node_id", "parent", "base_quota"}
+    missing = required - set(quotas_long.columns)
+    if missing:
+        raise ValueError(f"quotas_long is missing required columns "
+                         f"{sorted(missing)}.")
+    if hedge is not None and "cascaded_quota" not in quotas_long.columns:
+        raise ValueError("hedge checks need a cascaded_quota column.")
+    if hedge is not None and not isinstance(hedge, (int, float, dict,
+                                                    HedgeByDepth)):
+        raise ValueError("hedge must be a float, a {depth: cum_ratio} "
+                         "dict, or a HedgeByDepth spec.")
+
+    df = quotas_long
+    keys, key_of, row_ix, child_ix = _cascade_key_context(
+        df, row_keys, exclude_cols=[], caller="reconcile")
+
+    groups: Dict[Any, List[Any]] = {}
+    for idx in df.index:
+        groups.setdefault(key_of.at[idx], []).append(idx)
+
+    rows: List[Dict[str, Any]] = []
+    for k, idxs in groups.items():
+        kd = dict(zip(keys, k)) if keys else {}
+
+        # ---- conservation: parent base == sum(children base) --------
+        for idx in idxs:
+            node = df.at[idx, "node_id"]
+            kids = child_ix.get((k, node), [])
+            if not kids:
+                continue
+            expected = float(df.at[idx, "base_quota"])
+            actual = float(sum(df.at[c, "base_quota"] for c in kids))
+            rows.append({**kd, "node_id": node,
+                         "parent": df.at[idx, "parent"],
+                         "depth": df.at[idx, "depth"]
+                         if "depth" in df.columns else None,
+                         "check": "conservation",
+                         "expected": round(expected, 2),
+                         "actual": round(actual, 2),
+                         "delta": round(actual - expected, 2),
+                         "ok": abs(actual - expected) <= tolerance})
+
+        # ---- hedge identities ----------------------------------------
+        if hedge is None:
+            continue
+        if isinstance(hedge, HedgeByDepth):
+            import networkx as nx
+            g = nx.DiGraph()
+            for idx in idxs:
+                g.add_node(df.at[idx, "node_id"])
+            for idx in idxs:
+                p_ = df.at[idx, "parent"]
+                if pd.notna(p_) and (k, p_) in row_ix:
+                    g.add_edge(p_, df.at[idx, "node_id"])
+            mult = hedge.resolve(g)
+            cum: Dict[str, float] = {}
+
+            def _cum(node):
+                if node in cum:
+                    return cum[node]
+                preds = [df.at[row_ix[(k, node)], "parent"]]
+                p_ = preds[0]
+                if pd.isna(p_) or (k, p_) not in row_ix:
+                    cum[node] = 1.0
+                else:
+                    cum[node] = _cum(p_) * float(mult.get(p_, 1.0))
+                return cum[node]
+
+        for idx in idxs:
+            node = df.at[idx, "node_id"]
+            base = float(df.at[idx, "base_quota"])
+            if base <= 0:
+                continue                      # gated/zero: no ratio
+            depth = (int(df.at[idx, "depth"])
+                     if "depth" in df.columns else None)
+            if isinstance(hedge, HedgeByDepth):
+                expected = _cum(node)
+            elif isinstance(hedge, dict):
+                expected = float(hedge.get(depth, 1.0))
+            else:
+                expected = float(hedge) ** (depth or 0)
+            actual = float(df.at[idx, "cascaded_quota"]) / base
+            ok = (abs(actual / expected - 1.0) <= ratio_tolerance
+                  if expected != 0 else actual == 0)
+            rows.append({**kd, "node_id": node,
+                         "parent": df.at[idx, "parent"],
+                         "depth": depth, "check": "hedge_ratio",
+                         "expected": round(expected, 6),
+                         "actual": round(actual, 6),
+                         "delta": round(actual - expected, 6),
+                         "ok": ok})
+
+    frame = pd.DataFrame(rows)
+    n_bad = int((~frame["ok"]).sum()) if len(frame) else 0
+    if n_bad:
+        warnings.warn(
+            f"reconcile: {n_bad} check(s) failed (of {len(frame)}) — "
+            f"filter the returned frame with ~frame.ok for the "
+            f"violations.",
+            UserWarning, stacklevel=2)
+    return frame

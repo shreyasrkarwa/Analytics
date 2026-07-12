@@ -3,6 +3,39 @@
 All notable changes to `b2b_revenue_forecasting` are documented here.
 This project loosely follows [Semantic Versioning](https://semver.org/).
 
+## [0.30.0] — 2026-07
+
+Closes [issue #46](https://github.com/shreyasrkarwa/Analytics/issues/46):
+after every run, consumers hand-wrote the same scratch-cell checks —
+d0==d1 sums, d2==base x 1.05, d3==base x 1.155, per-parent
+conservation. (These checks caught several regressions during OUR
+development too — #39's trilogy. They deserved to be one call.)
+
+### Added
+- **`reconcile(quotas_long, hedge=None, tolerance=0.05,
+  ratio_tolerance=1e-4, row_keys=None)`** — a tidy frame of checks:
+  `conservation` (every parent's base vs its children's sum, per
+  cascade, dollar tolerance) and `hedge_ratio` (each node's actual
+  cascaded/base vs the expected CUMULATIVE ratio, relative tolerance;
+  base<=0 rows skipped — gated nodes have no ratio). Columns: cascade
+  keys, node_id, parent, depth, check, expected, actual, delta, ok.
+  ONE summary warning when anything fails; silent when clean.
+- `hedge` accepts a float (f**depth), an explicit {depth: cum_ratio}
+  dict (the literal hand-written identity list), or a HedgeByDepth
+  spec — resolved per cascade with the REAL HedgeByDepth.resolve() on
+  a graph rebuilt from the frame's parent links, so the expectation
+  cannot drift from the engine (pinned by an engine-anchor test).
+- Post-edit frames reconcile clean: apply_pins/redistribute/
+  concentrate preserve per-row ratios (#21) and conserve parents —
+  now verifiable in one line after every edit.
+- Cascade identity via attrs['cascade_row_keys'] + the #40 orphan
+  guard, now shared machinery (`_cascade_key_context`) with
+  rollup_metrics.
+- `tests/test_reconcile.py` — 5 tests: engine anchor (the issue's
+  exact 1.10/1.05 spec), float + dict forms, corruption caught
+  (conservation + ratio flags, one warning), post-pins clean, gated
+  rows skipped.
+
 ## [0.29.0] — 2026-07
 
 Closes [issue #45](https://github.com/shreyasrkarwa/Analytics/issues/45):

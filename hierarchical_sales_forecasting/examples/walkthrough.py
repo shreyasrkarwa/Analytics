@@ -65,6 +65,7 @@ from b2b_revenue_forecasting import (
     redistribute,
     concentrate,
     rollup_metrics,
+    reconcile,
 )
 
 # Pretty separators for the printed walkthrough
@@ -1114,6 +1115,16 @@ share_view = quotas_long[(quotas_long.Region == 'NA')
                          & (quotas_long.depth <= 2)]
 print(share_view[['node_id', 'parent', 'base_quota', 'share_of_parent']]
       .head(5).to_string(index=False))
+
+# NEW in v0.30.0 (issue #46): reconcile() — the post-run checklist as
+# one call: per-parent conservation + per-depth hedge identities.
+print(f"\n--- One-call reconciliation (v0.30.0) ---")
+rec = reconcile(quotas_long,
+                hedge=HedgeByDepth(from_leaves={1: 1.10, 2: 1.05}))
+print(f"reconcile: {len(rec)} checks "
+      f"({(rec.check == 'conservation').sum()} conservation, "
+      f"{(rec.check == 'hedge_ratio').sum()} hedge) — "
+      f"all ok: {rec.ok.all()}")
 
 # NEW in v0.18.0 (issue #30): level-by-level cascading with DIFFERENT
 # behavior per transition — e.g. split Region->RVP by NetNewACV but

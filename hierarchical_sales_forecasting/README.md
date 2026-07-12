@@ -21,6 +21,15 @@ Unlike traditional bottom-up time-series libraries (which are strictly built for
 | **`CommitReconciler`** | Detect sandbagging and "happy ears" bias via historical Bias Quotients, then auto-correct forecasts |
 | **`PipelineAdjuster`** | Diagnose pipeline health with per-region thresholds and redistribute IC quotas using zero-sum logic |
 
+### What's New in v0.30.0 — `reconcile()`: the post-run checklist, as one call ([#46](https://github.com/shreyasrkarwa/Analytics/issues/46))
+
+```python
+frame = reconcile(quotas_long, hedge=HedgeByDepth(from_leaves={1: 1.10, 2: 1.05}))
+assert frame.ok.all()          # conservation at every parent + hedge identity at every node
+```
+
+Every hand-written scratch cell — d0==d1, d2==base×1.05, d3==base×1.155, per-parent sums — becomes a tidy frame of `conservation` and `hedge_ratio` checks with `expected`/`actual`/`delta`/`ok` per node per cascade. `hedge` takes a float, an explicit `{depth: cum_ratio}` dict, or a `HedgeByDepth` spec (resolved with the engine's own `resolve()`, so the expectation can't drift — pinned by test). Runs clean on post-`apply_pins`/`redistribute`/`concentrate` frames too, which makes it the one-liner to run after every edit. One summary warning on failure; silence means verified.
+
 ### What's New in v0.29.0 — feasibility noise, silenced; real problems, one filter ([#45](https://github.com/shreyasrkarwa/Analytics/issues/45))
 
 Pinning every sibling of a partition to sum exactly to the envelope is a plan, not a problem — but the report used to flag each pin `feasible=False` with a warning, identically to a genuine can't-fit. The report now says *why* money went unabsorbed: `unabsorbed_reason` is `'no_siblings'` (root pin — changing the total is the point), `'all_blocked'` (your own pins/excludes/freezes emptied the absorber set), or `'floors_at_zero'` (genuine). An `intentional` flag marks the first two, and only genuine floors warn — everything else is data, not noise. Triage collapses to `report[~report.intentional & ~report.feasible]`. `feasible` itself is unchanged for backward compatibility.
