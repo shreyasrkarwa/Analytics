@@ -77,7 +77,10 @@ def test_skip_records_reasons():
     assert bool(r.loc['T2', 'skipped'])
     assert r.loc['T2', 'reason'] == 'empty_scope'
     assert not bool(r.loc['GHOST', 'feasible'])
-    assert not bool(r.loc['T1', 'skipped']) and r.loc['T1', 'reason'] is None
+    # pd.isna, not `is None`: newer pandas (py3.11/3.12 CI) coerces
+    # None -> NaN in object columns when building the report frame.
+    assert not bool(r.loc['T1', 'skipped'])
+    assert pd.isna(r.loc['T1', 'reason'])
     assert bool(r.loc['T1', 'feasible']) and bool(r.loc['r3', 'feasible'])
     print(f"  report: {list(zip(rep['pin_node'], rep['skipped'], rep['reason']))}")
 
