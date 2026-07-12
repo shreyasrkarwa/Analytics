@@ -178,6 +178,10 @@ class SalesHierarchy:
             MetricSpecs). Retrieve them in outputs via
             quotas_to_dataframe(metadata_cols=[...]) (issue #7).
         on_collision : str
+            (Suffix format note, issue #18: renamed ids take the STABLE
+            form '<id>__<level_column>', e.g. 'T1__rep'. Never parse
+            it back — outputs carry original_id / original_parent and
+            cascade_many stamps attrs['id_map'].)
             What to do when a row repeats the same value at two levels
             (e.g., team 'T1' AND rep 'T1'). Pre-v0.6.0 this silently
             created a self-loop / cycle and later crashed cascade_quota

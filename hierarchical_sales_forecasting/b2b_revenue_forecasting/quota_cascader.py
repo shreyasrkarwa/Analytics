@@ -1428,9 +1428,12 @@ class QuotaCascader:
             if level_names and 0 <= depth < len(level_names):
                 row["level"] = level_names[depth]
 
-            # original_id: pre-sanitization value for renamed nodes
+            # original_id / original_parent (issues #7/#18):
+            # pre-sanitization values for renamed nodes, self otherwise
             if self._id_map:
                 row["original_id"] = self._id_map.get(node, node)
+                row["original_parent"] = (self._id_map.get(parent, parent)
+                                          if parent is not None else None)
 
             # Metadata carry-through from node attributes (issue #7)
             if metadata_cols:
@@ -1481,6 +1484,8 @@ class QuotaCascader:
         col_order.append("node_id")
         if "original_id" in df.columns:
             col_order.append("original_id")
+        if "original_parent" in df.columns:
+            col_order.append("original_parent")
         col_order += ["parent", "is_leaf", "cascaded_quota"]
         if unhedged_quotas is not None:
             col_order += ["unhedged_quota", "hedge_buffer", "overassignment_pct"]

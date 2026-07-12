@@ -540,6 +540,10 @@ print(ic_rows[['node_id', 'Rep_Name', 'cascaded_quota']]
       .head(3).to_string(index=False))
 # (from_dataframe(metadata_cols=[...]) + quotas_to_dataframe(
 #  metadata_cols=[...]) does the same for columns in the analyst CSV)
+# v0.31.0 (#18): renames always map back — original_id AND
+# original_parent columns self-map batch-wide, and cascade_many stamps
+# attrs['id_map'] with per-combination sanitized->original records.
+# Never parse the '__' suffix.
 # v0.19.2 (#16): metadata_cols carries METRIC columns too — list
 # knowledge_workers there and leaf rows emit its value even while an
 # explicit MetricSpec uses the same column to drive the split; the

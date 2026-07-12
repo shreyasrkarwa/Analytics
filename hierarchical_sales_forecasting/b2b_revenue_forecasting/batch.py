@@ -317,6 +317,7 @@ def cascade_many(
     failures: List[Tuple[tuple, str]] = []
     dropped_frames: List[pd.DataFrame] = []
     combo_records: List[Dict[str, Any]] = []   # issue #20
+    id_map_records: List[Dict[str, Any]] = []  # issue #18
 
     passthrough_cols = [c for c in target_df.columns
                         if c not in group_keys and c != target_col]
@@ -360,6 +361,9 @@ def cascade_many(
                              on_collision=on_collision,
                              metadata_cols=metadata_cols)
             cascader = QuotaCascader(h)
+            for _san, _orig in (h.id_map or {}).items():   # issue #18
+                id_map_records.append({**combo_dict, "sanitized": _san,
+                                       "original": _orig})
 
             # 4. Resolve weights for this combination. A callable metrics
             # policy (issue #35) wins when it returns a slate; None falls
@@ -581,6 +585,20 @@ def cascade_many(
     # (attrs-concat safe); reconstruct with
     # pd.DataFrame(quotas_long.attrs['combo_report']).
     quotas_long.attrs["combo_report"] = combo_records
+    # Sanitized-id mapping per combination (issue #18) — records, like
+    # the other attrs. Also normalize the original_id/original_parent
+    # columns batch-wide: combos WITHOUT renames emitted no column, so
+    # concat left NaN where the contract says "the id itself".
+    quotas_long.attrs["id_map"] = id_map_records
+    if "original_id" in quotas_long.columns:
+        quotas_long["original_id"] = quotas_long["original_id"].where(
+            quotas_long["original_id"].notna(), quotas_long["node_id"])
+    if "original_parent" in quotas_long.columns:
+        quotas_long["original_parent"] = \
+            quotas_long["original_parent"].where(
+                quotas_long["original_parent"].notna()
+                | quotas_long["parent"].isna(),
+                quotas_long["parent"])
 
     # Aggregated direction-mismatch summary (issue #19): one warning
     # for the whole batch instead of one per (group x metric).

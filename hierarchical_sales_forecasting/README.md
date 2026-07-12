@@ -21,6 +21,10 @@ Unlike traditional bottom-up time-series libraries (which are strictly built for
 | **`CommitReconciler`** | Detect sandbagging and "happy ears" bias via historical Bias Quotients, then auto-correct forecasts |
 | **`PipelineAdjuster`** | Diagnose pipeline health with per-region thresholds and redistribute IC quotas using zero-sum logic |
 
+### What's New in v0.31.0 — every sanitized id maps back, everywhere ([#18](https://github.com/shreyasrkarwa/Analytics/issues/18))
+
+Collision renames (`on_collision='suffix'`) are for correctness; getting back to your source ids should never require `split('__')[0]` surgery. Three batch-level holes fixed: `original_id` no longer goes NaN for clean combinations in a mixed batch (self-mapping now holds batch-wide), a new `original_parent` column maps the parent side back too (children of a renamed *manager* re-join cleanly), and `attrs['id_map']` carries the per-combination sanitized→original records. The `<id>__<level_column>` suffix format is documented as stable — and as something you should never parse.
+
 ### What's New in v0.30.0 — `reconcile()`: the post-run checklist, as one call ([#46](https://github.com/shreyasrkarwa/Analytics/issues/46))
 
 ```python

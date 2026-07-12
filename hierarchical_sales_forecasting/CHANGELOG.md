@@ -3,6 +3,37 @@
 All notable changes to `b2b_revenue_forecasting` are documented here.
 This project loosely follows [Semantic Versioning](https://semver.org/).
 
+## [0.31.0] — 2026-07
+
+Closes [issue #18](https://github.com/shreyasrkarwa/Analytics/issues/18):
+suffixed ids with no way back to originals. v0.8.0 (#7) built the
+foundation (id_map, original_id, original-keyed joins); #18's review
+found three real batch-level holes, all fixed. Guess-stripping
+suffixes was never the answer — now it's officially obsolete.
+
+### Fixed
+- **The concat NaN hole**: in a batch where only SOME combinations had
+  renames, clean combos' rows got original_id=NaN after concat instead
+  of the documented "the id itself". cascade_many now normalizes both
+  original_* columns batch-wide, so self-mapping holds everywhere.
+
+### Added
+- **`original_parent`** column (alongside original_id, emitted whenever
+  any rename happened): the parent id mapped back through id_map — so
+  children of a renamed MANAGER re-join to source data without string
+  surgery.
+- **`attrs['id_map']`** on cascade_many outputs: the per-combination
+  {sanitized -> original} mapping as records
+  ({...group keys, 'sanitized', 'original'}), attrs-concat safe.
+- Docs: the suffix format ('<id>__<level_column>') is documented as
+  stable — and explicitly documented as something you should never
+  parse; use original_id / original_parent / attrs['id_map'].
+- Clean runs stay uncluttered: no renames -> no original_* columns,
+  empty attrs['id_map'].
+- `tests/test_rename_mapping.py` — 4 tests: batch-wide self-mapping
+  (the NaN hole), renamed-manager children map back, attrs records,
+  single-cascade path, clean-run hygiene.
+
 ## [0.30.0] — 2026-07
 
 Closes [issue #46](https://github.com/shreyasrkarwa/Analytics/issues/46):

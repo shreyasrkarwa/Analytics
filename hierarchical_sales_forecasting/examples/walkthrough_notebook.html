@@ -76,12 +76,12 @@
 <div class="container">
 
 <header>
-  <div class="eyebrow">b2b_revenue_forecasting · v0.30.0</div>
+  <div class="eyebrow">b2b_revenue_forecasting · v0.31.0</div>
   <h1>Multi-Metric Cascading &amp; Reconciliation — Walkthrough</h1>
   <p class="subtitle">End-to-end notebook: how an analyst takes one CSV of historical performance + pipeline data and produces a quota plan, a pipeline diagnosis, a redistributed plan, and a bias-corrected forecast — with full visibility into how each metric actually influences allocation.</p>
   <div class="meta">
     <span><strong>Package:</strong> b2b-revenue-forecasting</span>
-    <span><strong>Version:</strong> 0.30.0</span>
+    <span><strong>Version:</strong> 0.31.0</span>
     <span><strong>Dataset:</strong> 170 ICs · 217 hierarchy nodes</span>
     <span><strong>Macro target:</strong> $50,000,000</span>
   </div>
@@ -638,7 +638,7 @@ cascaded_with_meta = cascader.quotas_to_dataframe(
 IC_Mgr_Dir_RVP_APAC_1_1_1_1  Rep 048       310848.19
 IC_Mgr_Dir_RVP_APAC_1_1_1_2  Rep 169       362111.39
 IC_Mgr_Dir_RVP_APAC_1_1_1_3  Rep 039       280916.75</pre>
-The join is keyed on <strong>original</strong> ids via <code class="inline">hierarchy.id_map</code>, so it survives <code class="inline">on_collision</code> renames — and an <code class="inline">original_id</code> column appears automatically whenever any node was renamed. <code class="inline">cascade_many</code> accepts <code class="inline">metadata_cols=</code> too. And despite the name, it carries <strong>metric</strong> columns as well (v0.19.2, issue #16): list <code class="inline">knowledge_workers</code> in <code class="inline">metadata_cols</code> and every leaf row carries its value — even while that same column drives the cascade via an explicit <code class="inline">MetricSpec</code>; the cascade numbers are identical either way (pinned by test). One caveat on join keys: hierarchy leaves are identified by the deepest taxonomy column, cascade rows by group_keys + sub-target columns — columns that live only in the target frame are not valid join keys for leaf-grain data.</div>
+The join is keyed on <strong>original</strong> ids via <code class="inline">hierarchy.id_map</code>, so it survives <code class="inline">on_collision</code> renames — and an <code class="inline">original_id</code> column appears automatically whenever any node was renamed. Since v0.31.0 (issue #18) the way back is complete: an <code class="inline">original_parent</code> column maps the parent side too (children of a renamed <em>manager</em> re-join cleanly), batch outputs self-map <em>everywhere</em> (clean combinations no longer show NaN after concat), and <code class="inline">cascade_many</code> stamps <code class="inline">attrs[&#39;id_map&#39;]</code> with the per-combination sanitized&rarr;original records. The <code class="inline">&lt;id&gt;__&lt;level_column&gt;</code> suffix is stable &mdash; and never something to parse. <code class="inline">cascade_many</code> accepts <code class="inline">metadata_cols=</code> too. And despite the name, it carries <strong>metric</strong> columns as well (v0.19.2, issue #16): list <code class="inline">knowledge_workers</code> in <code class="inline">metadata_cols</code> and every leaf row carries its value — even while that same column drives the cascade via an explicit <code class="inline">MetricSpec</code>; the cascade numbers are identical either way (pinned by test). One caveat on join keys: hierarchy leaves are identified by the deepest taxonomy column, cascade rows by group_keys + sub-target columns — columns that live only in the target frame are not valid join keys for leaf-grain data.</div>
 
   <div class="takeaway"><strong>Helpers used.</strong> <code class="inline">cascader.quotas_to_dataframe(quotas, level_names=taxonomy)</code> for the hierarchy-aware quota table, <code class="inline">cascader.quotas_diff_to_dataframe(original, adjusted, level_names=taxonomy)</code> for the redistribution comparison, <code class="inline">reconciler.reconcile_all(commits_df, ...)</code> for batch reconciliation. <code class="inline">cascader.weights_report</code> and <code class="inline">PipelineAdjuster.diagnose(...)</code> already return DataFrames, so just call <code class="inline">.to_csv()</code> directly.</div>
 </section>
