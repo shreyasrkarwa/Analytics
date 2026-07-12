@@ -21,6 +21,19 @@ Unlike traditional bottom-up time-series libraries (which are strictly built for
 | **`CommitReconciler`** | Detect sandbagging and "happy ears" bias via historical Bias Quotients, then auto-correct forecasts |
 | **`PipelineAdjuster`** | Diagnose pipeline health with per-region thresholds and redistribute IC quotas using zero-sum logic |
 
+### What's New in v0.32.0 — pipeline health, finally batch-native ([#15](https://github.com/shreyasrkarwa/Analytics/issues/15))
+
+The oldest open gap: `PipelineAdjuster` — risk bands, per-region thresholds, zero-sum IC redistribution — only spoke single-cascade. Now:
+
+```python
+out = adjust_many(quotas_long, ['Open_Pipeline', 'Late_Stage_Commit'],
+                  mode='redistribute',
+                  coverage_thresholds={'NA': {'healthy': 1.5, 'at_risk': 0.8}},
+                  locked_nodes={'IC_007'})
+```
+
+Per cascade, `adjust_many` rebuilds the graph + quota dict from the frame (pipeline columns carried via `metadata_cols`) and drives the *real* `PipelineAdjuster` — nothing re-implemented, pinned by an equivalence-anchor test. Every row gains `pipeline` / `coverage_ratio` / thresholds / `risk_status`; redistribute mode rebalances ICs zero-sum per team on the cascaded layer, re-derives base from each row's own hedge ratio (so `reconcile()` stays clean — pinned), recomputes `share_of_parent`, and leaves a `quota_delta` audit trail. Managers never move.
+
 ### What's New in v0.31.1 — the family gate-bridge, as a recipe ([#27](https://github.com/shreyasrkarwa/Analytics/issues/27))
 
 The Cloud↔DC entitlement bridge is deliberately a *recipe*, not an API (see Recipes below): the edition map is catalog knowledge that changes with your product line, and whether multi-counterpart entitlement sums or maxes is your call — the same reasoning that kept `grain`/`dedup_key` out in v0.19.1. The generic halves the package owns (per-combination conditional gates, gate modes, gating reports) already compose with a 6-line pandas bridge, now documented and pinned by a regression test so it can't rot.

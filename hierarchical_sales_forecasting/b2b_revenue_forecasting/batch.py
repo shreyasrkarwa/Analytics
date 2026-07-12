@@ -1350,3 +1350,181 @@ def reconcile(
             f"violations.",
             UserWarning, stacklevel=2)
     return frame
+
+
+_ADJUST_MODES = ("flag_only", "redistribute")
+
+
+def adjust_many(
+    quotas_long: pd.DataFrame,
+    pipeline_cols: Union[str, List[str]],
+    mode: str = "flag_only",
+    coverage_thresholds: Optional[Dict[str, Any]] = None,
+    max_adjustment_pct: float = 0.20,
+    locked_nodes: Any = None,
+    row_keys: Optional[List[str]] = None,
+) -> pd.DataFrame:
+    """
+    PipelineAdjuster for batch outputs (issue #15): pipeline-coverage
+    diagnosis (and optional zero-sum redistribution) on a cascade_many
+    / cascade_levels long frame — per cascade, with the REAL
+    PipelineAdjuster driving every number.
+
+        out = adjust_many(quotas_long, 'Current_Pipeline')       # flag
+        out = adjust_many(quotas_long, ['Open_Pipeline',
+                                        'Late_Stage_Commit'],
+                          mode='redistribute',
+                          coverage_thresholds={'NA': {'healthy': 1.5,
+                                                      'at_risk': 0.8}},
+                          locked_nodes={'IC_007'})
+
+    How it works: for each cascade (identity from
+    .attrs['cascade_row_keys'], as everywhere), the graph and quota
+    dict PipelineAdjuster expects are rebuilt from the frame's parent
+    links and carried pipeline column(s), and the real class runs —
+    Risk_Status bands, ancestor-inherited thresholds, zero-sum
+    redistribution, max_adjustment_pct rails, locked_nodes, all of it.
+    No duplicated logic, nothing to drift.
+
+    Parameters
+    ----------
+    quotas_long : pd.DataFrame
+        Batch output. The pipeline column(s) must be ON the frame —
+        carry them with cascade_many(metadata_cols=[...]) (v0.8.0;
+        despite the name it carries metric values — issue #16).
+    pipeline_cols : str | list[str]
+        Column(s) summed into each IC's pipeline (same contract as
+        PipelineAdjuster's pipeline_attr — same-unit dollars).
+    mode : str
+        'flag_only' (default) — diagnosis columns only, quotas
+        untouched. 'redistribute' — IC quotas rebalanced zero-sum
+        within each manager on the CASCADED layer (PipelineAdjuster's
+        contract); base_quota re-derives from each row's own hedge
+        ratio (#21), which keeps the base layer exactly conservative
+        for depth-uniform hedges (flat / HedgeByDepth). Managers are
+        never changed.
+    coverage_thresholds : dict, optional
+        Same shape as PipelineAdjuster's: node ids (ancestors inherit)
+        + '_default', each {'healthy': x, 'at_risk': y}.
+    max_adjustment_pct : float
+        Safety rail per IC (default 0.20), redistribute mode.
+    locked_nodes : set | dict, optional
+        ICs excluded from donor/receiver pools (dict form also fixes
+        their quota), redistribute mode.
+    row_keys : list[str], optional
+        Rarely needed — the attrs stamp covers batch outputs.
+
+    Returns
+    -------
+    pd.DataFrame — a copy with `pipeline`, `coverage_ratio`,
+    `healthy_threshold`, `at_risk_threshold`, `risk_status` on every
+    row, plus (redistribute) adjusted cascaded_quota / base_quota, a
+    `quota_delta` audit column (cascaded-layer change, zero-sum per
+    team), and share_of_parent recomputed. reconcile() stays clean on
+    the result.
+    """
+    import networkx as nx
+    from types import SimpleNamespace
+    from b2b_revenue_forecasting.pipeline_adjuster import PipelineAdjuster
+
+    if isinstance(pipeline_cols, str):
+        pipeline_cols = [pipeline_cols]
+    if not pipeline_cols:
+        raise ValueError("adjust_many: pass at least one pipeline "
+                         "column.")
+    if mode not in _ADJUST_MODES:
+        raise ValueError(f"mode must be one of {_ADJUST_MODES}, "
+                         f"got '{mode}'.")
+    required = {"node_id", "parent", "base_quota", "cascaded_quota"}
+    missing = required - set(quotas_long.columns)
+    if missing:
+        raise ValueError(f"quotas_long is missing required columns "
+                         f"{sorted(missing)}.")
+    absent = [c for c in pipeline_cols if c not in quotas_long.columns]
+    if absent:
+        raise ValueError(
+            f"adjust_many: {absent} not in quotas_long. Carry pipeline "
+            f"columns onto leaf rows with cascade_many(metadata_cols="
+            f"[...]) (v0.8.0; it carries metric values too — issue "
+            f"#16).")
+
+    df = quotas_long.copy()
+    keys, key_of, row_ix, child_ix = _cascade_key_context(
+        df, row_keys, exclude_cols=list(pipeline_cols),
+        caller="adjust_many")
+
+    for col in ("pipeline", "coverage_ratio", "healthy_threshold",
+                "at_risk_threshold", "risk_status"):
+        df[col] = None
+    if mode == "redistribute":
+        df["quota_delta"] = 0.0
+
+    groups: Dict[Any, List[Any]] = {}
+    for idx in df.index:
+        groups.setdefault(key_of.at[idx], []).append(idx)
+
+    for k, idxs in groups.items():
+        # Rebuild what PipelineAdjuster expects, from the frame
+        g = nx.DiGraph()
+        for idx in idxs:
+            g.add_node(df.at[idx, "node_id"])
+        for idx in idxs:
+            p_ = df.at[idx, "parent"]
+            if pd.notna(p_) and (k, p_) in row_ix:
+                g.add_edge(p_, df.at[idx, "node_id"])
+        for idx in idxs:                       # leaf pipeline attrs
+            node = df.at[idx, "node_id"]
+            if g.out_degree(node) == 0:
+                for col in pipeline_cols:
+                    v = df.at[idx, col]
+                    g.nodes[node][col] = (float(v) if pd.notna(v)
+                                          else 0.0)
+        quotas = {df.at[idx, "node_id"]:
+                  float(df.at[idx, "cascaded_quota"]) for idx in idxs}
+        pa = PipelineAdjuster(SimpleNamespace(graph=g), quotas,
+                              pipeline_attr=list(pipeline_cols))
+        thresholds = (dict(coverage_thresholds)
+                      if coverage_thresholds else None)
+        diag = pa.diagnose(thresholds).set_index("Node")
+        for idx in idxs:
+            node = df.at[idx, "node_id"]
+            df.at[idx, "pipeline"] = diag.at[node, "Pipeline"]
+            df.at[idx, "coverage_ratio"] = diag.at[node,
+                                                   "Coverage_Ratio"]
+            df.at[idx, "healthy_threshold"] = diag.at[
+                node, "Healthy_Threshold"]
+            df.at[idx, "at_risk_threshold"] = diag.at[
+                node, "At_Risk_Threshold"]
+            df.at[idx, "risk_status"] = diag.at[node, "Risk_Status"]
+
+        if mode == "redistribute":
+            thresholds = (dict(coverage_thresholds)
+                          if coverage_thresholds else None)
+            adjusted = pa.adjust("redistribute", thresholds,
+                                 max_adjustment_pct, locked_nodes)
+            for idx in idxs:
+                node = df.at[idx, "node_id"]
+                old_c = float(df.at[idx, "cascaded_quota"])
+                new_c = float(adjusted.get(node, old_c))
+                if abs(new_c - old_c) < 0.005:
+                    continue
+                old_b = float(df.at[idx, "base_quota"])
+                ratio = (old_c / old_b) if old_b != 0 else 1.0
+                df.at[idx, "cascaded_quota"] = round(new_c, 2)
+                df.at[idx, "base_quota"] = round(new_c / ratio, 2)
+                df.at[idx, "quota_delta"] = round(new_c - old_c, 2)
+
+    # Recompute share_of_parent on the (possibly) edited base layer
+    if mode == "redistribute" and "share_of_parent" in df.columns:
+        for idx in df.index:
+            k = key_of.at[idx]
+            p_ = df.at[idx, "parent"]
+            if pd.isna(p_) or (k, p_) not in row_ix:
+                df.at[idx, "share_of_parent"] = 1.0
+                continue
+            pb = float(df.at[row_ix[(k, p_)], "base_quota"])
+            nb = float(df.at[idx, "base_quota"])
+            df.at[idx, "share_of_parent"] = (round(nb / pb, 6)
+                                             if pb != 0
+                                             else float("nan"))
+    return df

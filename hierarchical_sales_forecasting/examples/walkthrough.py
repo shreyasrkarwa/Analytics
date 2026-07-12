@@ -66,6 +66,7 @@ from b2b_revenue_forecasting import (
     concentrate,
     rollup_metrics,
     reconcile,
+    adjust_many,
 )
 
 # Pretty separators for the printed walkthrough
@@ -1132,6 +1133,18 @@ print(f"reconcile: {len(rec)} checks "
       f"({(rec.check == 'conservation').sum()} conservation, "
       f"{(rec.check == 'hedge_ratio').sum()} hedge) — "
       f"all ok: {rec.ok.all()}")
+
+# NEW in v0.32.0 (issue #15): PipelineAdjuster, batch-native — carry a
+# pipeline column and diagnose/redistribute across every cascade.
+print(f"\n--- Batch pipeline health (v0.32.0) ---")
+q_pipe, _ = cascade_many(
+    df, na_targets, group_keys=['Region'], target_col='q_target',
+    taxonomy=taxonomy, metrics=cascade_metrics,
+    metadata_cols=['Q1_NetNewACV'])
+health = adjust_many(q_pipe, 'Q1_NetNewACV')   # coverage vs quota
+print(health[health.fiscal_quarter == 1]
+      [['node_id', 'cascaded_quota', 'pipeline', 'coverage_ratio',
+        'risk_status']].head(5).to_string(index=False))
 
 # NEW in v0.18.0 (issue #30): level-by-level cascading with DIFFERENT
 # behavior per transition — e.g. split Region->RVP by NetNewACV but

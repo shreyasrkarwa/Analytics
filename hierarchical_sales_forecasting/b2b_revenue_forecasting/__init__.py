@@ -16,10 +16,11 @@ from b2b_revenue_forecasting.batch import (
     route_targets,
     rollup_metrics,
     reconcile,
+    adjust_many,
 )
 from b2b_revenue_forecasting.pins import Pin, apply_pins, redistribute, concentrate
 
-__version__ = "0.31.1"
+__version__ = "0.32.0"
 
 __all__ = [
     "SalesHierarchy",
@@ -35,8 +36,10 @@ __all__ = [
     "route_targets",
     "rollup_metrics",
     "reconcile",
+    "adjust_many",
     "rollup_metrics",
     "reconcile",
+    "adjust_many",
     "Pin",
     "apply_pins",
     "redistribute",

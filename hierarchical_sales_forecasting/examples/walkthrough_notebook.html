@@ -76,12 +76,12 @@
 <div class="container">
 
 <header>
-  <div class="eyebrow">b2b_revenue_forecasting · v0.31.1</div>
+  <div class="eyebrow">b2b_revenue_forecasting · v0.32.0</div>
   <h1>Multi-Metric Cascading &amp; Reconciliation — Walkthrough</h1>
   <p class="subtitle">End-to-end notebook: how an analyst takes one CSV of historical performance + pipeline data and produces a quota plan, a pipeline diagnosis, a redistributed plan, and a bias-corrected forecast — with full visibility into how each metric actually influences allocation.</p>
   <div class="meta">
     <span><strong>Package:</strong> b2b-revenue-forecasting</span>
-    <span><strong>Version:</strong> 0.31.1</span>
+    <span><strong>Version:</strong> 0.32.0</span>
     <span><strong>Dataset:</strong> 170 ICs · 217 hierarchy nodes</span>
     <span><strong>Macro target:</strong> $50,000,000</span>
   </div>
@@ -1020,6 +1020,8 @@ Global_Corp        None 25000000.00         1.000000
    RVP_NA_1          NA 15285338.72         0.611414
    RVP_NA_2          NA  9714661.28         0.388586</pre>
 And the post-run checklist is one call (v0.30.0, issue #46): <code class="inline">reconcile(quotas_long, hedge=HedgeByDepth(from_leaves={1: 1.10, 2: 1.05}))</code> returns a tidy frame of <code class="inline">conservation</code> (every parent's base vs its children's sum, per cascade) and <code class="inline">hedge_ratio</code> checks (each node's cascaded/base vs the expected cumulative ratio &mdash; float, <code class="inline">{depth: cum}</code> dict, or a <code class="inline">HedgeByDepth</code> spec resolved with the engine's own <code class="inline">resolve()</code>, so the expectation can't drift). Runs clean on post-<code class="inline">apply_pins</code>/<code class="inline">redistribute</code>/<code class="inline">concentrate</code> frames (the #21 ratio contract, now verifiable in one line); one summary warning on failure, silence means verified. <code class="inline">assert frame.ok.all()</code> is the whole scratch cell.</div>
+
+  <div class="callout"><strong>Pipeline health, batch-native (v0.32.0, issue #15).</strong> <code class="inline">PipelineAdjuster</code>'s risk bands, ancestor-inherited thresholds, and zero-sum IC redistribution now run on batch outputs: <code class="inline">adjust_many(quotas_long, ['Open_Pipeline', 'Late_Stage_Commit'], mode='redistribute', locked_nodes={'IC_007'})</code>. Per cascade the graph + quota dict are rebuilt from the frame (pipeline columns carried via <code class="inline">metadata_cols</code>) and the <em>real</em> class runs &mdash; pinned by an equivalence-anchor test, so batch numbers can't drift from the single-cascade path. Every row gains <code class="inline">pipeline</code>/<code class="inline">coverage_ratio</code>/<code class="inline">risk_status</code>; redistribution is zero-sum per team on the cascaded layer with base re-derived from each row's own ratio (<code class="inline">reconcile()</code> stays clean &mdash; pinned), a <code class="inline">quota_delta</code> audit column, and managers never move.</div>
 
   <div class="callout"><strong>No target left behind (v0.14.0).</strong> Targets whose combination has NO hierarchy branch (a Government segment with no Government subtree) are returned as <em>data</em>: <code class="inline">cascade_many(..., return_dropped=True)</code> yields a third frame with every dropped row plus a <code class="inline">reason</code> column (always also on <code class="inline">quotas_long.attrs['dropped_targets']</code>). Route that money onto named recipients anywhere in the tree with <code class="inline">route_targets(dropped, quotas, recipients=[...], target_col=..., recipient_keys={...})</code>:
 

@@ -3,6 +3,43 @@
 All notable changes to `b2b_revenue_forecasting` are documented here.
 This project loosely follows [Semantic Versioning](https://semver.org/).
 
+## [0.32.0] — 2026-07
+
+Closes [issue #15](https://github.com/shreyasrkarwa/Analytics/issues/15)
+— the oldest open gap (filed Jul 6): PipelineAdjuster required a
+single SalesHierarchy + quota dict, so the pipeline-health feature
+was unusable from the batch API the package steers everyone toward.
+Of the issue's three proposals we shipped (a), the batch entry point;
+(b) a pipeline_adjust= config would bloat cascade_many's signature
+for a post-processing concern, and (c) returning internal
+per-combination hierarchies would leak objects and break the
+tidy-frame contract.
+
+### Added
+- **`adjust_many(quotas_long, pipeline_cols, mode='flag_only' |
+  'redistribute', coverage_thresholds=, max_adjustment_pct=,
+  locked_nodes=, row_keys=)`** — per cascade, the graph and quota
+  dict PipelineAdjuster expects are REBUILT from the frame (parent
+  links + carried pipeline columns) and the real class runs: risk
+  bands, ancestor-inherited thresholds, zero-sum redistribution,
+  rails, locks. No duplicated logic (the reconcile()/resolve()
+  pattern), pinned by an equivalence-anchor test against a
+  hand-driven PipelineAdjuster.
+- Output columns on every row: pipeline, coverage_ratio,
+  healthy_threshold, at_risk_threshold, risk_status; redistribute
+  mode also adjusts cascaded_quota (zero-sum per team, PipelineAdjuster's
+  contract), re-derives base_quota from each row's own hedge ratio
+  (#21 — reconcile() stays fully clean afterward, pinned),
+  recomputes share_of_parent, and adds a quota_delta audit column.
+  Managers are never changed.
+- pipeline_cols accepts a summed list (the pipeline_attr contract);
+  missing columns error with the metadata_cols pointer (#16).
+- `tests/test_adjust_many.py` — 5 tests: equivalence anchor
+  (diagnose AND redistribute), flag_only no-op, redistribute
+  invariants (zero-sum / 20% rail / managers / reconcile-clean /
+  share recompute), locked + inherited thresholds, missing-column
+  hint.
+
 ## [0.31.1] — 2026-07
 
 Closes [issue #27](https://github.com/shreyasrkarwa/Analytics/issues/27)
