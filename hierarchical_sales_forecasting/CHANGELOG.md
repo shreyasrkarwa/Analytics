@@ -3,6 +3,23 @@
 All notable changes to `b2b_revenue_forecasting` are documented here.
 This project loosely follows [Semantic Versioning](https://semver.org/).
 
+## [0.36.1] — 2026-07
+
+Docs/metadata only — no behavior changes.
+
+### Docs
+- README intro rewritten around the three design principles (two
+  layers / one ratio contract; nothing silent; edits are algebra) and
+  the hardening record (60 field-filed issues, 40+ test suites, CI on
+  3.9–3.12).
+- Features section expanded from the original five classes to the
+  full v0.36 surface, grouped: Build & cascade, Batch planning, Plan
+  editing (the pin engine), Explainability & validation, Forecast
+  hygiene.
+- PyPI metadata refreshed: richer one-line description, Development
+  Status :: 4 - Beta, Python 3.11/3.12 classifiers, extended
+  keywords.
+
 ## [0.36.0] — 2026-07
 
 Closes [issue #57](https://github.com/shreyasrkarwa/Analytics/issues/57):

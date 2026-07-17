@@ -6,14 +6,18 @@ long_description = (here / 'README.md').read_text(encoding='utf-8')
 
 setup(
     name='b2b-revenue-forecasting',
-    version='0.36.0',
-    description='A Python framework for hierarchical B2B sales quota cascading and pipeline reconciliation.',
+    version='0.36.1',
+    description=('Hierarchical B2B quota cascading for RevOps: multi-metric '
+                 'cascades with gates and per-depth hedges, batch planning '
+                 'across every segment combination, conservation-guaranteed '
+                 'plan editing (pins, moves, re-splits), and diagnostics-'
+                 'first explainability and validation.'),
     long_description=long_description,
     long_description_content_type='text/markdown',
     url='https://github.com/shreyasrkarwa/Analytics/tree/main/hierarchical_sales_forecasting',
     author='Shreyas Karwa',
     classifiers=[
-        'Development Status :: 3 - Alpha',
+        'Development Status :: 4 - Beta',
         'Intended Audience :: Developers',
         'Intended Audience :: Financial and Insurance Industry',
         'Topic :: Office/Business :: Financial :: Spreadsheet',
@@ -22,8 +26,10 @@ setup(
         'Programming Language :: Python :: 3.8',
         'Programming Language :: Python :: 3.9',
         'Programming Language :: Python :: 3.10',
+        'Programming Language :: Python :: 3.11',
+        'Programming Language :: Python :: 3.12',
     ],
-    keywords='sales, forecasting, revops, quota, pipeline, b2b',
+    keywords=('sales, forecasting, revops, quota, quota-setting, pipeline, b2b, hierarchy, cascading, territory-planning, sales-ops'),
     packages=find_packages(include=['b2b_revenue_forecasting', 'b2b_revenue_forecasting.*']),
     python_requires='>=3.8, <4',
     install_requires=[

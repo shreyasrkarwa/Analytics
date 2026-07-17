@@ -5,21 +5,64 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 
-An open-source Python framework designed mathematically for **Enterprise RevOps and Data Strategy** teams. 
+An open-source Python framework designed mathematically for **Enterprise RevOps and Data Strategy** teams.
 
-Unlike traditional bottom-up time-series libraries (which are strictly built for B2C retail/inventory forecasting and rely on mathematical averages), this package is explicitly architected to handle the realities of B2B enterprise sales: **Hierarchical Quotas, Managerial Cascading, Pipeline Health Analysis, and "Sandbagging" Biases.**
+Unlike traditional bottom-up time-series libraries (which are strictly built for B2C retail/inventory forecasting and rely on mathematical averages), this package is explicitly architected to handle the realities of B2B enterprise sales: **hierarchical quotas, managerial cascading and hedging, batch planning across every (product × sales-type × region × quarter) combination, post-cascade plan editing (pins, moves, re-splits) with hard conservation guarantees, pipeline health, and "sandbagging" biases.**
+
+Three design principles run through everything:
+
+1. **Two layers, one contract.** Every cascade maintains an un-hedged **base** layer that conserves exactly at every depth, and a **hedged** layer derived per node from its own hedge ratio. Every editing tool preserves per-row ratios — so hedge identities survive pins, moves and re-splits, and `reconcile()` can prove it in one call.
+2. **Nothing silent.** Gated money, dropped targets, unabsorbed pins, grain mismatches, direction mismatches, collision renames, envelope overshoots — every degradation path is surfaced as *data* (tidy frames, `attrs` records, report columns), never buried in logs or hidden entirely.
+3. **Edits are algebra.** All plan-editing helpers are compositions over one pin engine with proven invariants (order-independence, protection-awareness, depth-canonical application) — each helper is regression-pinned equivalent to its hand-built pin spelling.
+
+Battle-tested: hardened against 60 field-filed issues from production deployment at enterprise scale, with 40+ regression test suites and CI across Python 3.9–3.12.
 
 ---
 
 ## 🚀 Features
 
-| Module | Purpose |
+### Build & cascade
+
+| Surface | Purpose |
 |--------|---------|
-| **`SalesHierarchy`** | Build flexible org charts as DAGs from flat CRM data — supports 3-level startups to 10-level enterprises |
-| **`QuotaCascader`** | Distribute macro-targets top-down using rolling N-quarter capacity models with configurable managerial hedges |
-| **`MetricSpec`** | Declare which historical metrics (NetNewACV, CloudSeats, DC seats, LTM expansion, …) drive cascading, in what direction (proportional or inverse), and at what weight — with auto-suggested weights from correlation analysis |
+| **`SalesHierarchy`** | Build org charts as DAGs from flat CRM data (3-level startups to 10-level enterprises) — with automatic dirty-data healing: self-loop/collision renames (`on_collision`, mapped back via `id_map`/`original_id`/`original_parent`), value coercion (`"$1,200"`, `"12.5%"`, numpy scalars, string booleans), missing-value hygiene, and DAG validation that names the cycle |
+| **`QuotaCascader`** | Distribute macro-targets top-down by multi-metric blends, with per-node overrides (`new_ic_overrides`, any level, base or hedged basis, conservation guaranteed), gate metrics (hard kill-switches with `gt/ge/lt/le/truthy` modes and `redistribute`/`strand_at_root`/`error` fallbacks), and metric-grain guardrails |
+| **`MetricSpec`** | Declare which metrics drive cascading, in what direction and weight — with optional correlation-suggested weights (`suggest_weights`), degenerate-slice fallbacks, and direction-mismatch reporting |
+| **`HedgeByDepth`** | Per-depth managerial hedges (`from_leaves` / `from_root`, composable), resolved per hierarchy — plus `hedge_ratios()` / `rehedge()` for post-edit re-derivation |
+| **`cascade_proportional`** | The one-liner front door: split a target by one metric (or a simple blend), no spec ceremony |
+
+### Batch planning
+
+| Surface | Purpose |
+|--------|---------|
+| **`cascade_many`** | Every (product × sales-type × region × quarter) combination in one call — prepare each hierarchy once, cascade every sub-target against it. Callable metric/gate policies receive the **full cascade identity** (group keys + sub-target columns, verbatim) per target row; dropped targets come back as data; outputs are stamped with `cascade_row_keys` so downstream tools need no configuration |
+| **`cascade_levels`** | Level-by-level cascading with different metrics/gates/hedges/pins per transition, base layer threaded forward — full diagnostics parity with `cascade_many` |
+| **`route_targets`** | Route orphaned targets (no hierarchy branch) onto named recipients anywhere in the tree, ancestors rolled up |
+
+### Plan editing (the pin engine)
+
+| Surface | Purpose |
+|--------|---------|
+| **`Pin` / `apply_pins`** | Aggregate pins — "this territory carries exactly $2.6M across all cascades" — leaf or manager, base or hedged basis, scoped, with freeze/exclude protection. Order-independent, protection-aware, depth-canonical; zero-row pins skippable (`on_missing`); cross-pin envelope overshoots surfaced per (parent, combo) and resolvable (`on_overshoot='scale_pins'`) |
+| **`redistribute` / `concentrate`** | Move one node's scoped quota out to siblings (proportional/equal/weighted) — or collapse many siblings onto one — reshaping every depth, parents conserved, bystanders verified untouched |
+| **`reallocate` / `resplit_by_metric`** | Partial-fraction multi-source moves with explicit splits ("75% of these reps, 60/40 to those two") and metric-proportional re-splits of a team's children ("re-split Migration by dc_seats") |
+| **`enforce_identities`** | `reconcile()`'s fixing twin: force every parent-child identity top-down — pins held, free rows stretched, overshooting pins scaled down by policy |
+
+### Explainability & validation
+
+| Surface | Purpose |
+|--------|---------|
+| **`reconcile`** | One-call post-run/post-edit validator: per-parent conservation + per-node hedge identities against a float / `{depth: ratio}` dict / `HedgeByDepth` spec (resolved with the engine's own resolution — nothing to drift) |
+| **`rollup_metrics` / `attach_metrics`** | `<metric>_subtree` columns — each node's descendant-leaf aggregate, the "why" behind every quota; coverage analysis in one line |
+| **`share_of_parent` + `weights_long` + `attrs['combo_report']`** | The full decomposition: effective share at every sibling split, the authoritative per-combo weights record (blend + gate slates, provenance, fallback flags), and a per-combination audit trail (skips, gating, unallocated, weight sources) |
+| **`gating_report` / dropped-targets / overshoot / feasibility reports** | Every degradation path as a tidy frame — with `intentional` vs genuine distinctions so real problems are one filter |
+
+### Forecast hygiene
+
+| Surface | Purpose |
+|--------|---------|
 | **`CommitReconciler`** | Detect sandbagging and "happy ears" bias via historical Bias Quotients, then auto-correct forecasts |
-| **`PipelineAdjuster`** | Diagnose pipeline health with per-region thresholds and redistribute IC quotas using zero-sum logic |
+| **`PipelineAdjuster` / `adjust_many`** | Pipeline coverage bands with ancestor-inherited thresholds and zero-sum IC redistribution — single-cascade or batch-native on any `cascade_many` output |
 
 ### What's New in v0.36.0 — stakeholder edits, spelled ([#57](https://github.com/shreyasrkarwa/Analytics/issues/57))
 
