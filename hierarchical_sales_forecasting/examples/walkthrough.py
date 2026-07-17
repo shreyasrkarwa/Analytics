@@ -942,7 +942,12 @@ quotas_long, weights_long = cascade_many(
     # Deepest managers (children are ICs) carry 10%, the level above 5%.
     hedge_multiplier=HedgeByDepth(from_leaves={1: 1.10, 2: 1.05}),
     # v0.15.0 (issue #14): gate_metrics also accepts a CALLABLE evaluated
-    # per combination — e.g. gate only one sales type. (v0.31.1, #27:
+    # per combination — e.g. gate only one sales type. Since v0.33.0
+    # (#51/#53) callables receive the FULL cascade identity — group
+    # keys AND sub-target columns like fiscal_quarter, values verbatim
+    # (#52) — evaluated per target row, so per-sales-type metric
+    # routing is one mapping: metrics=lambda g: BY_TYPE.get(
+    # g['st1_sales_type']). (v0.31.1, #27:
     # family/edition gate-bridges — Cloud inheriting DC entitlement —
     # are a 6-line pandas bridge feeding this callable; see README
     # Recipes, pinned by test_family_bridge_recipe.py.)

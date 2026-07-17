@@ -3,6 +3,60 @@
 All notable changes to `b2b_revenue_forecasting` are documented here.
 This project loosely follows [Semantic Versioning](https://semver.org/).
 
+## [0.33.0] — 2026-07
+
+Closes [issue #51](https://github.com/shreyasrkarwa/Analytics/issues/51)
+(bug, confirmed), [issue #52](https://github.com/shreyasrkarwa/Analytics/issues/52)
+(disproven, pinned) and [issue #53](https://github.com/shreyasrkarwa/Analytics/issues/53)
+(satisfied by the #51 fix). #51 was the worst kind of bug — silently
+money-wrong: metrics/gate callables received only the group keys, so
+per-sub-target routing (Migration -> dc_seats) silently fell through
+to the wrong branch and the output looked plausible. Reproduced
+exactly before fixing.
+
+### Fixed (#51)
+- **Callables now receive the FULL cascade identity**: when
+  `metrics`/`gate_metrics` is a callable, it is evaluated PER TARGET
+  ROW with `{**group_keys, **sub_target_columns}`. The hierarchy is
+  still built once per combination — "prepare once / cascade many" is
+  intact; only slate resolution moved to row grain. A None return
+  still falls through to the combo-level suggested/global/legacy
+  slate, resolved lazily exactly as before.
+- **Atomic on_error contract preserved**: row slates are resolved for
+  ALL rows BEFORE any cascading, so a callable error on a later
+  sub-target row still skips the whole combination with no partial
+  frames (pinned by test).
+- **cascade_levels threads the root taxonomy key forward**, so
+  transition callables see {parent key, root key, sub-target columns}
+  — previously just the bare parent column.
+- Backward compatible: extra keys in `g` are purely additive;
+  group-key-only callables produce bit-identical cascades (pinned).
+
+### Changed
+- `weights_long`: when per-row policies are in play, records are
+  tagged with the sub-target columns — per-row provenance, no drift.
+- `combo_report.weights_source`: `'mixed'` when a policy decided some
+  rows and fell through for others.
+
+### #52 — disproven, with receipts
+- No case normalization exists anywhere in the package (and never
+  did): group and sub-target values arrive at callables VERBATIM,
+  now pinned by a mixed-case regression test ('MiGrAtIoN' in,
+  'MiGrAtIoN' received). The 'MIGRATION' observed in the field came
+  from the consumer's own upper-casing feed. The verbatim guarantee
+  is now documented.
+
+### #53 — no new parameter needed
+- With full identity in `g`, the documented mapping pattern
+  (`lambda g: BY_TYPE.get(g['st1_sales_type'])`) IS the requested
+  `metrics_by=`; equivalence with manual split-and-concat is pinned.
+
+### Added
+- `tests/test_callable_identity.py` — 6 tests: the Migration/dc
+  incident routed correctly + split-and-concat equivalence,
+  cascade_levels identity contents, verbatim mixed case, per-row
+  weights records + 'mixed' source, atomic skip, backward compat.
+
 ## [0.32.0] — 2026-07
 
 Closes [issue #15](https://github.com/shreyasrkarwa/Analytics/issues/15)

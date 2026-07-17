@@ -76,12 +76,12 @@
 <div class="container">
 
 <header>
-  <div class="eyebrow">b2b_revenue_forecasting · v0.32.0</div>
+  <div class="eyebrow">b2b_revenue_forecasting · v0.33.0</div>
   <h1>Multi-Metric Cascading &amp; Reconciliation — Walkthrough</h1>
   <p class="subtitle">End-to-end notebook: how an analyst takes one CSV of historical performance + pipeline data and produces a quota plan, a pipeline diagnosis, a redistributed plan, and a bias-corrected forecast — with full visibility into how each metric actually influences allocation.</p>
   <div class="meta">
     <span><strong>Package:</strong> b2b-revenue-forecasting</span>
-    <span><strong>Version:</strong> 0.32.0</span>
+    <span><strong>Version:</strong> 0.33.0</span>
     <span><strong>Dataset:</strong> 170 ICs · 217 hierarchy nodes</span>
     <span><strong>Macro target:</strong> $50,000,000</span>
   </div>
@@ -785,7 +785,7 @@ Sample gated IC rows (is_gated=True, cascaded_quota=0):
      5    IC IC_Mgr_Dir_RVP_APAC_1_1_1_2 Mgr_Dir_RVP_APAC_1_1_1     True             0.0      True
      5    IC IC_Mgr_Dir_RVP_APAC_1_1_1_3 Mgr_Dir_RVP_APAC_1_1_1     True             0.0      True</pre>
 
-  <div class="highlight"><strong>How gates work mathematically.</strong> Before the weighted blend runs at each level, the cascader checks every child against every gate. Gated children get quota = 0 and are removed from the blend pool — the non-gated siblings absorb the full target_to_distribute via the existing share-of-siblings math. Because gate values aggregate from leaves upward, a non-leaf is automatically gated iff <em>all</em> its descendants fail the gate. No extra propagation logic needed. Multiple gates compose with AND. CRO overrides win over gates. One recipe worth knowing (v0.31.1, issue #27): family/edition gate-bridges (Cloud inheriting its DC counterpart's entitlement) are a 6-line consumer-owned pandas bridge feeding this callable &mdash; deliberately a recipe, not an API, since the edition map and the sum-vs-max choice are catalog knowledge. See the README &ldquo;Recipes&rdquo; section; pinned by test.</div>
+  <div class="highlight"><strong>How gates work mathematically.</strong> Before the weighted blend runs at each level, the cascader checks every child against every gate. Gated children get quota = 0 and are removed from the blend pool — the non-gated siblings absorb the full target_to_distribute via the existing share-of-siblings math. Because gate values aggregate from leaves upward, a non-leaf is automatically gated iff <em>all</em> its descendants fail the gate. No extra propagation logic needed. Multiple gates compose with AND. CRO overrides win over gates. One recipe worth knowing (v0.31.1, issue #27): family/edition gate-bridges (Cloud inheriting its DC counterpart's entitlement) are a 6-line consumer-owned pandas bridge feeding this callable &mdash; deliberately a recipe, not an API, since the edition map and the sum-vs-max choice are catalog knowledge. See the README &ldquo;Recipes&rdquo; section; pinned by test. And since v0.33.0 (issues #51/#53) metric/gate callables receive the <em>full</em> cascade identity &mdash; group keys plus every sub-target column, evaluated per target row, values verbatim (issue #52: the package never case-normalizes) &mdash; so &ldquo;Migration &rarr; dc_seats, everything else &rarr; cloud_seats&rdquo; is one mapping keyed on <code class="inline">g[&#39;st1_sales_type&#39;]</code>, pinned equivalent to a manual split-and-concat. <code class="inline">weights_long</code> tags per-row records with the sub-target columns when slates vary, and <code class="inline">combo_report</code> reports <code class="inline">weights_source=&#39;mixed&#39;</code>.</div>
 
   <div class="callout"><strong>Configurable gate semantics (v0.9.0).</strong> The PASS predicate is now a knob: <code class="inline">gate_mode='gt'</code> (default — pass iff <code class="inline">value &gt; gate_threshold</code>, exactly the behavior above), <code class="inline">'ge'</code> ("at least N seats": <code class="inline">gate_threshold=5, gate_mode='ge'</code> lets a rep with exactly 5 pass), <code class="inline">'lt'</code>/<code class="inline">'le'</code> (gate reps with <em>too much</em> of a signal — e.g. <code class="inline">gate_threshold=100, gate_mode='le'</code> zeroes churn-heavy territories), and <code class="inline">'truthy'</code> (boolean entitlement flags, threshold ignored). Every mode inherits the <code class="inline">gate_fallback</code> no-stranding guarantees.</div>
 

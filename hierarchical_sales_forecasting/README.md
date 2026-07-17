@@ -21,6 +21,10 @@ Unlike traditional bottom-up time-series libraries (which are strictly built for
 | **`CommitReconciler`** | Detect sandbagging and "happy ears" bias via historical Bias Quotients, then auto-correct forecasts |
 | **`PipelineAdjuster`** | Diagnose pipeline health with per-region thresholds and redistribute IC quotas using zero-sum logic |
 
+### What's New in v0.33.0 — callables see the whole cascade identity ([#51](https://github.com/shreyasrkarwa/Analytics/issues/51), [#52](https://github.com/shreyasrkarwa/Analytics/issues/52), [#53](https://github.com/shreyasrkarwa/Analytics/issues/53))
+
+The nastiest bug of this cycle, confirmed and fixed: `metrics`/`gate_metrics` callables only ever saw the group keys, so per-sub-target routing ("Migration → dc_seats") silently fell through to the wrong branch — plausible-looking, money-wrong output. Callables are now evaluated **per target row** with `{**group_keys, **sub_target_columns}` (hierarchies still built once per combination; `None` still falls through; errors still skip combos atomically), and `cascade_levels` threads the root key so transitions see the full identity too. That makes #53's ask the already-documented one-liner — `metrics=lambda g: BY_TYPE.get(g['st1_sales_type'])` — pinned equivalent to manual split-and-concat. `weights_long` records gain sub-target tags when slates vary, and `combo_report` says `weights_source='mixed'` when a policy partially decides. And #52 (alleged upper-casing): disproven — the package never case-normalizes; values arrive verbatim, now guaranteed in the docs and pinned by a mixed-case test.
+
 ### What's New in v0.32.0 — pipeline health, finally batch-native ([#15](https://github.com/shreyasrkarwa/Analytics/issues/15))
 
 The oldest open gap: `PipelineAdjuster` — risk bands, per-region thresholds, zero-sum IC redistribution — only spoke single-cascade. Now:

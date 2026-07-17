@@ -91,9 +91,13 @@ def cascade_many(
         mutually exclusive with `suggest_config`.
 
         Mixed strategies (issue #35, v0.19.0): pass a CALLABLE that
-        receives the combination's group-key dict and returns that
-        combination's fixed slate — honored verbatim — or None to fall
-        through. With `suggest_config` present, None means "use the
+        returns a fixed slate — honored verbatim — or None to fall
+        through. Since v0.33.0 (issue #51) the callable receives the
+        FULL cascade identity: group keys AND every sub-target column
+        (e.g. st1_sales_type, fiscal_quarter), evaluated per target
+        row, with values passed VERBATIM (never case-normalized —
+        issue #52). Per-sub-target routing is therefore just the
+        mapping pattern below (issue #53). With `suggest_config` present, None means "use the
         suggested weights for this combination" (global or per_group
         per `weights_mode`); without it, None means the legacy
         '_Attainment' path, matching cascade_quota(metrics=None)::
@@ -114,9 +118,10 @@ def cascade_many(
         via **cascade_kwargs (e.g. gate_fallback="strand_at_root").
 
         Conditional gating (issue #14, v0.15.0): pass a CALLABLE that
-        receives the combination's group-key dict and returns the gate
-        list for that combination (or None for "no gates"). Resolved
-        once per combination — gates only where the policy says so::
+        returns the gate list (or None for "no gates"). Since v0.33.0
+        (issue #51) it receives the FULL cascade identity (group keys +
+        sub-target columns, verbatim) and is evaluated per target
+        row — gates only where the policy says so::
 
             gate_metrics=lambda g: (
                 [MetricSpec('dc_seats', columns=['dc_seats'])]
@@ -372,114 +377,147 @@ def cascade_many(
                 id_map_records.append({**combo_dict, "sanitized": _san,
                                        "original": _orig})
 
-            # 4. Resolve weights for this combination. A callable metrics
-            # policy (issue #35) wins when it returns a slate; None falls
-            # through to suggest_config (if any) or the legacy path.
-            combo_metrics = None
-            policy_decided = False
-            if metrics_policy is not None:
-                combo_metrics = metrics_policy(dict(combo_dict))
-                if combo_metrics is not None:
-                    if not (isinstance(combo_metrics, list)
-                            and all(isinstance(m, MetricSpec)
-                                    for m in combo_metrics)):
-                        raise ValueError(
-                            f"metrics callable must return a list of "
-                            f"MetricSpec or None for combination "
-                            f"{combo_dict}, got "
-                            f"{type(combo_metrics).__name__}."
-                        )
-                    policy_decided = True
+            # 4. Combo-level FALLBACK slate (suggested / global /
+            # legacy), resolved lazily. Callable policies (issues
+            # #35/#51/#53) are evaluated PER TARGET ROW with the FULL
+            # cascade identity — group keys + sub-target columns, values
+            # passed VERBATIM (#52: this package never case-normalizes)
+            # — and a None return falls through to this fallback.
             combo_report_flags: Tuple[List[str], bool] = ([], False)
             _rep: Dict[str, Any] = {}
-            if policy_decided:
-                weights_source = "policy"
-            elif suggest_config is not None and weights_mode == "per_group":
-                combo_metrics, _rep = _suggest(
-                    df_slice, silence_direction=_summarize_dir
-                    or ("warn_on_direction_mismatch" in suggest_config
-                        and not suggest_config[
-                            "warn_on_direction_mismatch"]))
-                combo_report_flags = _report_flags(_rep)
-                weights_source = "suggested_per_group"
-            elif not policy_decided:
-                combo_metrics = global_metrics
-                if suggest_config is not None:
-                    weights_source = "suggested_global"
-                    combo_report_flags = _report_flags(_global_report)
-                elif global_metrics is not None:
-                    weights_source = "fixed"
+            _fb: Dict[str, Any] = {}
+
+            def _fallback():
+                nonlocal combo_report_flags, _rep
+                if "slate" in _fb:
+                    return _fb["slate"], _fb["source"]
+                if (suggest_config is not None
+                        and weights_mode == "per_group"):
+                    slate, _rep = _suggest(
+                        df_slice, silence_direction=_summarize_dir
+                        or ("warn_on_direction_mismatch" in suggest_config
+                            and not suggest_config[
+                                "warn_on_direction_mismatch"]))
+                    combo_report_flags = _report_flags(_rep)
+                    source = "suggested_per_group"
                 else:
-                    weights_source = "default_attainment"
+                    slate = global_metrics
+                    if suggest_config is not None:
+                        source = "suggested_global"
+                        combo_report_flags = _report_flags(_global_report)
+                    elif global_metrics is not None:
+                        source = "fixed"
+                    else:
+                        source = "default_attainment"
+                _fb["slate"], _fb["source"] = slate, source
+                return slate, source
 
-            # 4b. Resolve gates for this combination (issue #14) —
-            # a callable policy is evaluated against the group-key dict.
-            if callable(gate_metrics):
-                combo_gates = gate_metrics(dict(combo_dict))
-                if combo_gates is not None and not (
-                        isinstance(combo_gates, list)
-                        and all(isinstance(g, MetricSpec)
-                                for g in combo_gates)):
+            def _validate_slate(val, what, ident):
+                if val is not None and not (
+                        isinstance(val, list)
+                        and all(isinstance(m, MetricSpec) for m in val)):
                     raise ValueError(
-                        f"gate_metrics callable must return a list of "
-                        f"MetricSpec or None for combination {combo_dict}, "
-                        f"got {type(combo_gates).__name__}."
-                    )
-            else:
-                combo_gates = gate_metrics
+                        f"{what} callable must return a list of "
+                        f"MetricSpec or None for {ident}, got "
+                        f"{type(val).__name__}.")
 
-            # Record the weights actually used (once per combination) —
-            # the AUTHORITATIVE record of what drove the run (issue
-            # #50): blend slate (or the legacy default), gate slate,
-            # provenance, and per-metric suggest-fallback flags. Never
-            # re-derive by re-invoking your callables.
-            if combo_metrics:
-                wdf = MetricSpec.normalized_weights(combo_metrics)
-            else:                     # legacy '_Attainment' default path
-                wdf = pd.DataFrame([{
-                    "metric": "_Attainment",
-                    "direction": "proportional",
-                    "input_weight": 1.0, "normalized_share": 1.0,
-                    "active": True,
-                }])
-            wdf["role"] = "blend"
-            wdf["gate_threshold"] = None
-            wdf["gate_mode"] = None
-            if combo_gates:
-                gdf = pd.DataFrame([{
-                    "metric": g.name, "direction": g.direction,
-                    "input_weight": None, "normalized_share": None,
-                    "active": True, "role": "gate",
-                    "gate_threshold": g.gate_threshold,
-                    "gate_mode": g.gate_mode,
-                } for g in combo_gates])
-                wdf = pd.concat([wdf, gdf], ignore_index=True)
-            wdf["weights_source"] = weights_source
-            deg_map: Dict[str, bool] = {}
-            if weights_source == "suggested_per_group":
-                deg_map = {n: bool(r.get("degenerate"))
-                           for n, r in (_rep or {}).items()}
-            elif weights_source == "suggested_global":
-                deg_map = {n: bool(r.get("degenerate"))
-                           for n, r in (_global_report or {}).items()}
-            wdf["degenerate"] = (wdf["metric"].map(deg_map).fillna(False)
-                                 if deg_map else False)
-            for k, v in combo_dict.items():
-                wdf[k] = v
-            weight_frames.append(wdf)
+            def _add_weights_record(slate, gates, source, extra):
+                # The AUTHORITATIVE record of what drove the run (issue
+                # #50): blend slate (or the legacy default), gate slate,
+                # provenance, per-metric suggest-fallback flags — tagged
+                # with the sub-target columns when per-row policies are
+                # in play (#51). Never re-derive by re-invoking your
+                # callables.
+                if slate:
+                    wdf = MetricSpec.normalized_weights(slate)
+                else:                 # legacy '_Attainment' default path
+                    wdf = pd.DataFrame([{
+                        "metric": "_Attainment",
+                        "direction": "proportional",
+                        "input_weight": 1.0, "normalized_share": 1.0,
+                        "active": True,
+                    }])
+                wdf["role"] = "blend"
+                wdf["gate_threshold"] = None
+                wdf["gate_mode"] = None
+                if gates:
+                    gdf = pd.DataFrame([{
+                        "metric": g.name, "direction": g.direction,
+                        "input_weight": None, "normalized_share": None,
+                        "active": True, "role": "gate",
+                        "gate_threshold": g.gate_threshold,
+                        "gate_mode": g.gate_mode,
+                    } for g in gates])
+                    wdf = pd.concat([wdf, gdf], ignore_index=True)
+                wdf["weights_source"] = source
+                deg_map: Dict[str, bool] = {}
+                if source == "suggested_per_group":
+                    deg_map = {n: bool(r.get("degenerate"))
+                               for n, r in (_rep or {}).items()}
+                elif source == "suggested_global":
+                    deg_map = {n: bool(r.get("degenerate"))
+                               for n, r in (_global_report or {}).items()}
+                wdf["degenerate"] = (wdf["metric"].map(deg_map)
+                                     .fillna(False) if deg_map else False)
+                for k_, v_ in {**combo_dict, **extra}.items():
+                    wdf[k_] = v_
+                weight_frames.append(wdf)
+
+            # 4b. Row plans (issue #51): resolve slates for EVERY target
+            # row BEFORE cascading, so a callable error still skips the
+            # whole combination atomically (on_error contract).
+            _per_row = (metrics_policy is not None
+                        or callable(gate_metrics))
+            static_gates = (None if callable(gate_metrics)
+                            else gate_metrics)
+            row_plans = []
+            if _per_row:
+                for _, trow in combo_targets.iterrows():
+                    g_full = {**combo_dict,
+                              **{c: trow[c] for c in passthrough_cols}}
+                    if metrics_policy is not None:
+                        row_metrics = metrics_policy(dict(g_full))
+                        _validate_slate(row_metrics, "metrics", g_full)
+                        if row_metrics is None:
+                            row_metrics, row_source = _fallback()
+                        else:
+                            row_source = "policy"
+                    else:
+                        row_metrics, row_source = _fallback()
+                    if callable(gate_metrics):
+                        row_gates = gate_metrics(dict(g_full))
+                        _validate_slate(row_gates, "gate_metrics",
+                                        g_full)
+                    else:
+                        row_gates = static_gates
+                    _add_weights_record(
+                        row_metrics, row_gates, row_source,
+                        {c: trow[c] for c in passthrough_cols})
+                    row_plans.append((trow, row_metrics, row_gates,
+                                      row_source))
+                _srcs = {rp[3] for rp in row_plans}
+                weights_source = (_srcs.pop() if len(_srcs) == 1
+                                  else "mixed")
+            else:
+                combo_metrics, weights_source = _fallback()
+                _add_weights_record(combo_metrics, static_gates,
+                                    weights_source, {})
+                row_plans = [(trow, combo_metrics, static_gates,
+                              weights_source)
+                             for _, trow in combo_targets.iterrows()]
 
             # 5. Cascade every sub-target row against the prepared group
             _rows_produced = 0
             _gated_union: set = set()
             _relaxed_any = False
             _unallocated_total = 0.0
-            for _, trow in combo_targets.iterrows():
+            for trow, row_metrics, row_gates, _src in row_plans:
                 target = float(trow[target_col])
                 quotas = cascader.cascade_quota(
                     root, target,
                     hedge_multiplier=hedge_multiplier,
-                    metrics=combo_metrics,
-                    gate_metrics=combo_gates,
+                    metrics=row_metrics,
+                    gate_metrics=row_gates,
                     verbose=verbose,
                     **cascade_kwargs,
                 )
@@ -807,7 +845,13 @@ def cascade_levels(
 
         # Thread the BASE layer forward as the next level's targets
         if i < n_transitions - 1:
-            targets = (children[["node_id"] + key_cols + ["base_quota"]]
+            # Thread the ROOT taxonomy key too (issue #51): with per-row
+            # callable identity, deeper transitions then see
+            # {parent_col, root key, sub-target columns} — the full
+            # cascade identity.
+            carry = [c for c in ([taxonomy[0]] + key_cols)
+                     if c in children.columns and c != child_col]
+            targets = (children[["node_id"] + carry + ["base_quota"]]
                        .rename(columns={"node_id": child_col,
                                         "base_quota": target_col})
                        .reset_index(drop=True))
