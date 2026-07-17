@@ -3,6 +3,31 @@
 All notable changes to `b2b_revenue_forecasting` are documented here.
 This project loosely follows [Semantic Versioning](https://semver.org/).
 
+## [0.34.0] — 2026-07
+
+Closes [issue #56](https://github.com/shreyasrkarwa/Analytics/issues/56):
+cascade_levels dropped every diagnostic its per-transition
+cascade_many calls produced — weights_long was literally caught in
+`_` and discarded one line after being computed. Pure assembly fix,
+no new machinery (the #20 pattern).
+
+### Added
+- cascade_levels outputs now carry **`attrs['weights_long']`**,
+  **`attrs['combo_report']`** and **`attrs['id_map']`** — the
+  per-transition records from each underlying cascade_many call,
+  tagged with `transition` (index) and `level` (parent column,
+  matching the dropped_targets convention). Reconstruct with
+  pd.DataFrame(result.attrs['weights_long']).
+- v0.33.0's per-row provenance flows through automatically: a
+  callable transition's weights records carry the sub-target columns
+  and weights_source='policy'/'mixed'.
+- Kept as attrs records (not new return values): the return signature
+  stays non-combinatorial, and records are pd.concat-safe — the
+  established discipline.
+- `tests/test_levels_diagnostics.py` — 4 tests: per-transition
+  slates + combo records tagged, callable-transition provenance,
+  skipped-combo reasons + collision id_map, concat safety.
+
 ## [0.33.0] — 2026-07
 
 Closes [issue #51](https://github.com/shreyasrkarwa/Analytics/issues/51)

@@ -718,6 +718,12 @@ def cascade_levels(
                      new_ic_overrides={'East1_4': 250_000}),
             ])
 
+    Diagnostics parity (issue #56, v0.34.0): the output's .attrs carry
+    the per-transition weights_long, combo_report (#20) and id_map
+    (#18) as records, each tagged with `transition` and `level` —
+    ``pd.DataFrame(result.attrs['weights_long'])`` is the authoritative
+    all-transitions weights table (per-row #51 provenance included).
+
     Each transition is a cascade_many run with a two-column taxonomy
     (every parent is its own root/combination) — the same "one-level
     primitive" you can also call directly:
@@ -795,6 +801,9 @@ def cascade_levels(
 
     pieces: List[pd.DataFrame] = []
     dropped_pieces: List[pd.DataFrame] = []
+    weights_records: List[Dict[str, Any]] = []      # issue #56
+    combo_records_all: List[Dict[str, Any]] = []    # issue #56
+    id_map_records_all: List[Dict[str, Any]] = []   # issue #56
     targets = root_targets.copy()
 
     for i, (parent_col, child_col) in enumerate(zip(taxonomy, taxonomy[1:])):
@@ -823,7 +832,20 @@ def cascade_levels(
             return_dropped=True,
             **level_kwargs[i],
         )
-        quotas_i, _, dropped_i = step
+        quotas_i, weights_i, dropped_i = step
+        # Diagnostics parity (issue #56): every artifact cascade_many
+        # produces per transition is KEPT and tagged, not discarded —
+        # weights_long (incl. v0.33.0 per-row provenance), combo_report
+        # (#20) and id_map (#18).
+        _tag = {"transition": i, "level": parent_col}
+        if len(weights_i):
+            weights_records.extend(
+                {**r, **_tag} for r in weights_i.to_dict("records"))
+        combo_records_all.extend(
+            {**r, **_tag}
+            for r in quotas_i.attrs.get("combo_report", []))
+        id_map_records_all.extend(
+            {**r, **_tag} for r in quotas_i.attrs.get("id_map", []))
         if len(dropped_i):
             dropped_pieces.append(dropped_i.assign(level=parent_col))
 
@@ -869,6 +891,12 @@ def cascade_levels(
                if dropped_pieces else pd.DataFrame())
     result.attrs["dropped_targets"] = (dropped.to_dict("records")
                                        if len(dropped) else [])
+    # Diagnostics parity with cascade_many (issue #56) — records,
+    # tagged with `transition` (index) and `level` (parent column);
+    # reconstruct with pd.DataFrame(result.attrs['weights_long']) etc.
+    result.attrs["weights_long"] = weights_records
+    result.attrs["combo_report"] = combo_records_all
+    result.attrs["id_map"] = id_map_records_all
     # Tag EVERY row with the root-target key columns (issues #17/#49):
     # deeper transitions only knew their immediate parent, so columns
     # like the region key were NaN below the first transition. Inherit

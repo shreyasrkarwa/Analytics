@@ -1154,6 +1154,9 @@ print(health[health.fiscal_quarter == 1]
 # NEW in v0.18.0 (issue #30): level-by-level cascading with DIFFERENT
 # behavior per transition — e.g. split Region->RVP by NetNewACV but
 # RVP->Director by CloudSeats, hedging only the second step.
+# v0.34.0 (#56): the output's attrs carry per-transition weights_long,
+# combo_report and id_map records (tagged transition/level) — full
+# diagnostics parity with cascade_many.
 print(f"\n--- Level-by-level cascading (v0.18.0) ---")
 lvl = cascade_levels(
     df, pd.DataFrame([{'Region': 'NA', 'q_target': 10_000_000.0}]),
