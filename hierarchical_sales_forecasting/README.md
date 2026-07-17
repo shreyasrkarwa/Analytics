@@ -21,6 +21,10 @@ Unlike traditional bottom-up time-series libraries (which are strictly built for
 | **`CommitReconciler`** | Detect sandbagging and "happy ears" bias via historical Bias Quotients, then auto-correct forecasts |
 | **`PipelineAdjuster`** | Diagnose pipeline health with per-region thresholds and redistribute IC quotas using zero-sum logic |
 
+### What's New in v0.35.0 — identities enforced, overshoots surfaced ([#54](https://github.com/shreyasrkarwa/Analytics/issues/54), [#55](https://github.com/shreyasrkarwa/Analytics/issues/55))
+
+`enforce_identities()` is `reconcile()`'s fixing twin: top-down, every parent's base is the hard budget — pinned children hold, free children stretch, and overshooting pins scale down proportionally (`'scale_pins'`), raise (`'error'`), or stay (`'allow'`). Hedged identities restore themselves via per-row ratios (no `hedge=` needed — proven by requiring `reconcile()` to pass in the tests), pins are never inflated implicitly, and clean frames come back bit-identical. And `apply_pins` gained the missing *cross-pin* check: individually-valid pins that collectively break a parent's slice — which v0.29.0 was accidentally silencing as "intentional" — now always land in `attrs['overshoot_report']` per (parent, combo), warn once under the default `'allow'`, and can be auto-fitted with `on_overshoot='scale_pins'` (scaled pins honestly flagged in the feasibility report).
+
 ### What's New in v0.34.0 — `cascade_levels`, fully auditable ([#56](https://github.com/shreyasrkarwa/Analytics/issues/56))
 
 The level-by-level driver was computing `weights_long`, `combo_report` and `id_map` for every transition — and throwing all three away. Its outputs now carry them on `attrs` as records tagged with `transition` + `level`: `pd.DataFrame(res.attrs['weights_long'])` is the authoritative all-transitions weights table (with v0.33.0's per-row policy provenance included), `combo_report` covers every (transition × parent) including skip reasons, and `id_map` maps collision renames per transition. Full parity with `cascade_many` — the hand-built `all_weights` cell deletes.

@@ -18,9 +18,9 @@ from b2b_revenue_forecasting.batch import (
     reconcile,
     adjust_many,
 )
-from b2b_revenue_forecasting.pins import Pin, apply_pins, redistribute, concentrate
+from b2b_revenue_forecasting.pins import Pin, apply_pins, redistribute, concentrate, enforce_identities
 
-__version__ = "0.34.0"
+__version__ = "0.35.0"
 
 __all__ = [
     "SalesHierarchy",
@@ -44,5 +44,6 @@ __all__ = [
     "apply_pins",
     "redistribute",
     "concentrate",
+    "enforce_identities",
     "__version__",
 ]

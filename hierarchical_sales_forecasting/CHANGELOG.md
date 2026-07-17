@@ -3,6 +3,47 @@
 All notable changes to `b2b_revenue_forecasting` are documented here.
 This project loosely follows [Semantic Versioning](https://semver.org/).
 
+## [0.35.0] — 2026-07
+
+Closes [issue #54](https://github.com/shreyasrkarwa/Analytics/issues/54)
+and [issue #55](https://github.com/shreyasrkarwa/Analytics/issues/55).
+The review found #55 was WORSE than filed: individually-valid pins
+that collectively overshoot a parent's slice were classified
+'all_blocked' + intentional=True by v0.29.0 and produced ZERO
+warnings — a genuinely inconsistent frame, silently. That blind spot
+is closed.
+
+### Added
+- **`enforce_identities(quotas_long, on_overshoot='scale_pins' |
+  'error' | 'allow', tolerance=, freeze_nodes=, row_keys=)`** (#54) —
+  reconcile() that FIXES: top-down per cascade, every parent's base
+  is the hard budget; pinned children (is_pinned provenance +
+  freeze_nodes) hold when the budget allows, free children scale to
+  fill (equal split at $0 baseline), and on overshoot the pins scale
+  down proportionally ('scale_pins'), raise ('error') or stay
+  ('allow'). A scaled pin's subtree re-reconciles at the next depth
+  automatically. Pins are NEVER scaled up implicitly (undershoot with
+  no free children is left + reported). No hedge= parameter,
+  deliberately: cascaded re-derives from each row's own ratio (#21),
+  restoring hedged identities automatically — pinned by tests
+  requiring reconcile() to pass afterward. share_of_parent
+  recomputed; clean frames return bit-identical. Returns
+  (edited, report) per broken (cascade, parent): gap_before, action,
+  pins_scaled, resolved.
+- **`apply_pins(..., on_overshoot='allow')`** (#55): after all pins
+  land, every (cascade, parent) identity is checked and
+  `edited.attrs['overshoot_report']` records the gaps per (parent,
+  combo) — the cross-pin signal no per-pin row can see. 'allow'
+  (default, backward compatible) additionally emits ONE summary
+  warning when gaps exist; 'scale_pins' delegates to
+  enforce_identities and recomputes the feasibility report
+  (overshoot_scaled=True + updated achieved_total, feasible=False for
+  scaled pins); 'error' raises naming the slices.
+- `tests/test_enforce_identities.py` — 5 tests: the #55 repro
+  surfaced + warned, scale_pins fits + reconciles + reports honestly,
+  error policy, standalone enforce (free-rescale, frozen-hold, clean
+  no-op), undershoot-left semantics.
+
 ## [0.34.0] — 2026-07
 
 Closes [issue #56](https://github.com/shreyasrkarwa/Analytics/issues/56):

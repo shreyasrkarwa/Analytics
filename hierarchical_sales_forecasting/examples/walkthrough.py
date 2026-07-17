@@ -1058,6 +1058,10 @@ print(f"Frozen rep untouched: {frozen_same} · "
 # on_missing='skip'|'warn') records them in the feasibility report
 # (skipped=True, reason='node_absent'|'empty_scope') and drops them
 # entirely (no ghost protection side-effects).
+# v0.35.0 (#54/#55): cross-pin envelope safety — apply_pins checks
+# every (cascade, parent) identity after all pins land
+# (attrs['overshoot_report'], on_overshoot='scale_pins'|'error'|
+# 'allow'), and enforce_identities() is reconcile()'s fixing twin.
 # v0.29.0 (#45): the report also says WHY money went unabsorbed —
 # unabsorbed_reason 'no_siblings'/'all_blocked' (intentional=True,
 # silent) vs 'floors_at_zero' (genuine, warns). Real problems are

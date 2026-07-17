@@ -87,6 +87,7 @@ def apply_pins(
     freeze_nodes: Optional[List[str]] = None,
     row_keys: Optional[List[str]] = None,
     on_missing: str = "error",
+    on_overshoot: str = "allow",
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     Apply aggregate pins to a cascade_many output (issues #22/#31/#24).
@@ -192,6 +193,20 @@ def apply_pins(
         side-effects). A missing Pin.scope COLUMN is a programming
         error and always raises, regardless of on_missing.
 
+    on_overshoot : str
+        Cross-pin envelope policy (issue #55). Individually-valid pins
+        can COLLECTIVELY push a parent's children past its total in
+        some cascade slice — a gap no per-pin row can see. After all
+        pins land, apply_pins checks every (cascade, parent) identity
+        and always attaches edited.attrs['overshoot_report'] (records:
+        cascade keys, parent node_id, gap). 'allow' (default): keep
+        the result, emit ONE summary warning when gaps exist.
+        'scale_pins': resolve by running enforce_identities (#54) —
+        pinned children scale down proportionally to fit, free rows
+        floor first; scaled pins get overshoot_scaled=True and a
+        recomputed achieved_total in the feasibility report.
+        'error': raise, naming the offending (parent, cascade) slices.
+
     Returns
     -------
     (edited_df, feasibility_report)
@@ -217,6 +232,9 @@ def apply_pins(
     if on_missing not in _ON_MISSING:
         raise ValueError(f"on_missing must be one of {_ON_MISSING}, "
                          f"got '{on_missing}'.")
+    if on_overshoot not in _ON_OVERSHOOT:
+        raise ValueError(f"on_overshoot must be one of {_ON_OVERSHOOT}, "
+                         f"got '{on_overshoot}'.")
     required = {"node_id", "parent", "depth", "base_quota",
                 "cascaded_quota"}
     missing = required - set(quotas_long.columns)
@@ -623,7 +641,65 @@ def apply_pins(
                 UserWarning, stacklevel=2,
             )
 
-    return df, pd.DataFrame(report_rows)
+    # ---- Cross-pin envelope check (issue #55) -----------------------
+    # Individually-valid pins can collectively break a parent-child
+    # identity in some cascade slice. Detect per (cascade, parent);
+    # never silent.
+    overshoot_records: List[Dict[str, Any]] = []
+    for idx in df.index:
+        node = df.at[idx, "node_id"]
+        k = key_of.at[idx]
+        kids = child_ix.get((k, node), [])
+        if not kids:
+            continue
+        gap = (sum(float(df.at[c, "base_quota"]) for c in kids)
+               - float(df.at[idx, "base_quota"]))
+        if abs(gap) > 0.05:
+            overshoot_records.append(
+                {**(dict(zip(keys, k)) if keys else {}),
+                 "node_id": node, "gap": round(gap, 2)})
+    report_df = pd.DataFrame(report_rows)
+    if overshoot_records:
+        if on_overshoot == "error":
+            raise ValueError(
+                f"apply_pins: pins collectively break "
+                f"{len(overshoot_records)} parent-child identit(ies): "
+                f"{overshoot_records[:5]}... Use "
+                f"on_overshoot='scale_pins' to fit pins "
+                f"proportionally, or 'allow' to keep the gaps "
+                f"(attrs['overshoot_report']).")
+        if on_overshoot == "scale_pins":
+            with warnings.catch_warnings(record=True) as _w:
+                warnings.simplefilter("always")
+                df, _enf = enforce_identities(
+                    df, on_overshoot="scale_pins", row_keys=keys)
+            for w_ in _w:
+                warnings.warn(w_.message, w_.category, stacklevel=2)
+            # Recompute per-pin achievement after scaling
+            report_df["overshoot_scaled"] = False
+            for i_, pin in enumerate(pins):
+                if report_df.at[i_, "skipped"]:
+                    continue
+                basis_col = ("base_quota" if pin.basis == "base"
+                             else "cascaded_quota")
+                mask = df["node_id"] == pin.node
+                for col, val in pin.scope.items():
+                    mask &= df[col] == val
+                achieved = float(df.loc[mask, basis_col].sum())
+                if abs(achieved
+                       - report_df.at[i_, "achieved_total"]) > 0.05:
+                    report_df.at[i_, "overshoot_scaled"] = True
+                    report_df.at[i_, "feasible"] = False
+                report_df.at[i_, "achieved_total"] = round(achieved, 2)
+        else:                                            # 'allow'
+            warnings.warn(
+                f"apply_pins: pins collectively break "
+                f"{len(overshoot_records)} parent-child identit(ies) — "
+                f"see edited.attrs['overshoot_report'], or rerun with "
+                f"on_overshoot='scale_pins' / use enforce_identities().",
+                UserWarning, stacklevel=2)
+    df.attrs["overshoot_report"] = overshoot_records
+    return df, report_df
 
 
 def _scope_mask(df: pd.DataFrame,
@@ -1017,3 +1093,195 @@ def concentrate(
             f"returned report.",
             UserWarning, stacklevel=2)
     return edited, report
+
+
+_ON_OVERSHOOT = ("scale_pins", "error", "allow")
+
+
+def enforce_identities(
+    quotas_long: pd.DataFrame,
+    on_overshoot: str = "scale_pins",
+    tolerance: float = 0.05,
+    freeze_nodes: Optional[List[str]] = None,
+    row_keys: Optional[List[str]] = None,
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    reconcile() that FIXES instead of reporting (issue #54): walk each
+    cascade top-down and force every parent-child identity
+    (sum(children base) == parent base), holding pinned children,
+    scaling free children to absorb the residual, and — per
+    `on_overshoot` — scaling pins down proportionally when they alone
+    exceed the parent.
+
+        edited, report = enforce_identities(quotas_long)
+        assert reconcile(edited, hedge=...).ok.all()
+
+    Semantics
+    ---------
+    - Roots anchor; each parent's (possibly just-adjusted) base is the
+      hard budget for its children, recursively — so a scaled pin's own
+      subtree re-reconciles at the next depth automatically.
+    - "Pinned" children = rows with is_pinned == True (apply_pins
+      provenance) plus anything in `freeze_nodes`. They hold their
+      values whenever the budget allows.
+    - Free children scale proportionally to fill parent - sum(pinned)
+      (equal split when their baseline is $0). If there are no free
+      children and the pinned sum UNDERSHOOTS the parent, the gap is
+      left and reported (scaling pins UP is never done implicitly).
+    - Overshoot (sum(pinned) > parent): free children floor at $0 and
+      `on_overshoot` decides — 'scale_pins' (default) scales the
+      pinned children down proportionally to fit (recorded per node),
+      'error' raises naming (parent, cascade, gap), 'allow' leaves the
+      gap in place (recorded).
+    - No `hedge=` parameter, deliberately: cascaded_quota re-derives
+      from each row's own original ratio (#21), which restores the
+      hedged identities automatically — pinned by tests requiring
+      reconcile() to pass afterwards. share_of_parent is recomputed.
+    - A frame that already reconciles is returned bit-identical.
+
+    Returns
+    -------
+    (edited_df, report) — report has one row per (cascade, parent)
+    whose children were off by more than `tolerance`: cascade keys,
+    node_id (the parent), gap_before, action ('scaled_free' |
+    'scaled_pins' | 'left'), pins_scaled (node ids), resolved.
+    """
+    from b2b_revenue_forecasting.batch import _cascade_key_context
+
+    if on_overshoot not in _ON_OVERSHOOT:
+        raise ValueError(f"on_overshoot must be one of {_ON_OVERSHOOT}, "
+                         f"got '{on_overshoot}'.")
+    required = {"node_id", "parent", "base_quota", "cascaded_quota"}
+    missing = required - set(quotas_long.columns)
+    if missing:
+        raise ValueError(f"quotas_long is missing required columns "
+                         f"{sorted(missing)}.")
+
+    df = quotas_long.copy()
+    keys, key_of, row_ix, child_ix = _cascade_key_context(
+        df, row_keys, exclude_cols=[], caller="enforce_identities")
+
+    frozen = set(freeze_nodes or [])
+    has_pin_col = "is_pinned" in df.columns
+
+    def _pinned(idx) -> bool:
+        node = df.at[idx, "node_id"]
+        if node in frozen:
+            return True
+        return bool(has_pin_col and df.at[idx, "is_pinned"] is True
+                    or (has_pin_col and df.at[idx, "is_pinned"] == True))  # noqa: E712
+
+    ratio = {}
+    for idx in df.index:
+        b = df.at[idx, "base_quota"]
+        ratio[idx] = (float(df.at[idx, "cascaded_quota"]) / float(b)
+                      if pd.notna(b) and float(b) != 0.0 else 1.0)
+
+    def _set_base(idx, new_base: float) -> None:
+        if abs(new_base - float(df.at[idx, "base_quota"])) < 0.005:
+            return                       # keep clean frames bit-identical
+        df.at[idx, "base_quota"] = round(new_base, 2)
+        df.at[idx, "cascaded_quota"] = round(new_base * ratio[idx], 2)
+
+    report_rows: List[Dict[str, Any]] = []
+    scaled_pin_names: List[str] = []
+
+    groups: Dict[Any, List[Any]] = {}
+    for idx in df.index:
+        groups.setdefault(key_of.at[idx], []).append(idx)
+
+    for k, idxs in groups.items():
+        kd = dict(zip(keys, k)) if keys else {}
+        in_group = set(df.loc[idxs, "node_id"])
+        queue = [idx for idx in idxs
+                 if pd.isna(df.at[idx, "parent"])
+                 or df.at[idx, "parent"] not in in_group]
+        seen = set()
+        while queue:                                 # BFS, roots first
+            idx = queue.pop(0)
+            if idx in seen:
+                continue
+            seen.add(idx)
+            node = df.at[idx, "node_id"]
+            kids = child_ix.get((k, node), [])
+            queue.extend(kids)
+            if not kids:
+                continue
+            target = float(df.at[idx, "base_quota"])
+            pin_k = [c for c in kids if _pinned(c)]
+            free_k = [c for c in kids if not _pinned(c)]
+            pin_sum = sum(float(df.at[c, "base_quota"]) for c in pin_k)
+            free_sum = sum(float(df.at[c, "base_quota"]) for c in free_k)
+            gap = (pin_sum + free_sum) - target
+            if abs(gap) <= tolerance:
+                continue
+            remainder = target - pin_sum
+            if remainder >= -tolerance and free_k:
+                remainder = max(remainder, 0.0)
+                for c in free_k:
+                    cb = float(df.at[c, "base_quota"])
+                    share = (remainder * cb / free_sum if free_sum > 0
+                             else remainder / len(free_k))
+                    _set_base(c, share)
+                action, resolved, scaled = "scaled_free", True, []
+            elif remainder < -tolerance:             # pins overshoot
+                if on_overshoot == "error":
+                    raise ValueError(
+                        f"enforce_identities: pinned children of "
+                        f"'{node}' in cascade {kd or '<single>'} sum to "
+                        f"{pin_sum:,.2f} against a parent budget of "
+                        f"{target:,.2f} (overshoot "
+                        f"{pin_sum - target:,.2f}). Use "
+                        f"on_overshoot='scale_pins' to fit them "
+                        f"proportionally, or 'allow' to keep the gap.")
+                for c in free_k:
+                    _set_base(c, 0.0)
+                if on_overshoot == "scale_pins" and pin_sum > 0:
+                    factor = max(target, 0.0) / pin_sum
+                    scaled = []
+                    for c in pin_k:
+                        _set_base(c,
+                                  float(df.at[c, "base_quota"]) * factor)
+                        scaled.append(df.at[c, "node_id"])
+                    scaled_pin_names.extend(scaled)
+                    action, resolved = "scaled_pins", True
+                else:
+                    action, resolved, scaled = "left", False, []
+            else:                        # undershoot, nothing free to grow
+                action, resolved, scaled = "left", False, []
+            report_rows.append({**kd, "node_id": node,
+                                "gap_before": round(gap, 2),
+                                "action": action,
+                                "pins_scaled": scaled,
+                                "resolved": resolved})
+
+    # share_of_parent recompute on the (possibly) edited base layer
+    if "share_of_parent" in df.columns:
+        for idx in df.index:
+            k = key_of.at[idx]
+            p_ = df.at[idx, "parent"]
+            if pd.isna(p_) or (k, p_) not in row_ix:
+                df.at[idx, "share_of_parent"] = 1.0
+                continue
+            pb = float(df.at[row_ix[(k, p_)], "base_quota"])
+            nb = float(df.at[idx, "base_quota"])
+            df.at[idx, "share_of_parent"] = (round(nb / pb, 6)
+                                             if pb != 0
+                                             else float("nan"))
+
+    report = pd.DataFrame(report_rows)
+    if scaled_pin_names:
+        warnings.warn(
+            f"enforce_identities: scaled {len(scaled_pin_names)} pinned "
+            f"node(s) down to fit their parents "
+            f"({sorted(set(scaled_pin_names))}) — their pinned totals "
+            f"are no longer exact. See the returned report.",
+            UserWarning, stacklevel=2)
+    if len(report) and not report["resolved"].all():
+        left = report[~report.resolved]["node_id"].tolist()
+        warnings.warn(
+            f"enforce_identities: {len(left)} identity gap(s) left "
+            f"unresolved ({left}) — no free children to adjust (or "
+            f"on_overshoot='allow').",
+            UserWarning, stacklevel=2)
+    return df, report
