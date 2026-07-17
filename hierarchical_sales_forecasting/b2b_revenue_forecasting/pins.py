@@ -1285,3 +1285,355 @@ def enforce_identities(
             f"on_overshoot='allow').",
             UserWarning, stacklevel=2)
     return df, report
+
+
+def reallocate(
+    quotas_long: pd.DataFrame,
+    sources: Union[str, List[str]],
+    recipients: Optional[List[str]] = None,
+    fraction: float = 1.0,
+    weights: Union[str, Dict[str, float]] = "proportional",
+    scope: Optional[Dict[str, Any]] = None,
+    freeze_nodes: Optional[List[str]] = None,
+    row_keys: Optional[List[str]] = None,
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Generalized sibling move (issue #57): take a FRACTION of one or
+    more sources' (scoped) quota and hand it to named recipients under
+    an explicit split — "cut 75% of these reps' Cloud quota and move
+    it 60/40 to those two reps" is one call::
+
+        edited, report = reallocate(
+            quotas_long, sources=['r1', 'r2'], fraction=0.75,
+            weights={'r3': 0.6, 'r4': 0.4},
+            scope={'base_product_r4f': 'Cloud'})
+
+    `redistribute(x, ...)` is exactly `reallocate([x], fraction=1.0,
+    ...)` (pinned by test). Thin sugar over apply_pins like its
+    siblings: each source is pinned to (1 - fraction) x its baseline,
+    each recipient to baseline + share x moved total — so the whole
+    pin contract applies (per-depth subtree reshaping, parent
+    conservation, per-row hedge re-derivation, scope isolation,
+    freeze, $0 floors), and unlisted siblings are VERIFIED to stay at
+    baseline.
+
+    Parameters mirror redistribute; `fraction` must be in (0, 1];
+    dict `weights` keys are the recipients (normalized); sources and
+    recipients must all be siblings (same parent) and disjoint.
+
+    Returns (edited_df, report): node, role ('source' / 'destination'
+    / 'bystander'), baseline_total, target_total, achieved_total,
+    exact — source targets are (1 - fraction) x baseline.
+    """
+    df = quotas_long
+    if isinstance(sources, str):
+        sources = [sources]
+    if not sources or not all(isinstance(s, str) and s for s in sources):
+        raise ValueError("reallocate: sources must be one or more node "
+                         "id strings.")
+    if len(set(sources)) != len(sources):
+        raise ValueError("reallocate: duplicate nodes in sources.")
+    if not isinstance(fraction, (int, float)) or not 0 < fraction <= 1:
+        raise ValueError(f"reallocate: fraction must be in (0, 1], "
+                         f"got {fraction!r}.")
+    if isinstance(weights, str):
+        if weights not in ("proportional", "equal"):
+            raise ValueError("weights must be 'proportional', 'equal', "
+                             f"or a dict, got '{weights}'.")
+    elif not isinstance(weights, dict):
+        raise ValueError("weights must be 'proportional', 'equal', or a "
+                         f"dict of node->share, got {type(weights)}.")
+
+    mask = _scope_mask(df, scope)
+    frozen = set(freeze_nodes or [])
+    src_parents: Optional[set] = None
+    for s_ in sources:
+        rows_ = df[(df["node_id"] == s_) & mask]
+        if rows_.empty:
+            raise ValueError(f"reallocate: source '{s_}' matches no "
+                             f"rows (after scope {scope or {}}).")
+        if s_ in frozen:
+            raise ValueError(f"reallocate: source '{s_}' is frozen.")
+        parents_ = {p for p in rows_["parent"] if pd.notna(p)}
+        if not parents_:
+            raise ValueError(f"reallocate: '{s_}' is a root — no "
+                             f"sibling group to move within.")
+        if src_parents is None:
+            src_parents = parents_
+        elif parents_ != src_parents:
+            raise ValueError(
+                f"reallocate: sources are not siblings of each other "
+                f"('{s_}' has parents {sorted(parents_)}). For "
+                f"cross-parent moves use route_targets.")
+
+    sib_rows = df[mask & df["parent"].isin(src_parents)
+                  & ~df["node_id"].isin(sources)]
+    all_sibs = [n for n in sib_rows["node_id"].unique()
+                if n not in frozen]
+
+    if isinstance(weights, dict):
+        if recipients is not None and set(recipients) != set(weights):
+            raise ValueError("recipients and dict weights disagree — "
+                             "pass one or the other (the dict keys are "
+                             "the recipients).")
+        dests = list(weights)
+        raw = {d: float(weights[d]) for d in dests}
+        if any(v < 0 for v in raw.values()) or sum(raw.values()) <= 0:
+            raise ValueError("dict weights must be non-negative and sum "
+                             "to a positive number.")
+    else:
+        dests = list(recipients) if recipients is not None else all_sibs
+        raw = None
+    if not dests:
+        raise ValueError("reallocate: no eligible recipients (all "
+                         "siblings frozen or listed as sources?).")
+    bad = [d for d in dests
+           if d in sources or d in frozen
+           or df[(df["node_id"] == d) & mask].empty
+           or set(df.loc[(df["node_id"] == d) & mask, "parent"].dropna())
+           != src_parents]
+    if bad:
+        raise ValueError(
+            f"reallocate: {bad} are not eligible recipients — each must "
+            f"be an unfrozen SIBLING of the sources (same parent, in "
+            f"the scoped rows, not itself a source). For cross-parent "
+            f"moves use route_targets.")
+
+    def _base(node):
+        return float(df.loc[(df["node_id"] == node) & mask,
+                            "base_quota"].sum())
+
+    src_base = {s_: _base(s_) for s_ in sources}
+    moved = fraction * sum(src_base.values())
+    dest_base = {d: _base(d) for d in dests}
+    if raw is not None:
+        tot = sum(raw.values())
+        share = {d: raw[d] / tot for d in dests}
+    elif weights == "equal":
+        share = {d: 1.0 / len(dests) for d in dests}
+    else:
+        pool = sum(dest_base.values())
+        if pool > 0:
+            share = {d: dest_base[d] / pool for d in dests}
+        else:
+            warnings.warn("reallocate: recipients have an all-zero "
+                          "baseline — splitting equally.",
+                          UserWarning, stacklevel=2)
+            share = {d: 1.0 / len(dests) for d in dests}
+
+    pins = [Pin(s_, (1.0 - fraction) * src_base[s_], scope=scope)
+            for s_ in sources]
+    pins += [Pin(d, dest_base[d] + share[d] * moved, scope=scope)
+             for d in dests]
+    edited = _run_pins_quietly(df, pins, freeze_nodes, row_keys)
+
+    emask = _scope_mask(edited, scope)
+
+    def _after(node):
+        return float(edited.loc[(edited["node_id"] == node) & emask,
+                                "base_quota"].sum())
+
+    rows = []
+    for s_ in sources:
+        rows.append({"node": s_, "role": "source",
+                     "baseline_total": round(src_base[s_], 2),
+                     "target_total": round((1 - fraction)
+                                           * src_base[s_], 2),
+                     "achieved_total": round(_after(s_), 2)})
+    for d in dests:
+        rows.append({"node": d, "role": "destination",
+                     "baseline_total": round(dest_base[d], 2),
+                     "target_total": round(dest_base[d]
+                                           + share[d] * moved, 2),
+                     "achieved_total": round(_after(d), 2)})
+    for b_ in all_sibs:
+        if b_ in dests:
+            continue
+        b0 = _base(b_)
+        rows.append({"node": b_, "role": "bystander",
+                     "baseline_total": round(b0, 2),
+                     "target_total": round(b0, 2),
+                     "achieved_total": round(_after(b_), 2)})
+    report = pd.DataFrame(rows)
+    report["exact"] = (report["achieved_total"]
+                       - report["target_total"]).abs() <= 0.05
+    if not report["exact"].all():
+        off = report.loc[~report["exact"], "node"].tolist()
+        warnings.warn(f"reallocate: {off} did not land exactly on "
+                      f"target — see the returned report.",
+                      UserWarning, stacklevel=2)
+    return edited, report
+
+
+def resplit_by_metric(
+    quotas_long: pd.DataFrame,
+    node: str,
+    metric: str,
+    scope: Optional[Dict[str, Any]] = None,
+    freeze_nodes: Optional[List[str]] = None,
+    row_keys: Optional[List[str]] = None,
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Re-split `node`'s CHILDREN proportional to a carried metric column
+    (issue #57): "re-split this team's Migration by dc_seats" is::
+
+        edited, report = resplit_by_metric(
+            quotas_long, 'CENTRAL6-MIGRATION', 'dc_seats',
+            scope={'st1_sales_type': 'Migration'})
+
+    Per cascade slice: each child's weight is the SUM of `metric` over
+    its descendant leaves (the metric must be ON the frame — carry it
+    with cascade_many(metadata_cols=[...], issue #16); the rollup is
+    computed internally, same semantics as rollup_metrics). Frozen
+    children hold their values; free children split the remaining
+    parent budget by metric shares (equal split if the free metric
+    pool is 0, with a warning); child subtrees rescale proportionally;
+    hedged values re-derive from each row's own ratio (#21) and
+    share_of_parent is recomputed — reconcile() stays clean.
+
+    NOTE: this is a DELIBERATE overwrite of the node's internal
+    allocation — is_pinned provenance on children is NOT honored here
+    (that's the point of a re-split); use freeze_nodes to protect
+    specific children.
+
+    Returns (edited_df, report): one row per (cascade, child) —
+    cascade keys, node_id, frozen, metric_sum, metric_share, old_base,
+    new_base, exact.
+    """
+    from b2b_revenue_forecasting.batch import _cascade_key_context
+
+    df = quotas_long.copy()
+    if metric not in df.columns:
+        raise ValueError(
+            f"resplit_by_metric: '{metric}' not in quotas_long. Carry "
+            f"metric columns onto leaf rows with cascade_many("
+            f"metadata_cols=[...]) (v0.8.0; it carries metric values "
+            f"too — issue #16).")
+    if not pd.api.types.is_numeric_dtype(df[metric]):
+        raise ValueError(f"resplit_by_metric: '{metric}' is not "
+                         f"numeric.")
+    keys, key_of, row_ix, child_ix = _cascade_key_context(
+        df, row_keys, exclude_cols=[metric],
+        caller="resplit_by_metric")
+    frozen = set(freeze_nodes or [])
+
+    ratio = {}
+    for idx in df.index:
+        b = df.at[idx, "base_quota"]
+        ratio[idx] = (float(df.at[idx, "cascaded_quota"]) / float(b)
+                      if pd.notna(b) and float(b) != 0.0 else 1.0)
+
+    def _set_base(idx, new_base):
+        if abs(new_base - float(df.at[idx, "base_quota"])) < 0.005:
+            return
+        df.at[idx, "base_quota"] = round(new_base, 2)
+        df.at[idx, "cascaded_quota"] = round(new_base * ratio[idx], 2)
+
+    def _metric_sum(k, idx):
+        kids = child_ix.get((k, df.at[idx, "node_id"]), [])
+        if not kids:
+            v = df.at[idx, metric]
+            return float(v) if pd.notna(v) else 0.0
+        return sum(_metric_sum(k, c) for c in kids)
+
+    def _scale_subtree(k, idx, new_total):
+        old = float(df.at[idx, "base_quota"])
+        kids = child_ix.get((k, df.at[idx, "node_id"]), [])
+        _set_base(idx, new_total)
+        if not kids:
+            return
+        if old > 0:
+            for c in kids:
+                _scale_subtree(k, c,
+                               float(df.at[c, "base_quota"])
+                               * new_total / old)
+        else:
+            for c in kids:
+                _scale_subtree(k, c, new_total / len(kids))
+
+    smask = _scope_mask(df, scope)
+    node_idxs = [i for i in df.index
+                 if df.at[i, "node_id"] == node and smask.at[i]]
+    if not node_idxs:
+        raise ValueError(f"resplit_by_metric: '{node}' matches no rows "
+                         f"(after scope {scope or {}}).")
+    report_rows: List[Dict[str, Any]] = []
+    for idx in node_idxs:
+        k = key_of.at[idx]
+        kd = dict(zip(keys, k)) if keys else {}
+        kids = child_ix.get((k, node), [])
+        if not kids:
+            raise ValueError(f"resplit_by_metric: '{node}' has no "
+                             f"children in cascade "
+                             f"{kd or '<single>'} — nothing to "
+                             f"re-split.")
+        budget = float(df.at[idx, "base_quota"])
+        froz = [c for c in kids if df.at[c, "node_id"] in frozen]
+        free = [c for c in kids if df.at[c, "node_id"] not in frozen]
+        froz_sum = sum(float(df.at[c, "base_quota"]) for c in froz)
+        remaining = max(budget - froz_sum, 0.0)
+        msums = {c: _metric_sum(k, c) for c in free}
+        pool = sum(msums.values())
+        if pool <= 0 and free:
+            warnings.warn(
+                f"resplit_by_metric: free children of '{node}' in "
+                f"cascade {kd or '<single>'} have a zero '{metric}' "
+                f"pool — splitting equally.",
+                UserWarning, stacklevel=2)
+        for c in kids:
+            cid = df.at[c, "node_id"]
+            old = float(df.at[c, "base_quota"])
+            if c in froz:
+                new = old
+                mshare = None
+            else:
+                mshare = (msums[c] / pool if pool > 0
+                          else 1.0 / len(free))
+                new = remaining * mshare
+                _scale_subtree(k, c, new)
+            report_rows.append({**kd, "node_id": cid,
+                                "frozen": c in froz,
+                                "metric_sum": (round(msums.get(c, 0.0), 4)
+                                               if c in free else None),
+                                "metric_share": (round(mshare, 6)
+                                                 if mshare is not None
+                                                 else None),
+                                "old_base": round(old, 2),
+                                "new_base": round(new, 2)})
+        if froz_sum - budget > 0.05:
+            warnings.warn(
+                f"resplit_by_metric: frozen children of '{node}' in "
+                f"cascade {kd or '<single>'} hold "
+                f"{froz_sum - budget:,.2f} more than the parent budget "
+                f"— free children floored at $0.",
+                UserWarning, stacklevel=2)
+
+    if "share_of_parent" in df.columns:
+        for idx in df.index:
+            k = key_of.at[idx]
+            p_ = df.at[idx, "parent"]
+            if pd.isna(p_) or (k, p_) not in row_ix:
+                df.at[idx, "share_of_parent"] = 1.0
+                continue
+            pb = float(df.at[row_ix[(k, p_)], "base_quota"])
+            nb = float(df.at[idx, "base_quota"])
+            df.at[idx, "share_of_parent"] = (round(nb / pb, 6)
+                                             if pb != 0
+                                             else float("nan"))
+    report = pd.DataFrame(report_rows)
+    if len(report):
+        achieved = []
+        for _, r_ in report.iterrows():
+            m2 = pd.Series(True, index=df.index)
+            for c_, v_ in (scope or {}).items():
+                m2 &= df[c_] == v_
+            for c_ in keys:
+                if c_ in r_ and c_ in df.columns:
+                    m2 &= df[c_] == r_[c_]
+            m2 &= df["node_id"] == r_["node_id"]
+            achieved.append(round(float(df.loc[m2, "base_quota"].sum()),
+                                  2))
+        report["achieved_base"] = achieved
+        report["exact"] = (report["achieved_base"]
+                           - report["new_base"]).abs() <= 0.05
+    return df, report

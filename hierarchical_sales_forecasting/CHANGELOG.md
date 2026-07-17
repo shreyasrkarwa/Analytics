@@ -3,6 +3,43 @@
 All notable changes to `b2b_revenue_forecasting` are documented here.
 This project loosely follows [Semantic Versioning](https://semver.org/).
 
+## [0.36.0] — 2026-07
+
+Closes [issue #57](https://github.com/shreyasrkarwa/Analytics/issues/57):
+stakeholder edits — partial-percent moves among named siblings and
+metric-based re-splits. Review verdict: both exactly expressible as
+pin compositions today (verified: conserving, reconcile-clean), but
+the boilerplate is real — baseline reads + hand math for fraction
+moves, and children x cascades scoped pins for re-splits. Same
+call as #43/#47: thin sugar over an engine that already guarantees
+correctness.
+
+### Added
+- **`reallocate(quotas_long, sources, recipients=, fraction=1.0,
+  weights=, scope=, freeze_nodes=, row_keys=)`** — the generalized
+  sibling move: multiple sources, a fraction in (0, 1] (each source
+  keeps 1 - fraction of its baseline), recipients split the moved
+  total by 'proportional' / 'equal' / dict. "Cut 75% of these reps'
+  Cloud quota, move it 60/40 to those two" is one call, pinned
+  equivalent to the hand-built 4-pin composition.
+  `redistribute(x)` == `reallocate([x], fraction=1.0)` (pinned).
+- **`resplit_by_metric(quotas_long, node, metric, scope=,
+  freeze_nodes=, row_keys=)`** — re-split a node's children per
+  cascade proportional to their descendant-leaf sums of a carried
+  metric column ("re-split this team's Migration by dc_seats").
+  Frozen children hold; free children split the remaining budget by
+  metric shares (equal at zero pool, warned); subtrees rescale;
+  hedged re-derives per row; share_of_parent recomputed; reconcile()
+  stays clean. Pinned equivalent to the children-x-cascades scoped
+  pin composition. NOTE: deliberately does NOT honor is_pinned on
+  children — a re-split is an overwrite; freeze_nodes is the opt-out.
+- Both return (edited, report) in the family style (roles/exact for
+  reallocate; per-(cascade, child) metric_share/old/new/exact for
+  resplit).
+- `tests/test_reallocate_resplit.py` — 5 tests: both equivalence
+  anchors, the redistribute identity, equal+freeze+validation,
+  frozen-hold re-split, metadata_cols error hints.
+
 ## [0.35.0] — 2026-07
 
 Closes [issue #54](https://github.com/shreyasrkarwa/Analytics/issues/54)

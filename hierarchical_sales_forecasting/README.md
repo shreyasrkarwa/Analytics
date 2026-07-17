@@ -21,6 +21,21 @@ Unlike traditional bottom-up time-series libraries (which are strictly built for
 | **`CommitReconciler`** | Detect sandbagging and "happy ears" bias via historical Bias Quotients, then auto-correct forecasts |
 | **`PipelineAdjuster`** | Diagnose pipeline health with per-region thresholds and redistribute IC quotas using zero-sum logic |
 
+### What's New in v0.36.0 — stakeholder edits, spelled ([#57](https://github.com/shreyasrkarwa/Analytics/issues/57))
+
+```python
+# "cut 75% of these reps' Cloud quota, move it 60/40 to those two"
+edited, report = reallocate(quotas_long, sources=['DACH3_r1', 'DACH3_r2'], fraction=0.75,
+                            weights={'r_a': 0.6, 'r_b': 0.4},
+                            scope={'base_product_r4f': 'Cloud'})
+
+# "re-split this team's Migration by dc_seats"
+edited, report = resplit_by_metric(quotas_long, 'CENTRAL6-MIGRATION', 'dc_seats',
+                                   scope={'st1_sales_type': 'Migration'})
+```
+
+Both are thin sugar over the pin engine — pinned equivalent to their hand-built compositions, parent-conserving, `reconcile()`-clean, freeze-aware, with the family's roles/`exact` reports. `redistribute(x)` is now provably `reallocate([x], fraction=1.0)`. One deliberate semantic: `resplit_by_metric` ignores `is_pinned` on the children (a re-split is an overwrite — `freeze_nodes` is the opt-out). The per-(product×quarter×sales_type) scaling loops in §3b/§3c/§3d each collapse to a call.
+
 ### What's New in v0.35.0 — identities enforced, overshoots surfaced ([#54](https://github.com/shreyasrkarwa/Analytics/issues/54), [#55](https://github.com/shreyasrkarwa/Analytics/issues/55))
 
 `enforce_identities()` is `reconcile()`'s fixing twin: top-down, every parent's base is the hard budget — pinned children hold, free children stretch, and overshooting pins scale down proportionally (`'scale_pins'`), raise (`'error'`), or stay (`'allow'`). Hedged identities restore themselves via per-row ratios (no `hedge=` needed — proven by requiring `reconcile()` to pass in the tests), pins are never inflated implicitly, and clean frames come back bit-identical. And `apply_pins` gained the missing *cross-pin* check: individually-valid pins that collectively break a parent's slice — which v0.29.0 was accidentally silencing as "intentional" — now always land in `attrs['overshoot_report']` per (parent, combo), warn once under the default `'allow'`, and can be auto-fitted with `on_overshoot='scale_pins'` (scaled pins honestly flagged in the feasibility report).
