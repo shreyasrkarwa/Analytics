@@ -1449,6 +1449,10 @@ def reconcile(
     tolerance: float = 0.05,
     ratio_tolerance: float = 1e-4,
     row_keys: Optional[List[str]] = None,
+    targets: Optional[pd.DataFrame] = None,
+    target_col: Optional[str] = None,
+    target_total: Optional[float] = None,
+    on_fail: str = "warn",
 ) -> pd.DataFrame:
     """
     One-call validator for cascade outputs (issue #46): per-parent
@@ -1461,6 +1465,11 @@ def reconcile(
                                                           2: 1.05}))
         assert frame.ok.all()
 
+    NOTE on tolerances (issue #60): `tolerance` is ABSOLUTE DOLLARS —
+    the default 0.05 means five CENTS, not five percent. It is the
+    `atol` financial audits want; a 1% gap on a $1M team ($10,000) is
+    ~200,000x the default tolerance and is always flagged.
+
     Checks (one tidy row each; `check` column says which):
       conservation — every parent's base_quota vs the sum of its
         children's base_quota, per cascade, within `tolerance` dollars.
@@ -1468,6 +1477,23 @@ def reconcile(
         expected CUMULATIVE ratio from `hedge`, within
         `ratio_tolerance` (relative). Rows with base <= 0 are skipped
         (a gated node has no ratio).
+      depth_conservation (v0.39.0, issue #60) — per cascade, the depth
+        AGGREGATE view auditors hand-write ("d0 == d1 == d2"): the sum
+        of base_quota at depth d vs the sum at depth d-1 over nodes
+        that HAVE children (so jagged trees — leaves at shallow depths
+        — never false-alarm). Implied by per-parent conservation, but
+        first-class so the audit reads like the ledger. Emitted when
+        the frame has a depth column; node_id is None on these rows.
+      target_total (v0.39.0, issue #60) — "the total plan must never
+        change": depth-0 (root) base vs the INPUT targets. This is the
+        one identity internal checks cannot see — dropped targets, or
+        edits that legitimately float the root (enforce_identities
+        anchor='leaves'/'rebalance', route_targets(merge=True)), leave
+        every internal identity clean while the plan total drifts.
+        Pass `targets=` (the frame you cascaded, with `target_col=`)
+        for one row per cascade combo (target combos with NO quota
+        rows appear as expected=amount / actual=0) plus one global
+        row; or pass a scalar `target_total=` for the global row only.
 
     `hedge` accepts:
       float           — flat multiplier; expected = hedge ** depth.
@@ -1484,9 +1510,13 @@ def reconcile(
     concentrate preserve each row's original hedge ratio (the #21
     contract) and conserve parents, so a clean edit stays clean here.
 
+    `on_fail` (v0.39.0): 'warn' (default) — ONE summary warning when
+    any ok=False, silent otherwise; 'raise' — ValueError naming the
+    offending (check, node, combo) rows, for pipelines that must fail
+    loudly without a hand-written assert.
+
     Returns a tidy DataFrame: cascade key columns, node_id, parent,
-    depth, check, expected, actual, delta, ok. Emits ONE summary
-    warning when any ok=False; silent otherwise.
+    depth, check, expected, actual, delta, ok.
     """
     from b2b_revenue_forecasting.quota_cascader import HedgeByDepth
 
@@ -1501,6 +1531,16 @@ def reconcile(
                                                     HedgeByDepth)):
         raise ValueError("hedge must be a float, a {depth: cum_ratio} "
                          "dict, or a HedgeByDepth spec.")
+    if on_fail not in ("warn", "raise"):
+        raise ValueError("on_fail must be 'warn' or 'raise'.")
+    if targets is not None and target_total is not None:
+        raise ValueError("pass targets= OR target_total=, not both.")
+    if targets is not None:
+        if target_col is None or target_col not in targets.columns:
+            raise ValueError(
+                f"targets= needs target_col= naming a column of the "
+                f"targets frame (got {target_col!r}; columns: "
+                f"{list(targets.columns)}).")
 
     df = quotas_long
     keys, key_of, row_ix, child_ix = _cascade_key_context(
@@ -1531,6 +1571,29 @@ def reconcile(
                          "actual": round(actual, 2),
                          "delta": round(actual - expected, 2),
                          "ok": abs(actual - expected) <= tolerance})
+
+        # ---- depth_conservation: the aggregate ledger view (#60) ----
+        if "depth" in df.columns:
+            by_depth: Dict[int, float] = {}
+            by_depth_parents: Dict[int, float] = {}
+            for idx in idxs:
+                d_ = int(df.at[idx, "depth"])
+                b_ = float(df.at[idx, "base_quota"])
+                by_depth[d_] = by_depth.get(d_, 0.0) + b_
+                if child_ix.get((k, df.at[idx, "node_id"])):
+                    by_depth_parents[d_] = (by_depth_parents.get(d_, 0.0)
+                                            + b_)
+            for d_ in sorted(by_depth):
+                if d_ - 1 not in by_depth:
+                    continue
+                expected = by_depth_parents.get(d_ - 1, 0.0)
+                actual = by_depth[d_]
+                rows.append({**kd, "node_id": None, "parent": None,
+                             "depth": d_, "check": "depth_conservation",
+                             "expected": round(expected, 2),
+                             "actual": round(actual, 2),
+                             "delta": round(actual - expected, 2),
+                             "ok": abs(actual - expected) <= tolerance})
 
         # ---- hedge identities ----------------------------------------
         if hedge is None:
@@ -1582,9 +1645,71 @@ def reconcile(
                          "delta": round(actual - expected, 6),
                          "ok": ok})
 
+    # ---- target_total: depth-0 vs the input plan (#60) ----------------
+    def _root_sum(idxs_) -> float:
+        tot = 0.0
+        for idx in idxs_:
+            p_ = df.at[idx, "parent"]
+            if pd.isna(p_) or (key_of.at[idx], p_) not in row_ix:
+                tot += float(df.at[idx, "base_quota"])
+        return tot
+
+    if targets is not None:
+        tkeys = [c for c in keys if c in targets.columns]
+        # per-combo rows: every TARGET combo appears (missing quota
+        # rows -> actual=0, the dropped-target drift made visible)
+        tsums: Dict[Any, float] = {}
+        for _, trow in targets.iterrows():
+            tk = tuple(None if (c not in targets.columns
+                                or pd.isna(trow[c])) else trow[c]
+                       for c in keys)
+            tsums[tk] = tsums.get(tk, 0.0) + float(trow[target_col])
+        seen_keys = set(groups)
+        for tk, amt in tsums.items():
+            # match on the key columns the targets frame actually has
+            match = [k for k in seen_keys
+                     if all(k[i] == tk[i] or (k[i] is None
+                                              and tk[i] is None)
+                            for i, c in enumerate(keys) if c in tkeys)]
+            actual = sum(_root_sum(groups[k]) for k in match)
+            kd = dict(zip(keys, tk)) if keys else {}
+            rows.append({**kd, "node_id": None, "parent": None,
+                         "depth": 0, "check": "target_total",
+                         "expected": round(amt, 2),
+                         "actual": round(actual, 2),
+                         "delta": round(actual - amt, 2),
+                         "ok": abs(actual - amt) <= tolerance})
+        target_total = float(
+            pd.to_numeric(targets[target_col], errors="coerce")
+            .fillna(0.0).sum())
+    if target_total is not None:
+        expected = float(target_total)
+        actual = _root_sum(df.index)
+        kd = {c: None for c in keys}
+        rows.append({**kd, "node_id": None, "parent": None,
+                     "depth": 0, "check": "target_total",
+                     "expected": round(expected, 2),
+                     "actual": round(actual, 2),
+                     "delta": round(actual - expected, 2),
+                     "ok": abs(actual - expected) <= tolerance})
+
     frame = pd.DataFrame(rows)
     n_bad = int((~frame["ok"]).sum()) if len(frame) else 0
     if n_bad:
+        bad = frame[~frame["ok"]]
+        offenders = []
+        for _, r in bad.head(10).iterrows():
+            kbits = ", ".join(f"{c}={r[c]}" for c in keys
+                              if c in bad.columns and pd.notna(r[c]))
+            who = r["node_id"] if pd.notna(r["node_id"]) else "<total>"
+            offenders.append(f"{r['check']} {who}"
+                             + (f" [{kbits}]" if kbits else "")
+                             + f": delta {r['delta']:+,.2f}")
+        if on_fail == "raise":
+            raise ValueError(
+                f"reconcile: {n_bad} check(s) failed (of {len(frame)}):\n"
+                + "\n".join(offenders)
+                + ("\n..." if n_bad > 10 else ""))
         warnings.warn(
             f"reconcile: {n_bad} check(s) failed (of {len(frame)}) — "
             f"filter the returned frame with ~frame.ok for the "

@@ -76,12 +76,12 @@
 <div class="container">
 
 <header>
-  <div class="eyebrow">b2b_revenue_forecasting · v0.38.0</div>
+  <div class="eyebrow">b2b_revenue_forecasting · v0.39.0</div>
   <h1>Multi-Metric Cascading &amp; Reconciliation — Walkthrough</h1>
   <p class="subtitle">End-to-end notebook: how an analyst takes one CSV of historical performance + pipeline data and produces a quota plan, a pipeline diagnosis, a redistributed plan, and a bias-corrected forecast — with full visibility into how each metric actually influences allocation.</p>
   <div class="meta">
     <span><strong>Package:</strong> b2b-revenue-forecasting</span>
-    <span><strong>Version:</strong> 0.38.0</span>
+    <span><strong>Version:</strong> 0.39.0</span>
     <span><strong>Dataset:</strong> 170 ICs · 217 hierarchy nodes</span>
     <span><strong>Macro target:</strong> $50,000,000</span>
   </div>
@@ -1019,7 +1019,12 @@ Global_Corp        None 25000000.00         1.000000
          NA Global_Corp 25000000.00         1.000000
    RVP_NA_1          NA 15285338.72         0.611414
    RVP_NA_2          NA  9714661.28         0.388586</pre>
-And the post-run checklist is one call (v0.30.0, issue #46): <code class="inline">reconcile(quotas_long, hedge=HedgeByDepth(from_leaves={1: 1.10, 2: 1.05}))</code> returns a tidy frame of <code class="inline">conservation</code> (every parent's base vs its children's sum, per cascade) and <code class="inline">hedge_ratio</code> checks (each node's cascaded/base vs the expected cumulative ratio &mdash; float, <code class="inline">{depth: cum}</code> dict, or a <code class="inline">HedgeByDepth</code> spec resolved with the engine's own <code class="inline">resolve()</code>, so the expectation can't drift). Runs clean on post-<code class="inline">apply_pins</code>/<code class="inline">redistribute</code>/<code class="inline">concentrate</code> frames (the #21 ratio contract, now verifiable in one line); one summary warning on failure, silence means verified. <code class="inline">assert frame.ok.all()</code> is the whole scratch cell.</div>
+And the post-run checklist is one call (v0.30.0, issue #46): <code class="inline">reconcile(quotas_long, hedge=HedgeByDepth(from_leaves={1: 1.10, 2: 1.05}))</code> returns a tidy frame of <code class="inline">conservation</code> (every parent's base vs its children's sum, per cascade) and <code class="inline">hedge_ratio</code> checks (each node's cascaded/base vs the expected cumulative ratio &mdash; float, <code class="inline">{depth: cum}</code> dict, or a <code class="inline">HedgeByDepth</code> spec resolved with the engine's own <code class="inline">resolve()</code>, so the expectation can't drift). Runs clean on post-<code class="inline">apply_pins</code>/<code class="inline">redistribute</code>/<code class="inline">concentrate</code> frames (the #21 ratio contract, now verifiable in one line); one summary warning on failure, silence means verified. <code class="inline">assert frame.ok.all()</code> is the whole scratch cell.
+
+<strong>The audit, to the penny (v0.39.0, issue #60).</strong> A clarification worth pinning: <code class="inline">tolerance=0.05</code> is five <em>cents</em> &mdash; absolute dollars &mdash; not 5%; a 1% team gap is ~200,000&times; the default and has always been flagged (now a test, with the $0.06-flagged/$0.04-passes receipts). New: <code class="inline">reconcile(..., targets=target_df, target_col='q_target')</code> adds <code class="inline">check='target_total'</code> rows &mdash; depth-0 vs the INPUT plan, per cascade combo plus one global row &mdash; the one identity internal checks can't see (dropped targets, or edits that legitimately float the root: <code class="inline">anchor='leaves'</code>/<code class="inline">'rebalance'</code>, <code class="inline">route_targets(merge=True)</code>). Target combos with <em>no</em> quota rows show expected=amount/actual=0, so dropped-target drift lands in the audit. Plus <code class="inline">check='depth_conservation'</code> rows (the &ldquo;d0==d1==d2&rdquo; ledger view, jagged-tree exact: depth <em>d</em> compares against depth <em>d&minus;1</em> nodes that HAVE children) and <code class="inline">on_fail='raise'</code> naming the offending (check, node, combo, delta):
+
+<pre class="output" style="margin-top:8px;">reconcile: 566 checks (98 conservation, 438 hedge, 30 depth-ledger) — all ok: True
+target_total: 7 rows (per combo + global), plan total $105,000,000 == depth-0 $105,000,000 — every dollar of the input plan accounted for, to the penny</pre></div>
 
   <div class="callout"><strong>Pipeline health, batch-native (v0.32.0, issue #15).</strong> <code class="inline">PipelineAdjuster</code>'s risk bands, ancestor-inherited thresholds, and zero-sum IC redistribution now run on batch outputs: <code class="inline">adjust_many(quotas_long, ['Open_Pipeline', 'Late_Stage_Commit'], mode='redistribute', locked_nodes={'IC_007'})</code>. Per cascade the graph + quota dict are rebuilt from the frame (pipeline columns carried via <code class="inline">metadata_cols</code>) and the <em>real</em> class runs &mdash; pinned by an equivalence-anchor test, so batch numbers can't drift from the single-cascade path. Every row gains <code class="inline">pipeline</code>/<code class="inline">coverage_ratio</code>/<code class="inline">risk_status</code>; redistribution is zero-sum per team on the cascaded layer with base re-derived from each row's own ratio (<code class="inline">reconcile()</code> stays clean &mdash; pinned), a <code class="inline">quota_delta</code> audit column, and managers never move.</div>
 

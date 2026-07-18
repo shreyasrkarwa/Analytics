@@ -1178,8 +1178,25 @@ rec = reconcile(quotas_long,
                 hedge=HedgeByDepth(from_leaves={1: 1.10, 2: 1.05}))
 print(f"reconcile: {len(rec)} checks "
       f"({(rec.check == 'conservation').sum()} conservation, "
-      f"{(rec.check == 'hedge_ratio').sum()} hedge) — "
+      f"{(rec.check == 'hedge_ratio').sum()} hedge, "
+      f"{(rec.check == 'depth_conservation').sum()} depth-ledger) — "
       f"all ok: {rec.ok.all()}")
+
+# v0.39.0 (#60): the full AUDIT — tolerance is ABSOLUTE DOLLARS (the
+# default 0.05 is five cents, not 5%), depth_conservation rows give
+# the "d0==d1==d2" ledger view (jagged-tree exact), and targets= adds
+# the one identity internal checks can't see: depth-0 == the input
+# plan, per combo + global (dropped combos show expected/actual=0).
+# on_fail='raise' fails loudly naming (check, node, combo, delta).
+audit = reconcile(quotas_long,
+                  hedge=HedgeByDepth(from_leaves={1: 1.10, 2: 1.05}),
+                  targets=regional_targets, target_col='q_target',
+                  on_fail='raise')          # raises if any check fails
+tt = audit[audit.check == 'target_total']
+print(f"target_total: {len(tt)} rows (per combo + global), "
+      f"plan total ${tt['expected'].iloc[-1]:,.0f} == depth-0 "
+      f"${tt['actual'].iloc[-1]:,.0f} — every dollar of the input "
+      f"plan accounted for, to the penny")
 
 # NEW in v0.32.0 (issue #15): PipelineAdjuster, batch-native — carry a
 # pipeline column and diagnose/redistribute across every cascade.

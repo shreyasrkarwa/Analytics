@@ -3,6 +3,41 @@
 All notable changes to `b2b_revenue_forecasting` are documented here.
 This project loosely follows [Semantic Versioning](https://semver.org/).
 
+## [0.39.0] — 2026-07
+
+Closes [issue #60](https://github.com/shreyasrkarwa/Analytics/issues/60).
+First, the correction the review owed the filer: `reconcile()`'s
+`tolerance=0.05` is five CENTS — absolute dollars — not 5%. A 1% team
+gap ($10,000 on a $1M team) is ~200,000x the default tolerance and has
+always been flagged loudly (now pinned as a test, alongside the
+$0.06-flagged / $0.04-passes receipts). The `atol` mode the issue asks
+for is what shipped in v0.30.0. What the issue is RIGHT about: there
+was no check that depth-0 equals the input plan — the one identity
+internal checks cannot see, and precisely the invariant that survives
+untouched when targets get dropped (#26) or edits legitimately float
+the root (`anchor='leaves'`/`'rebalance'`, `route_targets(merge=True)`).
+
+### Added
+- **`reconcile(..., targets=<frame>, target_col=...)`** (#60): emits
+  `check='target_total'` rows — depth-0 (root) base vs the INPUT
+  targets, one row per cascade combo plus one global row. Target
+  combos with NO quota rows appear as expected=amount / actual=0, so
+  dropped-target drift is finally visible in the audit. Scalar
+  `target_total=<float>` gives the global row only.
+- **`check='depth_conservation'`** rows: the aggregate ledger view
+  auditors hand-write ("d0 == d1 == d2"), per cascade and depth —
+  exact in jagged trees because depth d compares against the sum of
+  depth d-1 nodes that HAVE children (a leaf at depth 1 never
+  false-alarms). Implied by per-parent conservation, but first-class
+  so the audit reads like the ledger.
+- **`on_fail='warn'|'raise'`**: 'raise' throws a ValueError naming the
+  offending (check, node, combo, delta) rows — the "fails loudly"
+  assert without hand-writing it. Default 'warn' unchanged.
+- Docs now state plainly that `tolerance` is absolute dollars.
+- Tests: `tests/test_conservation_audit.py` — the tolerance receipts,
+  the floated-root drift caught with internals clean, dropped-target
+  visibility, jagged-tree exactness, raise mode, guards.
+
 ## [0.38.0] — 2026-07
 
 Closes [issue #61](https://github.com/shreyasrkarwa/Analytics/issues/61).

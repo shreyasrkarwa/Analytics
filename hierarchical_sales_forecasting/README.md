@@ -52,7 +52,7 @@ Battle-tested: hardened against 60 field-filed issues from production deployment
 
 | Surface | Purpose |
 |--------|---------|
-| **`reconcile`** | One-call post-run/post-edit validator: per-parent conservation + per-node hedge identities against a float / `{depth: ratio}` dict / `HedgeByDepth` spec (resolved with the engine's own resolution — nothing to drift) |
+| **`reconcile`** | One-call post-run/post-edit validator: per-parent conservation + per-node hedge identities against a float / `{depth: ratio}` dict / `HedgeByDepth` spec (resolved with the engine's own resolution — nothing to drift) — plus depth-aggregate ledger rows, `targets=` depth-0-vs-input-plan drift detection, and `on_fail='raise'`. Tolerance is absolute dollars (5¢ default) |
 | **`rollup_metrics` / `attach_metrics`** | `<metric>_subtree` columns — each node's descendant-leaf aggregate, the "why" behind every quota; coverage analysis in one line |
 | **`share_of_parent` + `weights_long` + `attrs['combo_report']`** | The full decomposition: effective share at every sibling split, the authoritative per-combo weights record (blend + gate slates, provenance, fallback flags), and a per-combination audit trail (skips, gating, unallocated, weight sources) |
 | **`gating_report` / dropped-targets / overshoot / feasibility reports** | Every degradation path as a tidy frame — with `intentional` vs genuine distinctions so real problems are one filter |
@@ -63,6 +63,10 @@ Battle-tested: hardened against 60 field-filed issues from production deployment
 |--------|---------|
 | **`CommitReconciler`** | Detect sandbagging and "happy ears" bias via historical Bias Quotients, then auto-correct forecasts |
 | **`PipelineAdjuster` / `adjust_many`** | Pipeline coverage bands with ancestor-inherited thresholds and zero-sum IC redistribution — single-cascade or batch-native on any `cascade_many` output |
+
+### What's New in v0.39.0 — the audit, to the penny ([#60](https://github.com/shreyasrkarwa/Analytics/issues/60))
+
+A correction first: `reconcile()`'s `tolerance=0.05` is five *cents* — absolute dollars — not 5%; a 1% team gap has always been flagged (pinned as a test now, with the $0.06-flagged/$0.04-passes receipts). What #60 is right about: nothing checked that depth-0 equals the input plan — the one identity internal checks can't see, and exactly what survives untouched when targets drop or edits legitimately float the root (`anchor='leaves'`, `'rebalance'`, `route_targets(merge=True)`). Now: `reconcile(..., targets=target_df, target_col='tgt')` emits `check='target_total'` rows per cascade combo plus a global row — target combos with *no* quota rows show expected=amount/actual=0, so dropped-target drift is visible in the audit. Also new: `check='depth_conservation'` rows (the "d0==d1==d2" ledger view, exact in jagged trees — depth *d* compares against depth *d−1* nodes that have children), and `on_fail='raise'` for pipelines that must fail loudly, naming the offending (check, node, combo, delta).
 
 ### What's New in v0.38.0 — routed money, one row per node ([#61](https://github.com/shreyasrkarwa/Analytics/issues/61))
 
