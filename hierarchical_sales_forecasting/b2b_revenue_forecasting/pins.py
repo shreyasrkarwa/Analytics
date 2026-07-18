@@ -668,11 +668,11 @@ def apply_pins(
                 f"on_overshoot='scale_pins' to fit pins "
                 f"proportionally, or 'allow' to keep the gaps "
                 f"(attrs['overshoot_report']).")
-        if on_overshoot == "scale_pins":
+        if on_overshoot in ("scale_pins", "rebalance"):
             with warnings.catch_warnings(record=True) as _w:
                 warnings.simplefilter("always")
                 df, _enf = enforce_identities(
-                    df, on_overshoot="scale_pins", row_keys=keys)
+                    df, on_overshoot=on_overshoot, row_keys=keys)
             for w_ in _w:
                 warnings.warn(w_.message, w_.category, stacklevel=2)
             # Recompute per-pin achievement after scaling
@@ -1095,7 +1095,7 @@ def concentrate(
     return edited, report
 
 
-_ON_OVERSHOOT = ("scale_pins", "error", "allow")
+_ON_OVERSHOOT = ("scale_pins", "error", "allow", "rebalance")
 
 
 def enforce_identities(
@@ -1104,53 +1104,62 @@ def enforce_identities(
     tolerance: float = 0.05,
     freeze_nodes: Optional[List[str]] = None,
     row_keys: Optional[List[str]] = None,
+    anchor: str = "root",
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
-    reconcile() that FIXES instead of reporting (issue #54): walk each
-    cascade top-down and force every parent-child identity
-    (sum(children base) == parent base), holding pinned children,
-    scaling free children to absorb the residual, and — per
-    `on_overshoot` — scaling pins down proportionally when they alone
-    exceed the parent.
+    reconcile() that FIXES instead of reporting (issues #54/#58/#59):
+    force every parent-child identity per cascade slice.
 
-        edited, report = enforce_identities(quotas_long)
-        assert reconcile(edited, hedge=...).ok.all()
+    Anchors (issue #58)
+    -------------------
+    anchor='root' (default) — parents are budgets, children conform:
+      pinned children hold, free children scale to fill, and on
+      overshoot the `on_overshoot` policy decides (below).
+    anchor='leaves' — the DUAL: children stand, every parent is
+      DERIVED as the exact sum of its children, bottom-up, all the way
+      to the root (which floats). Pins are never touched; conservation
+      holds by construction. `on_overshoot` is ignored.
 
-    Semantics
-    ---------
-    - Roots anchor; each parent's (possibly just-adjusted) base is the
-      hard budget for its children, recursively — so a scaled pin's own
-      subtree re-reconciles at the next depth automatically.
-    - "Pinned" children = rows with is_pinned == True (apply_pins
-      provenance) plus anything in `freeze_nodes`. They hold their
-      values whenever the budget allows.
-    - Free children scale proportionally to fill parent - sum(pinned)
-      (equal split when their baseline is $0). If there are no free
-      children and the pinned sum UNDERSHOOTS the parent, the gap is
-      left and reported (scaling pins UP is never done implicitly).
-    - Overshoot (sum(pinned) > parent): free children floor at $0 and
-      `on_overshoot` decides — 'scale_pins' (default) scales the
-      pinned children down proportionally to fit (recorded per node),
-      'error' raises naming (parent, cascade, gap), 'allow' leaves the
-      gap in place (recorded).
-    - No `hedge=` parameter, deliberately: cascaded_quota re-derives
-      from each row's own original ratio (#21), which restores the
-      hedged identities automatically — pinned by tests requiring
-      reconcile() to pass afterwards. share_of_parent is recomputed.
-    - A frame that already reconciles is returned bit-identical.
+    on_overshoot (anchor='root')
+    ----------------------------
+    'scale_pins' (default) — per (cascade, parent) slice: free rows
+      floor first, then pinned children scale down proportionally to
+      fit (factors recorded per row and named in the warning).
+      CAUTION (#59): this is per-combo and one-directional; when a
+      node's AGGREGATE is correct but combos deliberately over/under-
+      shoot (concentrate / resplit_by_metric composed with aggregate
+      pins), it removes the overshoot without restoring the
+      undershoot — use 'rebalance'.
+    'rebalance' (#59) — processed bottom-up ACROSS combos: when a
+      node's aggregate matches its children's aggregate (within
+      `tolerance`), the node's per-combo values FLOAT to the child
+      sums — the aggregate is conserved, so AGGREGATE PINS on that
+      node stay exact (a Pin is an aggregate total by definition).
+      Only a genuinely-off aggregate falls back to per-combo
+      scale-down (subtrees rescaled proportionally, factors recorded).
+    'error' — raise naming (parent, cascade, gap).
+    'allow' — leave gaps in place (recorded).
 
-    Returns
-    -------
-    (edited_df, report) — report has one row per (cascade, parent)
-    whose children were off by more than `tolerance`: cascade keys,
-    node_id (the parent), gap_before, action ('scaled_free' |
-    'scaled_pins' | 'left'), pins_scaled (node ids), resolved.
+    Everything else is unchanged from v0.35.0: pinned = is_pinned
+    provenance + freeze_nodes; pins are NEVER scaled up implicitly;
+    cascaded re-derives from each row's own ratio (#21) so hedged
+    identities restore automatically (pinned by reconcile() in tests);
+    share_of_parent recomputed; clean frames return bit-identical.
+
+    Returns (edited_df, report): one row per adjusted / broken
+    (cascade, parent): cascade keys, node_id, gap_before, action
+    ('scaled_free' | 'scaled_pins' | 'rebalanced' | 'floated' |
+    'left'), factor (pin scale factor where applicable), pins_scaled,
+    resolved.
     """
     from b2b_revenue_forecasting.batch import _cascade_key_context
 
     if on_overshoot not in _ON_OVERSHOOT:
         raise ValueError(f"on_overshoot must be one of {_ON_OVERSHOOT}, "
                          f"got '{on_overshoot}'.")
+    if anchor not in ("root", "leaves"):
+        raise ValueError(f"anchor must be 'root' or 'leaves', "
+                         f"got '{anchor}'.")
     required = {"node_id", "parent", "base_quota", "cascaded_quota"}
     missing = required - set(quotas_long.columns)
     if missing:
@@ -1168,8 +1177,7 @@ def enforce_identities(
         node = df.at[idx, "node_id"]
         if node in frozen:
             return True
-        return bool(has_pin_col and df.at[idx, "is_pinned"] is True
-                    or (has_pin_col and df.at[idx, "is_pinned"] == True))  # noqa: E712
+        return bool(has_pin_col and df.at[idx, "is_pinned"] == True)  # noqa: E712
 
     ratio = {}
     for idx in df.index:
@@ -1179,83 +1187,175 @@ def enforce_identities(
 
     def _set_base(idx, new_base: float) -> None:
         if abs(new_base - float(df.at[idx, "base_quota"])) < 0.005:
-            return                       # keep clean frames bit-identical
+            return
         df.at[idx, "base_quota"] = round(new_base, 2)
         df.at[idx, "cascaded_quota"] = round(new_base * ratio[idx], 2)
 
+    def _scale_subtree(k, idx, factor: float) -> None:
+        for c in child_ix.get((k, df.at[idx, "node_id"]), []):
+            _set_base(c, float(df.at[c, "base_quota"]) * factor)
+            _scale_subtree(k, c, factor)
+
     report_rows: List[Dict[str, Any]] = []
-    scaled_pin_names: List[str] = []
+    scaled_pin_notes: List[str] = []
 
     groups: Dict[Any, List[Any]] = {}
     for idx in df.index:
         groups.setdefault(key_of.at[idx], []).append(idx)
 
-    for k, idxs in groups.items():
-        kd = dict(zip(keys, k)) if keys else {}
+    def _bfs_order(k, idxs):
         in_group = set(df.loc[idxs, "node_id"])
         queue = [idx for idx in idxs
                  if pd.isna(df.at[idx, "parent"])
                  or df.at[idx, "parent"] not in in_group]
-        seen = set()
-        while queue:                                 # BFS, roots first
+        order, seen = [], set()
+        while queue:
             idx = queue.pop(0)
             if idx in seen:
                 continue
             seen.add(idx)
-            node = df.at[idx, "node_id"]
-            kids = child_ix.get((k, node), [])
-            queue.extend(kids)
-            if not kids:
-                continue
-            target = float(df.at[idx, "base_quota"])
-            pin_k = [c for c in kids if _pinned(c)]
-            free_k = [c for c in kids if not _pinned(c)]
-            pin_sum = sum(float(df.at[c, "base_quota"]) for c in pin_k)
-            free_sum = sum(float(df.at[c, "base_quota"]) for c in free_k)
-            gap = (pin_sum + free_sum) - target
-            if abs(gap) <= tolerance:
-                continue
-            remainder = target - pin_sum
-            if remainder >= -tolerance and free_k:
-                remainder = max(remainder, 0.0)
-                for c in free_k:
-                    cb = float(df.at[c, "base_quota"])
-                    share = (remainder * cb / free_sum if free_sum > 0
-                             else remainder / len(free_k))
-                    _set_base(c, share)
-                action, resolved, scaled = "scaled_free", True, []
-            elif remainder < -tolerance:             # pins overshoot
-                if on_overshoot == "error":
-                    raise ValueError(
-                        f"enforce_identities: pinned children of "
-                        f"'{node}' in cascade {kd or '<single>'} sum to "
-                        f"{pin_sum:,.2f} against a parent budget of "
-                        f"{target:,.2f} (overshoot "
-                        f"{pin_sum - target:,.2f}). Use "
-                        f"on_overshoot='scale_pins' to fit them "
-                        f"proportionally, or 'allow' to keep the gap.")
-                for c in free_k:
-                    _set_base(c, 0.0)
-                if on_overshoot == "scale_pins" and pin_sum > 0:
-                    factor = max(target, 0.0) / pin_sum
-                    scaled = []
-                    for c in pin_k:
-                        _set_base(c,
-                                  float(df.at[c, "base_quota"]) * factor)
-                        scaled.append(df.at[c, "node_id"])
-                    scaled_pin_names.extend(scaled)
-                    action, resolved = "scaled_pins", True
-                else:
-                    action, resolved, scaled = "left", False, []
-            else:                        # undershoot, nothing free to grow
-                action, resolved, scaled = "left", False, []
-            report_rows.append({**kd, "node_id": node,
-                                "gap_before": round(gap, 2),
-                                "action": action,
-                                "pins_scaled": scaled,
-                                "resolved": resolved})
+            order.append(idx)
+            queue.extend(child_ix.get((k, df.at[idx, "node_id"]), []))
+        return order
 
-    # share_of_parent recompute on the (possibly) edited base layer
+    def _fix_children(k, idx, kd, propagate: bool) -> None:
+        """anchor='root' per-(cascade, parent) fix: pinned hold, free
+        fill, on_overshoot policy. With propagate=True, adjusted
+        children's subtrees rescale proportionally (used by the
+        rebalance fallback, which runs bottom-up)."""
+        node = df.at[idx, "node_id"]
+        kids = child_ix.get((k, node), [])
+        if not kids:
+            return
+        target = float(df.at[idx, "base_quota"])
+        pin_k = [c for c in kids if _pinned(c)]
+        free_k = [c for c in kids if not _pinned(c)]
+        pin_sum = sum(float(df.at[c, "base_quota"]) for c in pin_k)
+        free_sum = sum(float(df.at[c, "base_quota"]) for c in free_k)
+        gap = (pin_sum + free_sum) - target
+        if abs(gap) <= tolerance:
+            return
+        old_vals = {c: float(df.at[c, "base_quota"]) for c in kids}
+
+        def _apply(c, new):
+            _set_base(c, new)
+            if propagate and old_vals[c] > 0:
+                f = new / old_vals[c]
+                if abs(f - 1.0) > 1e-9:
+                    _scale_subtree(k, c, f)
+
+        remainder = target - pin_sum
+        factor = None
+        if remainder >= -tolerance and free_k:
+            remainder = max(remainder, 0.0)
+            for c in free_k:
+                cb = old_vals[c]
+                share = (remainder * cb / free_sum if free_sum > 0
+                         else remainder / len(free_k))
+                _apply(c, share)
+            action, resolved, scaled = "scaled_free", True, []
+        elif remainder < -tolerance:
+            if on_overshoot == "error":
+                raise ValueError(
+                    f"enforce_identities: pinned children of '{node}' "
+                    f"in cascade {kd or '<single>'} sum to "
+                    f"{pin_sum:,.2f} against a parent budget of "
+                    f"{target:,.2f} (overshoot {pin_sum - target:,.2f})."
+                    f" Use on_overshoot='scale_pins'/'rebalance', or "
+                    f"'allow' to keep the gap.")
+            for c in free_k:
+                _apply(c, 0.0)
+            if (on_overshoot in ("scale_pins", "rebalance")
+                    and pin_sum > 0):
+                factor = max(target, 0.0) / pin_sum
+                scaled = []
+                for c in pin_k:
+                    _apply(c, old_vals[c] * factor)
+                    scaled.append(df.at[c, "node_id"])
+                    scaled_pin_notes.append(
+                        f"{df.at[c, 'node_id']}@{kd or '<single>'}: "
+                        f"x{factor:.4f}")
+                action, resolved = "scaled_pins", True
+            else:
+                action, resolved, scaled = "left", False, []
+        else:
+            action, resolved, scaled = "left", False, []
+        report_rows.append({**kd, "node_id": node,
+                            "gap_before": round(gap, 2),
+                            "action": action,
+                            "factor": (round(factor, 6)
+                                       if factor is not None else None),
+                            "pins_scaled": scaled,
+                            "resolved": resolved})
+
+    if anchor == "leaves":
+        # Bottom-up rebuild (#58): parents derived as exact child sums,
+        # root floats. Pins never touched; conservation by construction.
+        for k, idxs in groups.items():
+            kd = dict(zip(keys, k)) if keys else {}
+            for idx in reversed(_bfs_order(k, idxs)):
+                node = df.at[idx, "node_id"]
+                kids = child_ix.get((k, node), [])
+                if not kids:
+                    continue
+                new = sum(float(df.at[c, "base_quota"]) for c in kids)
+                gap = new - float(df.at[idx, "base_quota"])
+                if abs(gap) > tolerance:
+                    report_rows.append({**kd, "node_id": node,
+                                        "gap_before": round(gap, 2),
+                                        "action": "floated",
+                                        "factor": None,
+                                        "pins_scaled": [],
+                                        "resolved": True})
+                _set_base(idx, new)
+    elif on_overshoot == "rebalance":
+        # Bottom-up across combos (#59): float a node's per-combo
+        # values to its child sums whenever the node's AGGREGATE is
+        # conserved; only genuinely-off aggregates fall back to
+        # per-combo scaling (subtrees propagated).
+        node_rows: Dict[str, List[Tuple[Any, Any]]] = {}
+        node_depth: Dict[str, int] = {}
+        for k, idxs in groups.items():
+            depth_map = {}
+            for pos, idx in enumerate(_bfs_order(k, idxs)):
+                node = df.at[idx, "node_id"]
+                p_ = df.at[idx, "parent"]
+                depth_map[node] = (depth_map.get(p_, -1) + 1
+                                   if pd.notna(p_) else 0)
+                node_rows.setdefault(node, []).append((k, idx))
+                node_depth[node] = max(node_depth.get(node, 0),
+                                       depth_map[node])
+        parents = [n for n in node_rows
+                   if any(child_ix.get((k, n)) for k, _ in node_rows[n])]
+        for node in sorted(parents, key=lambda n: -node_depth[n]):
+            entries = node_rows[node]
+            s = {k: sum(float(df.at[c, "base_quota"])
+                        for c in child_ix.get((k, node), []))
+                 for k, _ in entries}
+            p = {k: float(df.at[idx, "base_quota"])
+                 for k, idx in entries}
+            if abs(sum(s.values()) - sum(p.values())) <= tolerance:
+                for k, idx in entries:
+                    if abs(s[k] - p[k]) > tolerance:
+                        report_rows.append(
+                            {**(dict(zip(keys, k)) if keys else {}),
+                             "node_id": node,
+                             "gap_before": round(s[k] - p[k], 2),
+                             "action": "rebalanced", "factor": None,
+                             "pins_scaled": [], "resolved": True})
+                    _set_base(idx, s[k])
+            else:
+                for k, idx in entries:
+                    _fix_children(k, idx,
+                                  dict(zip(keys, k)) if keys else {},
+                                  propagate=True)
+    else:
+        # anchor='root', top-down (v0.35.0 behavior, + factor audit)
+        for k, idxs in groups.items():
+            kd = dict(zip(keys, k)) if keys else {}
+            for idx in _bfs_order(k, idxs):
+                _fix_children(k, idx, kd, propagate=False)
+
     if "share_of_parent" in df.columns:
         for idx in df.index:
             k = key_of.at[idx]
@@ -1270,12 +1370,14 @@ def enforce_identities(
                                              else float("nan"))
 
     report = pd.DataFrame(report_rows)
-    if scaled_pin_names:
+    if scaled_pin_notes:
+        shown = scaled_pin_notes[:6]
+        more = ("" if len(scaled_pin_notes) <= 6
+                else f" (+{len(scaled_pin_notes) - 6} more)")
         warnings.warn(
-            f"enforce_identities: scaled {len(scaled_pin_names)} pinned "
-            f"node(s) down to fit their parents "
-            f"({sorted(set(scaled_pin_names))}) — their pinned totals "
-            f"are no longer exact. See the returned report.",
+            f"enforce_identities: scaled pinned node(s) down to fit — "
+            f"{'; '.join(shown)}{more}. Their pinned totals are no "
+            f"longer exact; see the report's factor column.",
             UserWarning, stacklevel=2)
     if len(report) and not report["resolved"].all():
         left = report[~report.resolved]["node_id"].tolist()

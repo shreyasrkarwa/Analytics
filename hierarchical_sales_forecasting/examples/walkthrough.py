@@ -1058,6 +1058,11 @@ print(f"Frozen rep untouched: {frozen_same} · "
 # on_missing='skip'|'warn') records them in the feasibility report
 # (skipped=True, reason='node_absent'|'empty_scope') and drops them
 # entirely (no ghost protection side-effects).
+# v0.37.0 (#58/#59): enforce_identities anchors both ways —
+# anchor='leaves' derives parents bottom-up (pins stand, root floats),
+# and on_overshoot='rebalance' floats a node's per-combo values to its
+# child sums whenever its AGGREGATE is conserved (aggregate pins stay
+# exact); scaled pins report per-row factors.
 # v0.35.0 (#54/#55): cross-pin envelope safety — apply_pins checks
 # every (cascade, parent) identity after all pins land
 # (attrs['overshoot_report'], on_overshoot='scale_pins'|'error'|

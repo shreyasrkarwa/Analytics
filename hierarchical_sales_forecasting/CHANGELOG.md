@@ -3,6 +3,49 @@
 All notable changes to `b2b_revenue_forecasting` are documented here.
 This project loosely follows [Semantic Versioning](https://semver.org/).
 
+## [0.37.0] — 2026-07
+
+Closes [issue #58](https://github.com/shreyasrkarwa/Analytics/issues/58)
+and [issue #59](https://github.com/shreyasrkarwa/Analytics/issues/59).
+#59 is the important one, and we own it plainly: v0.35.0's
+`on_overshoot='scale_pins'` was per-combo and one-directional, so
+when aggregate pins were correct in total but combos deliberately
+over/undershot (exactly what concentrate/resplit_by_metric compose
+into), it removed the overshoot WITHOUT restoring the undershoot —
+silent money loss with shipped APIs. Reproduced exactly, fixed, and
+the failure shapes are now pinned as tests so they can't return.
+
+### Added
+- **`enforce_identities(..., anchor='root'|'leaves')`** (#58):
+  'leaves' is the bottom-up dual — children stand, every parent is
+  DERIVED as the exact sum of its children up to the root (which
+  floats). Pins never touched; conservation by construction;
+  on_overshoot ignored. The filer's 30-line rebuild, shipped.
+- **`on_overshoot='rebalance'`** (#59): processed bottom-up ACROSS
+  combos — when a node's aggregate matches its children's aggregate
+  (within tolerance), its per-combo values FLOAT to the child sums.
+  The aggregate is conserved, which means AGGREGATE PINS on that
+  node stay exact (a Pin is an aggregate total by definition — the
+  mode is philosophically aligned, not a compromise). Only a
+  genuinely-off aggregate falls back to per-combo scale-down, now
+  with proportional subtree propagation. The DACH3 shape: zero loss,
+  reconcile clean.
+- **Audit-grade scaling output** (#58's complaint): the report gains
+  a `factor` column on scaled rows, and the warning names
+  node@combo: factor pairs instead of "scaled N nodes".
+- `apply_pins(on_overshoot='rebalance')` passthrough.
+- `tests/test_anchor_rebalance.py` — 5 tests: the #59 netting shape
+  (rebalance conserves AND reconciles; scale_pins' exact loss and
+  allow's broken identities pinned as documentation), leaves-anchor
+  float-up with exact pins, off-aggregate fallback with factors,
+  clean no-ops for both anchors, apply_pins passthrough.
+
+### Unchanged
+- 'scale_pins'/'error'/'allow' semantics are untouched (back-compat;
+  full suite green) — but scale_pins' docstring now carries an
+  explicit CAUTION pointing at 'rebalance' for the per-combo
+  concentration case.
+
 ## [0.36.1] — 2026-07
 
 Docs/metadata only — no behavior changes.

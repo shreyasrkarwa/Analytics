@@ -64,6 +64,10 @@ Battle-tested: hardened against 60 field-filed issues from production deployment
 | **`CommitReconciler`** | Detect sandbagging and "happy ears" bias via historical Bias Quotients, then auto-correct forecasts |
 | **`PipelineAdjuster` / `adjust_many`** | Pipeline coverage bands with ancestor-inherited thresholds and zero-sum IC redistribution — single-cascade or batch-native on any `cascade_many` output |
 
+### What's New in v0.37.0 — anchored both ways, and a loss bug owned ([#58](https://github.com/shreyasrkarwa/Analytics/issues/58), [#59](https://github.com/shreyasrkarwa/Analytics/issues/59))
+
+Honest changelog first: v0.35.0's `scale_pins` was per-combo and one-directional — with aggregate-correct pins deliberately concentrated across combos (what `concentrate`/`resplit_by_metric` produce), it cut overshoots without restoring undershoots. Silent loss; reproduced; fixed. `on_overshoot='rebalance'` processes bottom-up *across* combos: when a node's aggregate matches its children's, its per-combo values float to the child sums — conserving the aggregate, which keeps aggregate `Pin`s exact by definition. And `anchor='leaves'` ships the full dual: leaf pins stand, parents derive as child sums, the root floats up — conservation by construction. Scaled pins now report per-row `factor`s and warnings name `node@combo: factor`. The old modes are unchanged and their failure shapes are pinned as tests.
+
 ### What's New in v0.36.0 — stakeholder edits, spelled ([#57](https://github.com/shreyasrkarwa/Analytics/issues/57))
 
 ```python
