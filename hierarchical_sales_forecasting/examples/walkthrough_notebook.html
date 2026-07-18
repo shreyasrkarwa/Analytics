@@ -76,12 +76,12 @@
 <div class="container">
 
 <header>
-  <div class="eyebrow">b2b_revenue_forecasting · v0.37.0</div>
+  <div class="eyebrow">b2b_revenue_forecasting · v0.38.0</div>
   <h1>Multi-Metric Cascading &amp; Reconciliation — Walkthrough</h1>
   <p class="subtitle">End-to-end notebook: how an analyst takes one CSV of historical performance + pipeline data and produces a quota plan, a pipeline diagnosis, a redistributed plan, and a bias-corrected forecast — with full visibility into how each metric actually influences allocation.</p>
   <div class="meta">
     <span><strong>Package:</strong> b2b-revenue-forecasting</span>
-    <span><strong>Version:</strong> 0.37.0</span>
+    <span><strong>Version:</strong> 0.38.0</span>
     <span><strong>Dataset:</strong> 170 ICs · 217 hierarchy nodes</span>
     <span><strong>Macro target:</strong> $50,000,000</span>
   </div>
@@ -1032,7 +1032,19 @@ IC_Mgr_Dir_RVP_NA_1_1_1_1   140122.21       161841.14
 IC_Mgr_Dir_RVP_NA_1_1_1_2   172605.34       199359.17
 IC_Mgr_Dir_RVP_NA_1_1_1_3   187272.45       216299.68
 Routed base per depth all equal $500,000: True</pre>
-The split runs on the BASE layer (proportional to the recipients' existing <code class="inline">base_quota</code>, or <code class="inline">'equal'</code>, or any capacity column); hedged values derive from each recipient's own ratio; ancestor rollups keep every depth reconciled; and routed rows keep the original segment tags plus <code class="inline">routed=True</code> — concatenate to the main frame and the money is additive by construction. Per-product exclusions are simply two calls with different filters.</div>
+The split runs on the BASE layer (proportional to the recipients' existing <code class="inline">base_quota</code>, or <code class="inline">'equal'</code>, or any capacity column); hedged values derive from each recipient's own ratio; ancestor rollups keep every depth reconciled; and routed rows keep the original segment tags plus <code class="inline">routed=True</code> — concatenate to the main frame and the money is additive by construction. Per-product exclusions are simply two calls with different filters.
+
+<strong>Fold, don't concat (v0.38.0, issue #61).</strong> The concat pattern leaves node-grain duplicates &mdash; every routed ancestor appears twice, and each downstream group-by re-derives the collapse by hand. <code class="inline">route_targets(..., merge=True)</code> returns the FULL quotas frame with routed dollars folded into the matching tree rows instead: each routed row first <em>adopts</em> the recipient-side identity (the <code class="inline">recipient_keys</code> columns are overwritten &mdash; that's what lands a Government orphan ON the Commercial rows it was routed to), then matches on (node_id + cascade keys) and sums base/cascaded via each node's own ratio &mdash; <code class="inline">reconcile()</code> clean by construction. Provenance survives the fold: <code class="inline">routed</code>, <code class="inline">routed_base_quota</code> (exact dollars added), <code class="inline">routed_from</code> (the adopted-away orphan identity), <code class="inline">attrs['route_report']</code>; <code class="inline">hedge_buffer</code>/<code class="inline">share_of_parent</code> recomputed; unmatched rows appended with a warning:
+
+<pre class="output" style="margin-top:8px;">--- route_targets(merge=True): fold, don't concat (v0.38.0) ---
+                  node_id  base_quota  routed_base_quota       routed_from
+              Global_Corp 25500000.00          500000.00 Region=Government
+                       NA 25500000.00          500000.00 Region=Government
+                 RVP_NA_1 15785338.72          500000.00 Region=Government
+           Dir_RVP_NA_1_1  6190101.81          500000.00 Region=Government
+     Mgr_Dir_RVP_NA_1_1_1  2035862.75          500000.00 Region=Government
+IC_Mgr_Dir_RVP_NA_1_1_1_1   289410.78          140122.21 Region=Government
+Rows for IC_Mgr_Dir_RVP_NA_1_1_1_1 in Q1 — concat: 2 (the #61 footgun), merged: 1; folded rows: 8 — all matched</pre></div>
 
   <div class="callout"><strong>Per-depth hedging (v0.11.0).</strong> <code class="inline">HedgeByDepth</code> expresses level-based policies anywhere <code class="inline">hedge_multiplier</code> is accepted: <code class="inline">from_leaves={1: 1.10, 2: 1.05}</code> keys by distance to the farthest descendant IC (1 = deepest manager — correct even in jagged hierarchies where root-depth would lie), <code class="inline">from_root={...}</code> keys by <code class="inline">node_depths()</code>-style depth, and both compose multiplicatively. The spec resolves against each combination's freshly built hierarchy at cascade time, so <code class="inline">base_quota</code> reconciliation and all audit columns behave exactly as with a hand-built per-node dict. Inspect what a graph would get via <code class="inline">HedgeByDepth(...).resolve(hierarchy.graph)</code>.</div>
 </section>

@@ -932,6 +932,8 @@ def route_targets(
     recipient_keys: Optional[Dict[str, Any]] = None,
     split: str = "base_quota",
     rollup: bool = True,
+    merge: bool = False,
+    row_keys: Optional[List[str]] = None,
 ) -> pd.DataFrame:
     """
     Route target rows onto named recipient nodes in a DIFFERENT part of
@@ -1001,11 +1003,48 @@ def route_targets(
     rollup : bool
         Emit ancestor rows (default True) so per-depth sums of the
         routed slice equal the routed amount.
+    merge : bool
+        False (default) — return the routed rows only, tagged with the
+        ORIGINAL target row's columns (the additive-overlay reading:
+        the money stays attributable to the orphan segment as separate
+        rows, and you concatenate yourself).
+
+        True (issue #61) — return the FULL quotas frame with the routed
+        dollars FOLDED into the matching tree rows, so node-grain
+        consumers never see two rows for the same node. Mechanics:
+
+        - each routed row ADOPTS the recipient-side identity first: the
+          columns named in `recipient_keys` are overwritten with the
+          recipient values (that is what makes the rows matchable — a
+          Government orphan lands ON the Commercial rows it was routed
+          to). The remaining target columns (e.g. fiscal_quarter) are
+          kept as-is.
+        - rows are matched on (node_id + cascade keys) — keys resolved
+          exactly as everywhere else: explicit `row_keys` ->
+          attrs['cascade_row_keys'] -> inference.
+        - matched rows: base_quota / cascaded_quota summed (cascaded
+          via each node's own ratio, so per-row hedge ratios are
+          preserved and reconcile() stays clean); unmatched rows are
+          appended and a warning names them.
+        - provenance survives the fold: `routed=True` on every touched
+          row, `routed_base_quota` holds the exact dollars added, and
+          `routed_from` records the orphan identity that was adopted
+          away (e.g. 'segment=Government').
+        - derived columns are recomputed on touched rows: hedge_buffer,
+          overassignment_pct, and share_of_parent (whole frame).
+        - a per-row fold record lands in attrs['route_report'].
+
+        merge=True requires rollup=True (folding leaves alone would
+        break the parent/child identities it exists to protect).
+    row_keys : Optional[List[str]]
+        Only used with merge=True: explicit cascade key columns for the
+        fold match, overriding attrs['cascade_row_keys'] / inference.
 
     Returns
     -------
-    pd.DataFrame — routed rows only (concatenate to quotas_long
-    yourself), sorted by target row then depth.
+    pd.DataFrame — with merge=False (default): routed rows only
+    (concatenate to quotas_long yourself), sorted by target row then
+    depth. With merge=True: the full merged quotas frame.
     """
     if target_col not in targets.columns:
         raise ValueError(f"target_col '{target_col}' not found in targets "
@@ -1013,6 +1052,11 @@ def route_targets(
     if not recipients:
         raise ValueError("recipients must be a non-empty list of leaf "
                          "node_ids.")
+    if merge and not rollup:
+        raise ValueError(
+            "route_targets: merge=True requires rollup=True — folding "
+            "leaf rows alone would break the parent/child identities "
+            "the fold exists to protect.")
     required = {"node_id", "parent", "depth", "base_quota",
                 "cascaded_quota"}
     missing = required - set(quotas_long.columns)
@@ -1109,7 +1153,132 @@ def route_targets(
     if not routed.empty and "depth" in routed.columns:
         routed = routed.sort_values(["depth", "node_id"],
                                     kind="stable").reset_index(drop=True)
-    return routed
+    if not merge:
+        return routed
+
+    # ---- merge=True (issue #61): fold routed dollars into the tree ----
+    out = quotas_long.copy()
+    out.attrs = dict(quotas_long.attrs)
+    if routed.empty:
+        out.attrs["route_report"] = []
+        return out
+
+    # 1. Identity adoption: overwrite the recipient_keys columns with
+    #    the recipient-side values so the rows become matchable; keep
+    #    the orphan identity in routed_from.
+    adopted = routed.copy()
+    frm = []
+    for i in adopted.index:
+        diffs = []
+        for col, val in (recipient_keys or {}).items():
+            if col not in adopted.columns:
+                adopted[col] = val
+                continue
+            old = adopted.at[i, col]
+            if not (old == val or (pd.isna(old) and pd.isna(val))):
+                diffs.append(f"{col}={old}")
+            adopted.at[i, col] = val
+        frm.append("; ".join(diffs) if diffs else None)
+    adopted["routed_from"] = frm
+
+    # 2. Resolve the fold keys on the tree frame (same machinery as
+    #    rollup_metrics / reconcile: row_keys -> stamp -> inference).
+    keys, _, row_ix, _ = _cascade_key_context(
+        quotas_long, row_keys, exclude_cols=["routed"],
+        caller="route_targets")
+    lacking = [c for c in keys if c not in adopted.columns]
+    if lacking:
+        warnings.warn(
+            f"route_targets(merge=True): targets lack cascade key "
+            f"column(s) {lacking} — routed rows can only match tree "
+            f"rows whose values there are NaN. Cover them via "
+            f"recipient_keys or pass row_keys=.",
+            UserWarning, stacklevel=2)
+
+    for col, default in (("routed", False), ("routed_base_quota", 0.0),
+                         ("routed_from", None)):
+        if col not in out.columns:
+            out[col] = default
+    out["routed"] = out["routed"].fillna(False).astype(bool)
+    out["routed_base_quota"] = pd.to_numeric(
+        out["routed_base_quota"], errors="coerce").fillna(0.0)
+
+    # 3. Fold matched rows; collect the rest for appending.
+    records, appended, touched = [], [], set()
+    for i in adopted.index:
+        node = adopted.at[i, "node_id"]
+        k = tuple(None if (c in lacking or pd.isna(adopted.at[i, c]))
+                  else adopted.at[i, c] for c in keys)
+        badd = float(adopted.at[i, "base_quota"])
+        cadd = float(adopted.at[i, "cascaded_quota"])
+        idx = row_ix.get((k, node))
+        rec = {"node_id": node, "base_added": round(badd, 2),
+               "cascaded_added": round(cadd, 2),
+               "matched": idx is not None,
+               "routed_from": adopted.at[i, "routed_from"]}
+        rec.update({c: v for c, v in zip(keys, k)})
+        records.append(rec)
+        if idx is None:
+            appended.append(i)
+            continue
+        out.at[idx, "base_quota"] = round(
+            float(out.at[idx, "base_quota"]) + badd, 2)
+        out.at[idx, "cascaded_quota"] = round(
+            float(out.at[idx, "cascaded_quota"]) + cadd, 2)
+        out.at[idx, "routed"] = True
+        out.at[idx, "routed_base_quota"] = round(
+            float(out.at[idx, "routed_base_quota"]) + badd, 2)
+        tag = adopted.at[i, "routed_from"]
+        if tag:
+            prev = out.at[idx, "routed_from"]
+            if prev is None or (not isinstance(prev, str) and pd.isna(prev)):
+                out.at[idx, "routed_from"] = tag
+            elif tag not in str(prev):
+                out.at[idx, "routed_from"] = f"{prev}; {tag}"
+        touched.add(idx)
+
+    if appended:
+        extra = adopted.loc[appended].copy()
+        extra["routed"] = True
+        extra["routed_base_quota"] = extra["base_quota"]
+        sample = sorted({str(adopted.at[i, "node_id"])
+                         for i in appended})[:5]
+        warnings.warn(
+            f"route_targets(merge=True): {len(appended)} routed row(s) "
+            f"had no matching (node_id, cascade-key) row in quotas_long "
+            f"(e.g. {sample}) and were APPENDED instead of folded — "
+            f"check recipient_keys / row_keys cover the tree's cascade "
+            f"identity.", UserWarning, stacklevel=2)
+        attrs_keep = out.attrs
+        out = pd.concat([out, extra], ignore_index=True)
+        out.attrs = attrs_keep
+        touched.update(out.index[len(out) - len(extra):])
+
+    # 4. Recompute derived columns on touched rows / whole frame.
+    for idx in touched:
+        b = float(out.at[idx, "base_quota"])
+        c = float(out.at[idx, "cascaded_quota"])
+        if "hedge_buffer" in out.columns:
+            out.at[idx, "hedge_buffer"] = round(c - b, 2)
+        if "overassignment_pct" in out.columns:
+            out.at[idx, "overassignment_pct"] = (round((c - b) / b, 4)
+                                                 if b != 0 else 0.0)
+    if "share_of_parent" in out.columns and touched:
+        _, key_of2, row_ix2, _ = _cascade_key_context(
+            out, keys, exclude_cols=["routed"], caller="route_targets")
+        for idx in out.index:
+            k = key_of2.at[idx]
+            p_ = out.at[idx, "parent"]
+            if pd.isna(p_) or (k, p_) not in row_ix2:
+                out.at[idx, "share_of_parent"] = 1.0
+                continue
+            pb = float(out.at[row_ix2[(k, p_)], "base_quota"])
+            nb = float(out.at[idx, "base_quota"])
+            out.at[idx, "share_of_parent"] = (round(nb / pb, 6)
+                                              if pb != 0
+                                              else float("nan"))
+    out.attrs["route_report"] = records
+    return out
 
 
 _ROLLUP_AGGS = ("sum", "mean", "max", "min")

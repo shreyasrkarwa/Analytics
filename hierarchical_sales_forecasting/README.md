@@ -37,7 +37,7 @@ Battle-tested: hardened against 60 field-filed issues from production deployment
 |--------|---------|
 | **`cascade_many`** | Every (product × sales-type × region × quarter) combination in one call — prepare each hierarchy once, cascade every sub-target against it. Callable metric/gate policies receive the **full cascade identity** (group keys + sub-target columns, verbatim) per target row; dropped targets come back as data; outputs are stamped with `cascade_row_keys` so downstream tools need no configuration |
 | **`cascade_levels`** | Level-by-level cascading with different metrics/gates/hedges/pins per transition, base layer threaded forward — full diagnostics parity with `cascade_many` |
-| **`route_targets`** | Route orphaned targets (no hierarchy branch) onto named recipients anywhere in the tree, ancestors rolled up |
+| **`route_targets`** | Route orphaned targets (no hierarchy branch) onto named recipients anywhere in the tree, ancestors rolled up — as a tagged overlay, or `merge=True` to fold the dollars into the tree rows with full provenance (`routed_base_quota`, `routed_from`) |
 
 ### Plan editing (the pin engine)
 
@@ -63,6 +63,10 @@ Battle-tested: hardened against 60 field-filed issues from production deployment
 |--------|---------|
 | **`CommitReconciler`** | Detect sandbagging and "happy ears" bias via historical Bias Quotients, then auto-correct forecasts |
 | **`PipelineAdjuster` / `adjust_many`** | Pipeline coverage bands with ancestor-inherited thresholds and zero-sum IC redistribution — single-cascade or batch-native on any `cascade_many` output |
+
+### What's New in v0.38.0 — routed money, one row per node ([#61](https://github.com/shreyasrkarwa/Analytics/issues/61))
+
+The `rollup=True` + concat pattern our own docstring recommended leaves node-grain duplicates — every routed ancestor shows up twice, and each downstream group-by re-derives the collapse by hand. `route_targets(..., merge=True)` now returns the full quotas frame with the routed dollars folded in: each routed row first *adopts* the recipient-side identity (the `recipient_keys` columns are overwritten — that's what makes a Government orphan land *on* the Commercial rows it was routed to), then folds into the matching (node_id + cascade keys) row. Cascaded sums via each node's own ratio and rollup adds the same delta up the chain, so `reconcile()` is clean on the merged frame by construction. Provenance survives: `routed` flag, `routed_base_quota` (the exact dollars added), `routed_from` (the orphan identity adopted away, accumulating across orphans), and a per-row fold record in `attrs['route_report']`. `hedge_buffer`/`overassignment_pct`/`share_of_parent` recomputed; unmatched rows appended with a warning; `merge=False` (default) unchanged for when you *want* the orphan segment as separate rows.
 
 ### What's New in v0.37.0 — anchored both ways, and a loss bug owned ([#58](https://github.com/shreyasrkarwa/Analytics/issues/58), [#59](https://github.com/shreyasrkarwa/Analytics/issues/59))
 

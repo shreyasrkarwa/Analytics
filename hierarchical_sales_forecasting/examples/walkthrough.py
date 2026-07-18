@@ -1018,6 +1018,34 @@ print(f"Routed base per depth all equal $500,000: "
       f"{(abs(routed.groupby('depth')['base_quota'].sum() - 500_000) < 0.05).all()}")
 # full plan = pd.concat([q_gov, routed]) — additive by construction
 
+# NEW in v0.38.0 (#61): merge=True folds the routed dollars INTO the
+# tree rows instead of returning an overlay — no node-grain duplicates
+# for downstream group-bys/audits/persists. Each routed row adopts the
+# recipient-side identity (recipient_keys columns overwritten), matches
+# on (node_id + cascade keys), and sums base/cascaded via each node's
+# own ratio — reconcile() clean by construction. Provenance survives:
+# routed flag, routed_base_quota (exact dollars added), routed_from
+# (the orphan identity adopted away), attrs['route_report'].
+print(f"\n--- route_targets(merge=True): fold, don't concat "
+      f"(v0.38.0) ---")
+merged = route_targets(
+    dropped, q_gov, recipients=gov_recipients, target_col='q_target',
+    recipient_keys={'Region': 'NA', 'fiscal_quarter': 1},
+    split='base_quota', merge=True,
+)
+m_ix = merged[(merged.Region == 'NA') & (merged.fiscal_quarter == 1)
+              & merged.routed]
+print(m_ix[['node_id', 'base_quota', 'routed_base_quota',
+            'routed_from']].head(6).to_string(index=False))
+_n = gov_recipients[0]
+_concat = pd.concat([q_gov, routed], ignore_index=True)
+_c = len(_concat[(_concat.node_id == _n) & (_concat.fiscal_quarter == 1)])
+_m = len(merged[(merged.node_id == _n) & (merged.fiscal_quarter == 1)])
+print(f"Rows for {_n} in Q1 — concat: {_c} (the #61 footgun), "
+      f"merged: {_m}; folded rows: "
+      f"{int(pd.DataFrame(merged.attrs['route_report'])['matched'].sum())}"
+      f" — all matched")
+
 # NEW in v0.16.0 (issues #22/#31/#24): pin a node to an EXACT TOTAL
 # across every cascade it appears in, conserved at the parent.
 print(f"\n--- Aggregate pins across cascades (v0.16.0) ---")

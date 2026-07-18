@@ -3,6 +3,47 @@
 All notable changes to `b2b_revenue_forecasting` are documented here.
 This project loosely follows [Semantic Versioning](https://semver.org/).
 
+## [0.38.0] — 2026-07
+
+Closes [issue #61](https://github.com/shreyasrkarwa/Analytics/issues/61).
+The `rollup=True` + concat pattern our own docstring recommends leaves
+node-grain duplicates: every routed ancestor appears twice (once from
+the tree, once from the routed overlay), so any group-by, audit, or
+persist keyed on node_id sees two rows for ENTERPRISE_EMEA at depth 0.
+The filer's 20-line groupby collapse — with its `routed = max(...)`
+flag gymnastics — was the tell that the composition was missing.
+
+### Added
+- **`route_targets(..., merge=True)`** (#61): returns the FULL quotas
+  frame with routed dollars FOLDED into the matching tree rows instead
+  of the routed overlay. Each routed row first ADOPTS the
+  recipient-side identity (the `recipient_keys` columns are
+  overwritten with the recipient values — that is what makes a
+  Government orphan land ON the Commercial rows it was routed to);
+  rows are then matched on (node_id + cascade keys), resolved exactly
+  as everywhere else (explicit `row_keys` → `attrs['cascade_row_keys']`
+  → inference). Matched rows sum `base_quota`/`cascaded_quota`
+  (cascaded via each node's own ratio, so `reconcile()` is clean on
+  the merged frame by construction — rollup adds the same delta up
+  the chain); unmatched rows are appended with a warning naming them.
+- **Provenance survives the fold**: `routed=True` on every touched
+  row, `routed_base_quota` holds the exact dollars added,
+  `routed_from` records the orphan identity that was adopted away
+  (e.g. `'segment=Government'`, accumulating across multiple orphans),
+  and `attrs['route_report']` carries a per-routed-row fold record
+  (node, keys, dollars, matched).
+- **Derived columns recomputed** on touched rows: `hedge_buffer`,
+  `overassignment_pct`, and `share_of_parent` (whole frame, same
+  machinery as `adjust_many`).
+- `merge=True` requires `rollup=True` (folding leaves alone would
+  break the parent/child identities the fold exists to protect);
+  `merge=False` (default) is byte-identical to the old behavior — the
+  additive-overlay reading stays available when you WANT the orphan
+  segment visible as separate rows.
+- Tests: `tests/test_route_merge.py` — the footgun reproduced then
+  folded away, equivalence with the filer's hand collapse, reconcile
+  clean, provenance, multi-orphan accumulation, append path, guards.
+
 ## [0.37.0] — 2026-07
 
 Closes [issue #58](https://github.com/shreyasrkarwa/Analytics/issues/58)
