@@ -1,0 +1,714 @@
+{
+  "n_train": 15227035,
+  "n_test": 10753989,
+  "sample_mod": 1,
+  "split_date": "2016-07-01",
+  "feature_sets": {
+    "FS0": 19,
+    "FS1": 26,
+    "FS2": 33,
+    "FS3": 37
+  },
+  "models": {
+    "logit_FS0": {
+      "auc": 0.8432,
+      "pr_auc": 0.6308,
+      "logloss": 0.13981,
+      "brier": 0.03154,
+      "auc_near_boundary": 0.8365,
+      "reliability": [
+        {
+          "bin": 0,
+          "n": 8922271,
+          "mean_pred": 0.03527,
+          "mean_obs": 0.02011
+        },
+        {
+          "bin": 1,
+          "n": 1194149,
+          "mean_pred": 0.14665,
+          "mean_obs": 0.04507
+        },
+        {
+          "bin": 2,
+          "n": 82700,
+          "mean_pred": 0.22563,
+          "mean_obs": 0.06861
+        },
+        {
+          "bin": 3,
+          "n": 124878,
+          "mean_pred": 0.38479,
+          "mean_obs": 0.22005
+        },
+        {
+          "bin": 4,
+          "n": 116918,
+          "mean_pred": 0.44388,
+          "mean_obs": 0.30222
+        },
+        {
+          "bin": 5,
+          "n": 12037,
+          "mean_pred": 0.55201,
+          "mean_obs": 0.75401
+        },
+        {
+          "bin": 6,
+          "n": 241087,
+          "mean_pred": 0.67402,
+          "mean_obs": 0.938
+        },
+        {
+          "bin": 7,
+          "n": 20321,
+          "mean_pred": 0.7134,
+          "mean_obs": 0.90532
+        },
+        {
+          "bin": 8,
+          "n": 39628,
+          "mean_pred": 0.84565,
+          "mean_obs": 0.99894
+        }
+      ],
+      "fit_minutes": 0.45
+    },
+    "hgb_FS0": {
+      "auc": 0.8675,
+      "pr_auc": 0.6585,
+      "logloss": 0.12398,
+      "brier": 0.0285,
+      "auc_near_boundary": 0.8674,
+      "reliability": [
+        {
+          "bin": 0,
+          "n": 9259916,
+          "mean_pred": 0.02831,
+          "mean_obs": 0.01715
+        },
+        {
+          "bin": 1,
+          "n": 792555,
+          "mean_pred": 0.14011,
+          "mean_obs": 0.0749
+        },
+        {
+          "bin": 2,
+          "n": 126031,
+          "mean_pred": 0.23864,
+          "mean_obs": 0.17962
+        },
+        {
+          "bin": 3,
+          "n": 146596,
+          "mean_pred": 0.35085,
+          "mean_obs": 0.21942
+        },
+        {
+          "bin": 4,
+          "n": 108952,
+          "mean_pred": 0.45525,
+          "mean_obs": 0.22808
+        },
+        {
+          "bin": 5,
+          "n": 5469,
+          "mean_pred": 0.52974,
+          "mean_obs": 0.25635
+        },
+        {
+          "bin": 6,
+          "n": 9348,
+          "mean_pred": 0.66009,
+          "mean_obs": 0.72133
+        },
+        {
+          "bin": 7,
+          "n": 43252,
+          "mean_pred": 0.76642,
+          "mean_obs": 0.85203
+        },
+        {
+          "bin": 8,
+          "n": 48675,
+          "mean_pred": 0.86208,
+          "mean_obs": 0.90046
+        },
+        {
+          "bin": 9,
+          "n": 213195,
+          "mean_pred": 0.96146,
+          "mean_obs": 0.97668
+        }
+      ],
+      "fit_minutes": 2.81
+    },
+    "xgb_FS0": {
+      "auc": 0.8678,
+      "pr_auc": 0.6598,
+      "logloss": 0.12374,
+      "brier": 0.02846,
+      "auc_near_boundary": 0.8674,
+      "reliability": [
+        {
+          "bin": 0,
+          "n": 9241480,
+          "mean_pred": 0.02756,
+          "mean_obs": 0.01712
+        },
+        {
+          "bin": 1,
+          "n": 789289,
+          "mean_pred": 0.14058,
+          "mean_obs": 0.07284
+        },
+        {
+          "bin": 2,
+          "n": 151371,
+          "mean_pred": 0.24058,
+          "mean_obs": 0.15821
+        },
+        {
+          "bin": 3,
+          "n": 134183,
+          "mean_pred": 0.34535,
+          "mean_obs": 0.23158
+        },
+        {
+          "bin": 4,
+          "n": 114594,
+          "mean_pred": 0.454,
+          "mean_obs": 0.226
+        },
+        {
+          "bin": 5,
+          "n": 7968,
+          "mean_pred": 0.53231,
+          "mean_obs": 0.28577
+        },
+        {
+          "bin": 6,
+          "n": 6968,
+          "mean_pred": 0.67156,
+          "mean_obs": 0.66145
+        },
+        {
+          "bin": 7,
+          "n": 38953,
+          "mean_pred": 0.76498,
+          "mean_obs": 0.8442
+        },
+        {
+          "bin": 8,
+          "n": 55937,
+          "mean_pred": 0.85859,
+          "mean_obs": 0.89545
+        },
+        {
+          "bin": 9,
+          "n": 213246,
+          "mean_pred": 0.96433,
+          "mean_obs": 0.9773
+        }
+      ],
+      "fit_minutes": 9.02
+    },
+    "logit_FS1": {
+      "auc": 0.8813,
+      "pr_auc": 0.6526,
+      "logloss": 0.13915,
+      "brier": 0.03216,
+      "auc_near_boundary": 0.8582,
+      "reliability": [
+        {
+          "bin": 0,
+          "n": 8027675,
+          "mean_pred": 0.03497,
+          "mean_obs": 0.01516
+        },
+        {
+          "bin": 1,
+          "n": 1644233,
+          "mean_pred": 0.12749,
+          "mean_obs": 0.0394
+        },
+        {
+          "bin": 2,
+          "n": 449117,
+          "mean_pred": 0.25507,
+          "mean_obs": 0.06691
+        },
+        {
+          "bin": 3,
+          "n": 76206,
+          "mean_pred": 0.35779,
+          "mean_obs": 0.24112
+        },
+        {
+          "bin": 4,
+          "n": 228317,
+          "mean_pred": 0.43973,
+          "mean_obs": 0.26951
+        },
+        {
+          "bin": 5,
+          "n": 13977,
+          "mean_pred": 0.53171,
+          "mean_obs": 0.28375
+        },
+        {
+          "bin": 6,
+          "n": 55118,
+          "mean_pred": 0.67337,
+          "mean_obs": 0.87652
+        },
+        {
+          "bin": 7,
+          "n": 218153,
+          "mean_pred": 0.74165,
+          "mean_obs": 0.94308
+        },
+        {
+          "bin": 8,
+          "n": 40888,
+          "mean_pred": 0.87509,
+          "mean_obs": 0.98334
+        },
+        {
+          "bin": 9,
+          "n": 305,
+          "mean_pred": 0.92899,
+          "mean_obs": 0.73115
+        }
+      ],
+      "fit_minutes": 0.78
+    },
+    "hgb_FS1": {
+      "auc": 0.9076,
+      "pr_auc": 0.6879,
+      "logloss": 0.11583,
+      "brier": 0.02821,
+      "auc_near_boundary": 0.8889,
+      "reliability": [
+        {
+          "bin": 0,
+          "n": 9103498,
+          "mean_pred": 0.02215,
+          "mean_obs": 0.01312
+        },
+        {
+          "bin": 1,
+          "n": 724510,
+          "mean_pred": 0.14406,
+          "mean_obs": 0.0681
+        },
+        {
+          "bin": 2,
+          "n": 242104,
+          "mean_pred": 0.24344,
+          "mean_obs": 0.13588
+        },
+        {
+          "bin": 3,
+          "n": 255595,
+          "mean_pred": 0.3481,
+          "mean_obs": 0.27422
+        },
+        {
+          "bin": 4,
+          "n": 58297,
+          "mean_pred": 0.43329,
+          "mean_obs": 0.28773
+        },
+        {
+          "bin": 5,
+          "n": 11077,
+          "mean_pred": 0.55004,
+          "mean_obs": 0.19419
+        },
+        {
+          "bin": 6,
+          "n": 36489,
+          "mean_pred": 0.62791,
+          "mean_obs": 0.17855
+        },
+        {
+          "bin": 7,
+          "n": 5679,
+          "mean_pred": 0.7501,
+          "mean_obs": 0.39567
+        },
+        {
+          "bin": 8,
+          "n": 52466,
+          "mean_pred": 0.87926,
+          "mean_obs": 0.79966
+        },
+        {
+          "bin": 9,
+          "n": 264274,
+          "mean_pred": 0.95224,
+          "mean_obs": 0.9594
+        }
+      ],
+      "fit_minutes": 1.82
+    },
+    "xgb_FS1": {
+      "auc": 0.9068,
+      "pr_auc": 0.6888,
+      "logloss": 0.11695,
+      "brier": 0.02868,
+      "auc_near_boundary": 0.8879,
+      "reliability": [
+        {
+          "bin": 0,
+          "n": 9034333,
+          "mean_pred": 0.0219,
+          "mean_obs": 0.0131
+        },
+        {
+          "bin": 1,
+          "n": 737806,
+          "mean_pred": 0.14222,
+          "mean_obs": 0.06246
+        },
+        {
+          "bin": 2,
+          "n": 271581,
+          "mean_pred": 0.245,
+          "mean_obs": 0.13484
+        },
+        {
+          "bin": 3,
+          "n": 237893,
+          "mean_pred": 0.34676,
+          "mean_obs": 0.25008
+        },
+        {
+          "bin": 4,
+          "n": 91814,
+          "mean_pred": 0.43998,
+          "mean_obs": 0.27781
+        },
+        {
+          "bin": 5,
+          "n": 18962,
+          "mean_pred": 0.54059,
+          "mean_obs": 0.21511
+        },
+        {
+          "bin": 6,
+          "n": 39404,
+          "mean_pred": 0.63514,
+          "mean_obs": 0.17323
+        },
+        {
+          "bin": 7,
+          "n": 5868,
+          "mean_pred": 0.75902,
+          "mean_obs": 0.34509
+        },
+        {
+          "bin": 8,
+          "n": 54448,
+          "mean_pred": 0.87169,
+          "mean_obs": 0.81042
+        },
+        {
+          "bin": 9,
+          "n": 261880,
+          "mean_pred": 0.95911,
+          "mean_obs": 0.96144
+        }
+      ],
+      "fit_minutes": 1.71
+    },
+    "logit_FS2": {
+      "auc": 0.8832,
+      "pr_auc": 0.6508,
+      "logloss": 0.13972,
+      "brier": 0.03241,
+      "auc_near_boundary": 0.8605,
+      "reliability": [
+        {
+          "bin": 0,
+          "n": 8113209,
+          "mean_pred": 0.03539,
+          "mean_obs": 0.01494
+        },
+        {
+          "bin": 1,
+          "n": 1561443,
+          "mean_pred": 0.13494,
+          "mean_obs": 0.04087
+        },
+        {
+          "bin": 2,
+          "n": 438298,
+          "mean_pred": 0.25974,
+          "mean_obs": 0.06188
+        },
+        {
+          "bin": 3,
+          "n": 80310,
+          "mean_pred": 0.34876,
+          "mean_obs": 0.25233
+        },
+        {
+          "bin": 4,
+          "n": 209968,
+          "mean_pred": 0.44663,
+          "mean_obs": 0.26376
+        },
+        {
+          "bin": 5,
+          "n": 35841,
+          "mean_pred": 0.53643,
+          "mean_obs": 0.36952
+        },
+        {
+          "bin": 6,
+          "n": 35565,
+          "mean_pred": 0.66122,
+          "mean_obs": 0.89703
+        },
+        {
+          "bin": 7,
+          "n": 237640,
+          "mean_pred": 0.73698,
+          "mean_obs": 0.93179
+        },
+        {
+          "bin": 8,
+          "n": 41378,
+          "mean_pred": 0.86163,
+          "mean_obs": 0.97412
+        },
+        {
+          "bin": 9,
+          "n": 337,
+          "mean_pred": 0.91855,
+          "mean_obs": 0.75371
+        }
+      ],
+      "fit_minutes": 0.83
+    },
+    "hgb_FS2": {
+      "auc": 0.9104,
+      "pr_auc": 0.691,
+      "logloss": 0.11652,
+      "brier": 0.02849,
+      "auc_near_boundary": 0.8923,
+      "reliability": [
+        {
+          "bin": 0,
+          "n": 9074991,
+          "mean_pred": 0.02242,
+          "mean_obs": 0.01319
+        },
+        {
+          "bin": 1,
+          "n": 668543,
+          "mean_pred": 0.14525,
+          "mean_obs": 0.06115
+        },
+        {
+          "bin": 2,
+          "n": 288934,
+          "mean_pred": 0.24017,
+          "mean_obs": 0.12605
+        },
+        {
+          "bin": 3,
+          "n": 192205,
+          "mean_pred": 0.3503,
+          "mean_obs": 0.20954
+        },
+        {
+          "bin": 4,
+          "n": 128987,
+          "mean_pred": 0.43628,
+          "mean_obs": 0.28288
+        },
+        {
+          "bin": 5,
+          "n": 34523,
+          "mean_pred": 0.53873,
+          "mean_obs": 0.329
+        },
+        {
+          "bin": 6,
+          "n": 39191,
+          "mean_pred": 0.6276,
+          "mean_obs": 0.23977
+        },
+        {
+          "bin": 7,
+          "n": 9196,
+          "mean_pred": 0.74955,
+          "mean_obs": 0.49
+        },
+        {
+          "bin": 8,
+          "n": 66642,
+          "mean_pred": 0.87593,
+          "mean_obs": 0.81221
+        },
+        {
+          "bin": 9,
+          "n": 250777,
+          "mean_pred": 0.94969,
+          "mean_obs": 0.96416
+        }
+      ],
+      "fit_minutes": 2.41
+    },
+    "xgb_FS2": {
+      "auc": 0.9095,
+      "pr_auc": 0.6907,
+      "logloss": 0.11835,
+      "brier": 0.0292,
+      "auc_near_boundary": 0.891,
+      "reliability": [
+        {
+          "bin": 0,
+          "n": 8976558,
+          "mean_pred": 0.02222,
+          "mean_obs": 0.01286
+        },
+        {
+          "bin": 1,
+          "n": 755508,
+          "mean_pred": 0.14198,
+          "mean_obs": 0.05618
+        },
+        {
+          "bin": 2,
+          "n": 272372,
+          "mean_pred": 0.24311,
+          "mean_obs": 0.12884
+        },
+        {
+          "bin": 3,
+          "n": 207368,
+          "mean_pred": 0.34654,
+          "mean_obs": 0.21121
+        },
+        {
+          "bin": 4,
+          "n": 120932,
+          "mean_pred": 0.44324,
+          "mean_obs": 0.2916
+        },
+        {
+          "bin": 5,
+          "n": 42785,
+          "mean_pred": 0.5418,
+          "mean_obs": 0.26245
+        },
+        {
+          "bin": 6,
+          "n": 46149,
+          "mean_pred": 0.63793,
+          "mean_obs": 0.21309
+        },
+        {
+          "bin": 7,
+          "n": 11556,
+          "mean_pred": 0.75498,
+          "mean_obs": 0.46634
+        },
+        {
+          "bin": 8,
+          "n": 59444,
+          "mean_pred": 0.86471,
+          "mean_obs": 0.8061
+        },
+        {
+          "bin": 9,
+          "n": 261317,
+          "mean_pred": 0.95651,
+          "mean_obs": 0.95106
+        }
+      ],
+      "fit_minutes": 1.92
+    },
+    "logit_FS3_interactions": {
+      "auc": 0.8838,
+      "pr_auc": 0.6513,
+      "logloss": 0.14,
+      "brier": 0.03256,
+      "auc_near_boundary": 0.8605,
+      "reliability": [
+        {
+          "bin": 0,
+          "n": 8074316,
+          "mean_pred": 0.03501,
+          "mean_obs": 0.01487
+        },
+        {
+          "bin": 1,
+          "n": 1591229,
+          "mean_pred": 0.13491,
+          "mean_obs": 0.04003
+        },
+        {
+          "bin": 2,
+          "n": 425690,
+          "mean_pred": 0.26024,
+          "mean_obs": 0.06176
+        },
+        {
+          "bin": 3,
+          "n": 93596,
+          "mean_pred": 0.34033,
+          "mean_obs": 0.2213
+        },
+        {
+          "bin": 4,
+          "n": 212494,
+          "mean_pred": 0.44676,
+          "mean_obs": 0.26245
+        },
+        {
+          "bin": 5,
+          "n": 40898,
+          "mean_pred": 0.53753,
+          "mean_obs": 0.3542
+        },
+        {
+          "bin": 6,
+          "n": 33813,
+          "mean_pred": 0.65548,
+          "mean_obs": 0.87656
+        },
+        {
+          "bin": 7,
+          "n": 238818,
+          "mean_pred": 0.73829,
+          "mean_obs": 0.93627
+        },
+        {
+          "bin": 8,
+          "n": 42793,
+          "mean_pred": 0.85748,
+          "mean_obs": 0.9445
+        },
+        {
+          "bin": 9,
+          "n": 342,
+          "mean_pred": 0.92228,
+          "mean_obs": 0.73977
+        }
+      ],
+      "fit_minutes": 0.8
+    }
+  },
+  "fs3_coefficients": {
+    "nearXad_m1": 1.3543,
+    "nearXzero_m1": 0.2898,
+    "nearXtrend3": 0.1346,
+    "nearXmissing": -0.7235
+  }
+}

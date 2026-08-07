@@ -1,0 +1,16 @@
+# ---- Large data: never commit ----
+kkbox_churn_prediction_kaggle_data/
+data_cache/
+telco_churn.csv
+*.7z
+*.npz
+*.log
+
+# ---- Python ----
+__pycache__/
+*.pyc
+*.pyo
+.ipynb_checkpoints/
+
+# ---- OS ----
+.DS_Store

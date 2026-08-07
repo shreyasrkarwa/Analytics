@@ -1,0 +1,417 @@
+{
+  "n_decisions": 19533451,
+  "n_censored": 1227290,
+  "overall_boundary_churn_rate": 0.0925,
+  "renewal_timing": {
+    "share_on_time_pm3d": 0.817,
+    "share_grace_1_30d": 0.1964,
+    "share_early_lt_minus7": 0.1106
+  },
+  "churn_by_boundary_index": {
+    "1st": {
+      "churn_rate": 0.3326,
+      "n": 2865992
+    },
+    "2nd": {
+      "churn_rate": 0.203,
+      "n": 1807036
+    },
+    "3rd": {
+      "churn_rate": 0.0605,
+      "n": 1369636
+    },
+    "4-6th": {
+      "churn_rate": 0.0392,
+      "n": 3433862
+    },
+    "7-12th": {
+      "churn_rate": 0.0298,
+      "n": 4966806
+    },
+    "13th+": {
+      "churn_rate": 0.0236,
+      "n": 5090119
+    }
+  },
+  "churn_by_auto_renew": {
+    "auto": 0.0491,
+    "manual": 0.3298
+  },
+  "churn_by_plan_days": {
+    "<=7d": {
+      "churn_rate": 0.4408,
+      "n": 1349971
+    },
+    "30d": {
+      "churn_rate": 0.0631,
+      "n": 17886527
+    },
+    "90d": {
+      "churn_rate": 0.1761,
+      "n": 19737
+    },
+    "180d": {
+      "churn_rate": 0.2748,
+      "n": 182581
+    },
+    "365d+": {
+      "churn_rate": 0.3111,
+      "n": 94635
+    }
+  },
+  "churn_decomposition": {
+    "active_cancel_share": 0.2991,
+    "passive_lapse_share": 0.7009,
+    "auto_renew_share_among_churn": 0.4486
+  },
+  "n_mid_cycle_cancel_txns": 890098,
+  "engagement": {
+    "churn_by_active_days": {
+      "0": {
+        "churn_rate": 0.2031,
+        "n": 1834738
+      },
+      "1-2": {
+        "churn_rate": 0.1478,
+        "n": 1032349
+      },
+      "3-5": {
+        "churn_rate": 0.1003,
+        "n": 1211565
+      },
+      "6-10": {
+        "churn_rate": 0.0803,
+        "n": 1863573
+      },
+      "11-15": {
+        "churn_rate": 0.0687,
+        "n": 1847767
+      },
+      "16-20": {
+        "churn_rate": 0.0588,
+        "n": 1946253
+      },
+      "21-25": {
+        "churn_rate": 0.0492,
+        "n": 2246059
+      },
+      "26-31": {
+        "churn_rate": 0.0385,
+        "n": 3593084
+      }
+    },
+    "churn_zero_activity_last_month": 0.2031,
+    "churn_active_last_month": 0.0665,
+    "share_zero_activity": 0.1178,
+    "event_study_active_days": {
+      "churned": [
+        7.74,
+        7.97,
+        8.1,
+        8.42,
+        8.72,
+        10.12,
+        7.53
+      ],
+      "renewed": [
+        12.78,
+        13.25,
+        13.79,
+        14.33,
+        14.91,
+        15.51,
+        15.78
+      ]
+    },
+    "event_study_n": {
+      "churned": 1105412,
+      "renewed": 13454743
+    },
+    "churn_by_trend": {
+      "falling hard": {
+        "churn_rate": 0.0774,
+        "n": 1136035
+      },
+      "falling": {
+        "churn_rate": 0.0529,
+        "n": 1880189
+      },
+      "stable": {
+        "churn_rate": 0.0609,
+        "n": 5925416
+      },
+      "rising": {
+        "churn_rate": 0.0763,
+        "n": 4799010
+      }
+    }
+  },
+  "hazard_models": {
+    "n_train": 5070019,
+    "n_test": 3582176,
+    "test_event_rate": 0.05542,
+    "split_date": "2016-07-01",
+    "sample": "uid%3==0",
+    "models": {
+      "M0_boundary_blind": {
+        "auc": 0.8395,
+        "logloss": 0.13996,
+        "auc_near_boundary": 0.8296,
+        "logloss_near_boundary": 0.15754,
+        "n_features": 10,
+        "newton_iters": 7
+      },
+      "M1_plus_boundary": {
+        "auc": 0.8801,
+        "logloss": 0.13457,
+        "auc_near_boundary": 0.8568,
+        "logloss_near_boundary": 0.16013,
+        "n_features": 16,
+        "newton_iters": 11
+      },
+      "M2_plus_engagement": {
+        "auc": 0.8815,
+        "logloss": 0.13306,
+        "auc_near_boundary": 0.8583,
+        "logloss_near_boundary": 0.15846,
+        "n_features": 21,
+        "newton_iters": 11
+      }
+    },
+    "n_test_near_boundary": 2971945,
+    "near_event_rate": 0.06663,
+    "cliff_odds_ratios_M2": {
+      "past_due": 831.472,
+      "dtb_0_7": 1800.786,
+      "dtb_8_15": 3777.794,
+      "dtb_16_23": 4370.853,
+      "dtb_24_31": 995.103,
+      "dtb_32_92": 65.081
+    },
+    "engagement_coefs_M2": {
+      "eng_active_days": -0.9259,
+      "eng_trend3": 0.3076,
+      "eng_skip_share": 0.0122,
+      "eng_zero_month": -0.306,
+      "eng_missing": 0.1624
+    }
+  },
+  "cliff_model": {
+    "population": "30-day plans (25-35d)",
+    "note": "decision events = active cancel txns + passive lapses; d = days before scheduled expiration",
+    "auto_renew": {
+      "n_events": 822714,
+      "person_days_exposure": 457502153.0,
+      "K_selected_by_BIC": 8,
+      "changepoints_days_before_boundary": [
+        1,
+        2,
+        3,
+        5,
+        6,
+        8,
+        26,
+        29
+      ],
+      "segments": [
+        {
+          "d_from": 0,
+          "d_to": 0,
+          "rate_per_day": 0.08366174045090635,
+          "events": 255854
+        },
+        {
+          "d_from": 1,
+          "d_to": 1,
+          "rate_per_day": 0.006637055464686928,
+          "events": 81318
+        },
+        {
+          "d_from": 2,
+          "d_to": 2,
+          "rate_per_day": 0.0034368589679377583,
+          "events": 48377
+        },
+        {
+          "d_from": 3,
+          "d_to": 4,
+          "rate_per_day": 0.0021149761963741025,
+          "events": 61508
+        },
+        {
+          "d_from": 5,
+          "d_to": 5,
+          "rate_per_day": 0.0014590142167445253,
+          "events": 21647
+        },
+        {
+          "d_from": 6,
+          "d_to": 7,
+          "rate_per_day": 0.0010835228636353555,
+          "events": 32682
+        },
+        {
+          "d_from": 8,
+          "d_to": 25,
+          "rate_per_day": 0.0008256684429846996,
+          "events": 237639
+        },
+        {
+          "d_from": 26,
+          "d_to": 28,
+          "rate_per_day": 0.0011234302095572083,
+          "events": 56510
+        },
+        {
+          "d_from": 29,
+          "d_to": 29,
+          "rate_per_day": 0.0017073362250650953,
+          "events": 27179
+        }
+      ],
+      "sup_LR_vs_smooth_spline": 53256.3,
+      "bootstrap_p_value": 0.002,
+      "bic_by_K": {
+        "0": 12046073.9,
+        "1": 10495868.2,
+        "2": 10314591.8,
+        "3": 10278668.7,
+        "4": 10269572.8,
+        "5": 10260833.7,
+        "6": 10257461.9,
+        "7": 10255257.0,
+        "8": 10254460.1
+      },
+      "renewal_cliff_index": {
+        "share_within_0d": 0.311,
+        "share_within_1d": 0.4098,
+        "share_within_3d": 0.5083,
+        "share_within_7d": 0.6094,
+        "share_within_14d": 0.7211
+      }
+    },
+    "manual_renew": {
+      "n_events": 382981,
+      "person_days_exposure": 63199586.0,
+      "K_selected_by_BIC": 3,
+      "changepoints_days_before_boundary": [
+        1,
+        26,
+        29
+      ],
+      "segments": [
+        {
+          "d_from": 0,
+          "d_to": 0,
+          "rate_per_day": 0.22235957350391006,
+          "events": 382243
+        },
+        {
+          "d_from": 1,
+          "d_to": 25,
+          "rate_per_day": 1.688343703526087e-06,
+          "events": 89
+        },
+        {
+          "d_from": 26,
+          "d_to": 28,
+          "rate_per_day": 6.699907343326854e-06,
+          "events": 44
+        },
+        {
+          "d_from": 29,
+          "d_to": 29,
+          "rate_per_day": 0.0002751356919207882,
+          "events": 605
+        }
+      ],
+      "sup_LR_vs_smooth_spline": 311.7,
+      "bootstrap_p_value": 0.002,
+      "bic_by_K": {
+        "0": 4677028.6,
+        "1": 1932097.8,
+        "2": 1928779.9,
+        "3": 1928759.9,
+        "4": 1928768.5,
+        "5": 1928781.0,
+        "6": 1928798.4,
+        "7": 1928821.2,
+        "8": 1928843.4
+      },
+      "renewal_cliff_index": {
+        "share_within_0d": 0.9981,
+        "share_within_1d": 0.9981,
+        "share_within_3d": 0.9981,
+        "share_within_7d": 0.9981,
+        "share_within_14d": 0.9982
+      }
+    }
+  },
+  "event_study_fe": {
+    "offsets": [
+      -6,
+      -5,
+      -4,
+      -3,
+      -2,
+      -1
+    ],
+    "note": "active days residualized on calendar-month means; month 0 dropped (truncated)",
+    "all": {
+      "churned": [
+        -5.81,
+        -5.514,
+        -5.441,
+        -5.152,
+        -4.894,
+        -3.561
+      ],
+      "renewed": [
+        -0.769,
+        -0.297,
+        0.154,
+        0.621,
+        1.107,
+        1.71
+      ],
+      "gap": [
+        5.042,
+        5.216,
+        5.595,
+        5.773,
+        6.001,
+        5.271
+      ],
+      "n_churned": 1080900,
+      "n_renewed": 12994679
+    },
+    "tenure_180d": {
+      "churned": [
+        0.007,
+        0.26,
+        0.019,
+        -0.084,
+        -0.367,
+        -0.907
+      ],
+      "renewed": [
+        -0.299,
+        -0.013,
+        0.021,
+        0.068,
+        0.113,
+        0.153
+      ],
+      "gap": [
+        -0.306,
+        -0.273,
+        0.003,
+        0.152,
+        0.481,
+        1.059
+      ],
+      "n_churned": 383970,
+      "n_renewed": 9514818
+    }
+  }
+}

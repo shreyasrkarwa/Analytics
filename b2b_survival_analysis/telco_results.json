@@ -1,0 +1,123 @@
+{
+  "n_customers": 7032,
+  "churn_rate": 0.2658,
+  "leakage_note": "TotalCharges excluded (deterministic in tenure x MonthlyCharges -> target leakage; prior C~0.90 in results.json is deprecated)",
+  "spike_test_one_year": {
+    "observed_total": 14,
+    "expected_total": 11.5,
+    "ratio": 1.21,
+    "poisson_p_one_sided": 0.26995,
+    "by_boundary": [
+      {
+        "tenure": 12,
+        "observed": 5,
+        "expected": 0.8,
+        "at_risk": 1371
+      },
+      {
+        "tenure": 24,
+        "observed": 0,
+        "expected": 2.2,
+        "at_risk": 1172
+      },
+      {
+        "tenure": 36,
+        "observed": 1,
+        "expected": 2.2,
+        "at_risk": 921
+      },
+      {
+        "tenure": 48,
+        "observed": 5,
+        "expected": 2.5,
+        "at_risk": 662
+      },
+      {
+        "tenure": 60,
+        "observed": 3,
+        "expected": 3.8,
+        "at_risk": 337
+      }
+    ],
+    "min_detectable_ratio_80pct_power": 1.73
+  },
+  "spike_test_two_year": {
+    "observed_total": 1,
+    "expected_total": 1.0,
+    "ratio": 1.0,
+    "poisson_p_one_sided": 0.63167,
+    "by_boundary": [
+      {
+        "tenure": 24,
+        "observed": 0,
+        "expected": 0.3,
+        "at_risk": 1553
+      },
+      {
+        "tenure": 48,
+        "observed": 1,
+        "expected": 0.7,
+        "at_risk": 1284
+      }
+    ],
+    "min_detectable_ratio_80pct_power": 3.49
+  },
+  "spike_test_month_to_month_placebo": {
+    "observed_total": 71,
+    "expected_total": 74.5,
+    "ratio": 0.95,
+    "poisson_p_one_sided": 0.672123,
+    "by_boundary": [
+      {
+        "tenure": 12,
+        "observed": 33,
+        "expected": 33.7,
+        "at_risk": 1967
+      },
+      {
+        "tenure": 24,
+        "observed": 23,
+        "expected": 17.0,
+        "at_risk": 1202
+      },
+      {
+        "tenure": 36,
+        "observed": 9,
+        "expected": 11.3,
+        "at_risk": 680
+      },
+      {
+        "tenure": 48,
+        "observed": 3,
+        "expected": 9.4,
+        "at_risk": 357
+      },
+      {
+        "tenure": 60,
+        "observed": 3,
+        "expected": 3.0,
+        "at_risk": 127
+      }
+    ],
+    "min_detectable_ratio_80pct_power": 1.29
+  },
+  "hazard_models": {
+    "M0_no_boundary": {
+      "auc": 0.8785,
+      "logloss": 0.03688
+    },
+    "M1_boundary": {
+      "auc": 0.8783,
+      "logloss": 0.03689,
+      "coef_at_boundary": 0.47,
+      "coef_near_boundary": -0.476,
+      "OR_at_boundary": 1.6
+    },
+    "LR_test_boundary_terms": {
+      "LR": 1.0,
+      "df": 2,
+      "p": "6.05e-01"
+    }
+  },
+  "interpretation": "No significant anniversary spikes in Telco. One-year contracts: obs/exp=1.21 (p=0.27), min detectable ratio at 80% power = ~1.73 -> underpowered for modest spikes, but a KKBox-scale cliff would have been visible. Plausible mechanism for a true null: US telecom contracts auto-convert to month-to-month at term end, so the anniversary does not force a renewal decision (no payment re-authorization), unlike KKBox. Theoretical implication: cliffs arise where boundaries force decisions -- a testable heterogeneity prediction across subscription designs."
+}
