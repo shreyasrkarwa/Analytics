@@ -6,7 +6,7 @@ long_description = (here / 'README.md').read_text(encoding='utf-8')
 
 setup(
     name='b2b-revenue-forecasting',
-    version='0.40.0',
+    version='0.41.0',
     description=('Hierarchical B2B quota cascading for RevOps: multi-metric '
                  'cascades with gates and per-depth hedges, batch planning '
                  'across every segment combination, conservation-guaranteed '

@@ -3,6 +3,44 @@
 All notable changes to `b2b_revenue_forecasting` are documented here.
 This project loosely follows [Semantic Versioning](https://semver.org/).
 
+## [0.41.0] — 2026-08
+
+Closes [issue #63](https://github.com/shreyasrkarwa/Analytics/issues/63).
+Overlapping pins on the same node — a grand total plus scoped
+sales-type pins, or a total plus a scoped zero — were silently
+resolved last-writer-wins, and the feasibility report made it WORSE:
+each pin's achieved_total was captured at application time, so a
+defeated pin still read feasible=True while the frame said otherwise
+(reproduced: 900K pin, 750K delivered, four feasible=True rows).
+
+### Added / Changed
+- **`apply_pins(..., on_conflict='error'|'warn'|'allow'|
+  'narrower_wins')`** (#63). A conflict is a same-node MATCHED-ROW-SET
+  intersection, detected before anything applies. Default **'error'**
+  (BREAKING): raises listing each family's pins — total, scope, row
+  count, relation (subset / identical / partial overlap) — in the
+  issue's requested format. Cross-node parent/child pins are NOT
+  conflicts: that composition is deliberate (#39 protection, the #42
+  remainder recipe) and its arithmetic is covered by the #55
+  envelope check — the filer's case 2 was already loud on HEAD
+  (overshoot_report + subtree_shortfall warnings, pinned as receipts).
+- **`'narrower_wins'`**: scoped pins stand; the broadest pin
+  constrains only its REMAINDER rows with total − Σ(narrower totals).
+  Requires clean nesting (strict subsets of one broadest pin,
+  mutually disjoint, single basis, non-negative remainder, no
+  fully-covered unplaced remainder) — violations raise naming the
+  numbers. Proven equal to the hand-built explicit-pin composition;
+  the filer's case 3 now delivers the FULL total with the zeroed
+  slice excluded, instead of silently under-delivering.
+- **Final-frame audit (all modes)**: every pin's achieved_total is
+  recomputed over its ORIGINAL row set on the final frame, and
+  feasible goes False when it misses — a defeated pin can never
+  report feasible=True again. New report columns: `conflict`
+  (family description) and `adjusted_total` (narrower_wins
+  remainder).
+- Tests: `tests/test_pin_conflicts.py` — all three field cases,
+  narrower_wins equivalence + five guards, #42 recipe untouched.
+
 ## [0.40.0] — 2026-08
 
 Closes [issue #67](https://github.com/shreyasrkarwa/Analytics/issues/67)

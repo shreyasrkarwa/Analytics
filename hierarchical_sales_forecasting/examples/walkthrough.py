@@ -1104,6 +1104,32 @@ print(f"Frozen rep untouched: {frozen_same} · "
 # unpinned teams at baseline proportions (add Pin(parent, total) to fix
 # the envelope too). No remainder-team computation needed.
 
+# NEW in v0.41.0 (#63): overlapping pins on the SAME node no longer
+# lose silently — same-node row-set overlap raises by default (naming
+# totals/scopes/relations), and on_conflict='narrower_wins' ships the
+# field semantic: scoped pins stand, the broad total constrains the
+# remainder. Every pin's achieved_total is re-audited on the FINAL
+# frame, so a defeated pin can never report feasible=True.
+print(f"\n--- Overlapping-pin detection (v0.41.0) ---")
+c_ic = gov_recipients[0]
+try:
+    apply_pins(quotas_long, [Pin(c_ic, 900_000.0),
+                             Pin(c_ic, 300_000.0,
+                                 scope={'fiscal_quarter': 1})])
+except ValueError as _e:
+    print("default on_conflict='error' raises:")
+    print("  " + str(_e).splitlines()[1].strip())
+with _warnings.catch_warnings():
+    _warnings.simplefilter('ignore')
+    nw41, rep41 = apply_pins(
+        quotas_long, [Pin(c_ic, 900_000.0),
+                      Pin(c_ic, 300_000.0, scope={'fiscal_quarter': 1})],
+        on_conflict='narrower_wins')
+_t41 = nw41[nw41.node_id == c_ic]['base_quota'].sum()
+print(f"narrower_wins: Q1 pinned 300K, remainder 600K -> total "
+      f"${_t41:,.0f}; adjusted_total="
+      f"{rep41.iloc[0]['adjusted_total']:,.0f}")
+
 # NEW in v0.40.0 (#67): zero-baseline rows now DERIVE their hedge
 # ratio (hedge= > siblings > same-depth) instead of silently using
 # 1.0 — pinning money onto a zeroed slice no longer sets

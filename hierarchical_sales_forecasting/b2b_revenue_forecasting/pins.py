@@ -26,6 +26,7 @@ _STRUCTURAL_COLS = {
 
 _PIN_BASES = ("base", "cascaded")
 _ON_MISSING = ("error", "skip", "warn")
+_ON_CONFLICT = ("error", "warn", "allow", "narrower_wins")
 _REASON_RANK = {"no_siblings": 1, "all_blocked": 2,
                 "floors_at_zero": 3}   # genuine trumps intentional (#45)
 
@@ -208,6 +209,7 @@ def apply_pins(
     on_missing: str = "error",
     on_overshoot: str = "allow",
     hedge: Any = None,
+    on_conflict: str = "error",
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     Apply aggregate pins to a cascade_many output (issues #22/#31/#24).
@@ -341,6 +343,29 @@ def apply_pins(
         and the ratio source. Rows with base > 0 always use their own
         ratio — hedge= never re-hedges existing rows.
 
+    on_conflict : str
+        Overlapping-pin policy (issue #63). Two pins CONFLICT when
+        their matched row sets intersect — same node, overlapping (or
+        identical/unscoped) scopes; the later-applied pin silently
+        overwrites the earlier one's rows, so the result satisfies
+        only the last writer. Cross-node parent/child pins are NOT
+        conflicts (deliberate composition — #39/#42 — with the #55
+        envelope check covering their arithmetic). 'error' (default):
+        raise before applying anything, listing each family's pins,
+        scopes, row counts and relation (subset/identical/partial).
+        'warn': same text as one warning, then last-writer-wins.
+        'allow': proceed silently. 'narrower_wins': the scoped pins
+        stand and the broadest pin constrains only its REMAINDER rows
+        with total − Σ(narrower totals) — requires clean nesting
+        (every narrower pin a strict subset of one broadest pin,
+        narrower pins mutually disjoint, one basis, non-negative
+        remainder; violations raise naming the numbers). In every
+        non-error mode the report gains `conflict` (family
+        description) and `adjusted_total` (narrower_wins remainder),
+        and EVERY pin's achieved_total is recomputed over its
+        original rows on the FINAL frame — a defeated pin can never
+        report feasible=True.
+
     Returns
     -------
     (edited_df, feasibility_report)
@@ -366,6 +391,9 @@ def apply_pins(
     if on_missing not in _ON_MISSING:
         raise ValueError(f"on_missing must be one of {_ON_MISSING}, "
                          f"got '{on_missing}'.")
+    if on_conflict not in _ON_CONFLICT:
+        raise ValueError(f"on_conflict must be one of {_ON_CONFLICT}, "
+                         f"got '{on_conflict}'.")
     if on_overshoot not in _ON_OVERSHOOT:
         raise ValueError(f"on_overshoot must be one of {_ON_OVERSHOOT}, "
                          f"got '{on_overshoot}'.")
@@ -532,6 +560,7 @@ def apply_pins(
     # set and application order are built, so a skipped pin has no
     # ghost side-effects (its node may still absorb / rescale freely).
     skipped_reason: Dict[int, str] = {}
+    pin_row_sets: Dict[int, frozenset] = {}
     for i, pin in enumerate(pins):
         pmask = df["node_id"] == pin.node
         for col, val in pin.scope.items():
@@ -549,6 +578,8 @@ def apply_pins(
             skipped_reason[i] = ("node_absent"
                                  if pin.node not in all_node_ids
                                  else "empty_scope")
+        else:
+            pin_row_sets[i] = frozenset(df.index[pmask])
     if skipped_reason and on_missing == "warn":
         named = [f"{pins[i].node} ({r})"
                  for i, r in sorted(skipped_reason.items())]
@@ -557,6 +588,119 @@ def apply_pins(
             f"matching rows: {', '.join(named)}. See the feasibility "
             f"report (skipped / reason columns).",
             UserWarning, stacklevel=2)
+
+    # ---- Overlap detection (issue #63) ------------------------------
+    # Two pins CONFLICT when their matched row sets intersect (same
+    # node, overlapping scopes) — the later-applied one silently
+    # overwrites the earlier. Cross-node parent/child pins are NOT
+    # conflicts: that composition is deliberate (#39/#42) and the #55
+    # envelope check covers its arithmetic.
+    eff_rows: Dict[int, List[Any]] = {i: sorted(rs)
+                                      for i, rs in pin_row_sets.items()}
+    eff_total: Dict[int, float] = {i: pins[i].total for i in pin_row_sets}
+    conflict_note: Dict[int, str] = {}
+    adjusted: Dict[int, float] = {}
+    by_node: Dict[str, List[int]] = {}
+    for i in pin_row_sets:
+        by_node.setdefault(pins[i].node, []).append(i)
+    families: List[Tuple[str, List[int]]] = []
+    for node, idxs_ in by_node.items():
+        remaining = set(idxs_)
+        while remaining:
+            comp = {remaining.pop()}
+            grew = True
+            while grew:
+                grew = False
+                for j in list(remaining):
+                    if any(pin_row_sets[j] & pin_row_sets[c]
+                           for c in comp):
+                        comp.add(j)
+                        remaining.discard(j)
+                        grew = True
+            if len(comp) > 1:
+                families.append((node, sorted(comp)))
+    if families:
+        def _fam_desc(node, fam):
+            broadest = max(fam, key=lambda i: len(pin_row_sets[i]))
+            lines = []
+            for i in fam:
+                rel = ("" if i == broadest else
+                       "  (subset)" if pin_row_sets[i]
+                       < pin_row_sets[broadest] else
+                       "  (identical)" if pin_row_sets[i]
+                       == pin_row_sets[broadest] else
+                       "  (partial overlap)")
+                lines.append(
+                    f"    Pin(total={pins[i].total:>13,.2f}, "
+                    f"scope={pins[i].scope or {}}) covers "
+                    f"{len(pin_row_sets[i])} row(s){rel}")
+            return f"  pin conflict on '{node}':\n" + "\n".join(lines)
+
+        msg = ("apply_pins: overlapping pins constrain the same rows "
+               "— the result would satisfy only the last-applied "
+               "pin:\n"
+               + "\n".join(_fam_desc(n, f) for n, f in families)
+               + "\n  -> use on_conflict='narrower_wins' (scoped pins "
+                 "stand, the broader total constrains the remainder) "
+                 "| 'warn' | 'allow' to proceed.")
+        if on_conflict == "error":
+            raise ValueError(msg)
+        if on_conflict == "warn":
+            warnings.warn(msg, UserWarning, stacklevel=2)
+        if on_conflict == "narrower_wins":
+            for node, fam in families:
+                broad = max(fam, key=lambda i: len(pin_row_sets[i]))
+                rest = [i for i in fam if i != broad]
+                bset = pin_row_sets[broad]
+                if not all(pin_row_sets[i] < bset for i in rest):
+                    raise ValueError(
+                        f"apply_pins(on_conflict='narrower_wins'): "
+                        f"pins on '{node}' overlap PARTIALLY (or are "
+                        f"identical) — narrower_wins needs every "
+                        f"narrower pin to be a strict subset of one "
+                        f"broadest pin.\n{_fam_desc(node, fam)}")
+                for a in range(len(rest)):
+                    for b in range(a + 1, len(rest)):
+                        if pin_row_sets[rest[a]] & pin_row_sets[rest[b]]:
+                            raise ValueError(
+                                f"apply_pins(on_conflict="
+                                f"'narrower_wins'): the narrower pins "
+                                f"on '{node}' overlap EACH OTHER — "
+                                f"they must be disjoint.\n"
+                                f"{_fam_desc(node, fam)}")
+                if len({pins[i].basis for i in fam}) > 1:
+                    raise ValueError(
+                        f"apply_pins(on_conflict='narrower_wins'): "
+                        f"pins on '{node}' mix basis='base' and "
+                        f"basis='cascaded' — the remainder total is "
+                        f"not well-defined across layers.")
+                covered = set().union(*(pin_row_sets[i] for i in rest))
+                rem_rows = sorted(bset - covered)
+                rem_total = (pins[broad].total
+                             - sum(pins[i].total for i in rest))
+                if rem_total < -0.005:
+                    raise ValueError(
+                        f"apply_pins(on_conflict='narrower_wins'): on "
+                        f"'{node}' the narrower pins sum to "
+                        f"{sum(pins[i].total for i in rest):,.2f}, "
+                        f"EXCEEDING the broader total "
+                        f"{pins[broad].total:,.2f} — infeasible.")
+                if not rem_rows and abs(rem_total) > 0.005:
+                    raise ValueError(
+                        f"apply_pins(on_conflict='narrower_wins'): "
+                        f"the narrower pins on '{node}' cover EVERY "
+                        f"row of the broader pin but leave "
+                        f"{rem_total:,.2f} of its total unplaced.")
+                eff_rows[broad] = rem_rows
+                eff_total[broad] = rem_total
+                adjusted[broad] = rem_total
+        mode_note = {"warn": "warned", "allow": "allowed",
+                     "narrower_wins": "narrower_wins"}[on_conflict]
+        for node, fam in families:
+            for i in fam:
+                conflict_note[i] = (
+                    f"overlaps pins {[j for j in fam if j != i]} on "
+                    f"'{node}' ({mode_note})")
 
     frozen = set(freeze_nodes or [])
     all_pinned = {p.node for i, p in enumerate(pins)
@@ -597,16 +741,22 @@ def apply_pins(
     for pin_i in application_order:
         pin = pins[pin_i]
         basis_col = "base_quota" if pin.basis == "base" else "cascaded_quota"
-        mask = df["node_id"] == pin.node
-        for col, val in pin.scope.items():
-            if col not in df.columns:
-                raise ValueError(f"Pin scope column '{col}' not in "
-                                 f"quotas_long.")
-            mask &= df[col] == val
-        node_idx = list(df.index[mask])
+        node_idx = eff_rows[pin_i]
+        tot = eff_total[pin_i]
         if not node_idx:
-            raise ValueError(f"Pin node '{pin.node}' matches no rows "
-                             f"(after scope {pin.scope}).")
+            # narrower_wins: the broader pin was fully expressed by its
+            # subset pins (remainder $0 over zero rows) — nothing to do.
+            report_rows[pin_i] = {
+                "pin_node": pin.node, "pin_type": None,
+                "basis": pin.basis,
+                "requested_total": round(pin.total, 2),
+                "baseline_total": 0.0, "achieved_total": 0.0,
+                "rows_affected": 0, "absorbed": 0.0, "unabsorbed": 0.0,
+                "subtree_shortfall": 0.0, "feasible": True,
+                "unabsorbed_reason": None, "intentional": False,
+                "skipped": False, "reason": None,
+            }
+            continue
         is_subtree = any(_descendants(key_of.at[i], pin.node)
                          for i in node_idx)
         pin_type = "subtree" if is_subtree else "leaf"
@@ -614,16 +764,16 @@ def apply_pins(
         baseline_total = float(df.loc[node_idx, basis_col].sum())
         # Per-row allocation: proportional to baseline mix, equal if flat 0
         if baseline_total > 0:
-            alloc = {i: pin.total * float(df.at[i, basis_col]) / baseline_total
+            alloc = {i: tot * float(df.at[i, basis_col]) / baseline_total
                      for i in node_idx}
         else:
             warnings.warn(
                 f"Pin '{pin.node}': baseline total is 0 across matched rows "
-                f"— splitting {pin.total:,.2f} equally across "
+                f"— splitting {tot:,.2f} equally across "
                 f"{len(node_idx)} row(s).",
                 UserWarning, stacklevel=2,
             )
-            alloc = {i: pin.total / len(node_idx) for i in node_idx}
+            alloc = {i: tot / len(node_idx) for i in node_idx}
 
         # Protection set (issue #39): nodes pinned by ANY pin, frozen
         # nodes, and this pin's exclude list keep their current values
@@ -774,6 +924,26 @@ def apply_pins(
                 f"See feasibility report column 'subtree_shortfall'.",
                 UserWarning, stacklevel=2,
             )
+
+    # Final-frame audit (issue #63): with overlapping pins allowed, a
+    # later pin can overwrite an earlier one's rows — recompute every
+    # pin's achieved_total over its ORIGINAL row set on the FINAL
+    # frame, so a defeated pin can never report feasible=True.
+    for i, rs in pin_row_sets.items():
+        row = report_rows[i]
+        if row is None:
+            continue
+        bcol = ("base_quota" if pins[i].basis == "base"
+                else "cascaded_quota")
+        ach = float(df.loc[sorted(rs), bcol].sum())
+        row["achieved_total"] = round(ach, 2)
+        if abs(ach - pins[i].total) > 0.01:
+            row["feasible"] = False
+    for i, row in enumerate(report_rows):
+        if row is not None:
+            row["conflict"] = conflict_note.get(i)
+            row["adjusted_total"] = (round(adjusted[i], 2)
+                                     if i in adjusted else None)
 
     _warn_derived_used(derived_used, df, "apply_pins")
 

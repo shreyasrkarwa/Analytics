@@ -188,7 +188,8 @@ def test_62_receipts():
     with warnings.catch_warnings():
         warnings.simplefilter('ignore')
         g, _ = apply_pins(e, [Pin('r1', 1100.0),
-                              Pin('r1', 0.0, scope={'product': 'B'})])
+                              Pin('r1', 0.0, scope={'product': 'B'})],
+                          on_conflict='allow')   # deliberate: #63 doc
     ixg = g.set_index(['node_id', 'product'])
     tot = (ixg.loc[('r1', 'A'), 'base_quota']
            + ixg.loc[('r1', 'B'), 'base_quota'])

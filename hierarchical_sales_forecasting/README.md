@@ -43,7 +43,7 @@ Battle-tested: hardened against 60 field-filed issues from production deployment
 
 | Surface | Purpose |
 |--------|---------|
-| **`Pin` / `apply_pins`** | Aggregate pins — "this territory carries exactly $2.6M across all cascades" — leaf or manager, base or hedged basis, scoped, with freeze/exclude protection. Order-independent, protection-aware, depth-canonical; zero-row pins skippable (`on_missing`); cross-pin envelope overshoots surfaced per (parent, combo) and resolvable (`on_overshoot='scale_pins'`) |
+| **`Pin` / `apply_pins`** | Aggregate pins — "this territory carries exactly $2.6M across all cascades" — leaf or manager, base or hedged basis, scoped, with freeze/exclude protection. Order-independent, protection-aware, depth-canonical; zero-row pins skippable (`on_missing`); cross-pin envelope overshoots surfaced per (parent, combo) and resolvable (`on_overshoot='scale_pins'`); same-node overlapping pins detected before applying (`on_conflict`, incl. `'narrower_wins'`) |
 | **`redistribute` / `concentrate`** | Move one node's scoped quota out to siblings (proportional/equal/weighted) — or collapse many siblings onto one — reshaping every depth, parents conserved, bystanders verified untouched |
 | **`reallocate` / `resplit_by_metric`** | Partial-fraction multi-source moves with explicit splits ("75% of these reps, 60/40 to those two") and metric-proportional re-splits of a team's children ("re-split Migration by dc_seats") |
 | **`enforce_identities`** | `reconcile()`'s fixing twin: force every parent-child identity top-down — pins held, free rows stretched, overshooting pins scaled down by policy |
@@ -63,6 +63,10 @@ Battle-tested: hardened against 60 field-filed issues from production deployment
 |--------|---------|
 | **`CommitReconciler`** | Detect sandbagging and "happy ears" bias via historical Bias Quotients, then auto-correct forecasts |
 | **`PipelineAdjuster` / `adjust_many`** | Pipeline coverage bands with ancestor-inherited thresholds and zero-sum IC redistribution — single-cascade or batch-native on any `cascade_many` output |
+
+### What's New in v0.41.0 — overlapping pins refuse to lose silently ([#63](https://github.com/shreyasrkarwa/Analytics/issues/63))
+
+Two pins touching the same rows — a grand total plus scoped pins on one rep — used to resolve last-writer-wins with zero warnings, and the defeated pin still reported `feasible=True` (its achieved_total was captured before the overwrite). Now `apply_pins` detects same-node row-set overlap before anything applies: `on_conflict='error'` (the new default — breaking, deliberately) raises naming every pin's total, scope, row count and relation; `'narrower_wins'` ships the semantic field teams hand-roll — scoped pins stand, the broad total constrains the remainder (with five guards for the ways that can go wrong); `'warn'`/`'allow'` proceed but the report gains `conflict` + `adjusted_total` columns and every pin's achieved_total is re-audited on the *final* frame. Parent/child pins across nodes stay conflict-free on purpose — that's the #42 remainder recipe, and its arithmetic was already loud via the #55 envelope check.
 
 ### What's New in v0.40.0 — the ratio a zero can't give you ([#67](https://github.com/shreyasrkarwa/Analytics/issues/67), [#62](https://github.com/shreyasrkarwa/Analytics/issues/62))
 
