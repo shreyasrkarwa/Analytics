@@ -46,6 +46,7 @@ Battle-tested: hardened against 60 field-filed issues from production deployment
 | **`Pin` / `apply_pins`** | Aggregate pins — "this territory carries exactly $2.6M across all cascades" — leaf or manager, base or hedged basis, scoped, with freeze/exclude protection. Order-independent, protection-aware, depth-canonical; zero-row pins skippable (`on_missing`); cross-pin envelope overshoots surfaced per (parent, combo) and resolvable (`on_overshoot='scale_pins'`); same-node overlapping pins detected before applying (`on_conflict`, incl. `'narrower_wins'`) |
 | **`redistribute` / `concentrate`** | Move one node's scoped quota out to siblings (proportional/equal/weighted) — or collapse many siblings onto one — reshaping every depth, parents conserved, bystanders verified untouched |
 | **`reallocate` / `resplit_by_metric`** | Partial-fraction multi-source moves with explicit splits ("75% of these reps, 60/40 to those two") and metric-proportional re-splits of a team's children ("re-split Migration by dc_seats") |
+| **`transfer`** | Exact-dollar, cell-matched moves between any two nodes (cross-parent fine): every sales-type × product cell conserved across the pair, ancestor chains adjusted, `to_total=` for post-move targets |
 | **`enforce_identities`** | `reconcile()`'s fixing twin: force every parent-child identity top-down — pins held, free rows stretched, overshooting pins scaled down by policy |
 
 ### Explainability & validation
@@ -64,6 +65,10 @@ Battle-tested: hardened against 60 field-filed issues from production deployment
 |--------|---------|
 | **`CommitReconciler`** | Detect sandbagging and "happy ears" bias via historical Bias Quotients, then auto-correct forecasts |
 | **`PipelineAdjuster` / `adjust_many`** | Pipeline coverage bands with ancestor-inherited thresholds and zero-sum IC redistribution — single-cascade or batch-native on any `cascade_many` output |
+
+### What's New in v0.45.0 — move the money without leaving the cell ([#68](https://github.com/shreyasrkarwa/Analytics/issues/68))
+
+"Move $250K of DC business from rep A to rep B" has a constraint the move family couldn't express: the money must stay in the same sales-type × product cell on both sides (receipts: `reallocate` landed a DC-heavy draw in the recipient's Cloud-heavy mix — the pair's DC total leaked $67K). `transfer(q, src, dst, amount=250_000, scope={'base_product_r4f': DC_PRODUCTS})` is the missing fourth primitive: draws proportionally across src's eligible cells, lands the *identical per-cell amount* on dst, adjusts both ancestor chains (net zero at shared ancestors — cross-parent moves just work), and re-derives every touched row's hedged value from its own ratio. `to_total=` takes the post-move number stakeholders actually hand over; negative amounts reverse. Not pin sugar, deliberately — pins let siblings absorb, transfers must not. `reconcile()` clean by construction, anchored by a hand-built-algebra equivalence test.
 
 ### What's New in v0.44.0 — can these pins possibly fit? ([#65](https://github.com/shreyasrkarwa/Analytics/issues/65))
 

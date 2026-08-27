@@ -1809,6 +1809,235 @@ def enforce_identities(
     return df, report
 
 
+def transfer(
+    quotas_long: pd.DataFrame,
+    src: str,
+    dst: str,
+    amount: Optional[float] = None,
+    to_total: Optional[float] = None,
+    scope: Optional[Dict[str, Any]] = None,
+    match_on: Optional[List[str]] = None,
+    row_keys: Optional[List[str]] = None,
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Cell-matched dollar move between two nodes (issue #68): "move
+    $250,000 of DC business from rep A to rep B" — where the money
+    must stay in the SAME cell (sales type x product x quarter) on
+    both sides. The missing fourth member of the move family:
+
+      redistribute — empty a node across its siblings
+      concentrate  — collapse siblings onto one node
+      reallocate   — fractional multi-source moves, sibling-scoped
+      transfer     — exact dollars, node to node (cross-parent fine),
+                     every matched cell conserved across the pair
+
+    Unlike the other three, transfer is NOT pin sugar: pins let
+    siblings absorb deltas, but a transfer must move the money along
+    BOTH ancestor chains — src's parents drop by the amount, dst's
+    rise by it, netting to zero at any shared ancestor. So transfer
+    edits cells directly (route_targets-style algebra): the amount is
+    drawn across src's eligible cells proportional to what's there
+    (BASE layer), the IDENTICAL per-cell amount lands on dst's
+    matched rows, ancestor rows adjust per combo, and every touched
+    row's cascaded value re-derives from its OWN hedge ratio
+    (zero-baseline dst cells get the v0.40.0 derived ratio).
+    reconcile() stays clean by construction.
+
+    Parameters
+    ----------
+    src, dst : str
+        Node ids. May live under different parents, different
+        regions, even different cascades (see match_on).
+    amount : float
+        Dollars to move (BASE layer). Negative runs the move in
+        reverse (dst -> src, scope then applying to dst's cells).
+    to_total : float
+        Alternative to amount: the POST-move total of src's eligible
+        cells ("EAST2_1 DC must end at 163,779.42") —
+        amount = eligible_total - to_total.
+    scope : Optional[Dict[str, Any]]
+        Column=value filters choosing src's ELIGIBLE cells. Values
+        may be scalars or collections
+        ({'base_product_r4f': DC_PRODUCTS} with a list works).
+    match_on : Optional[List[str]]
+        Columns identifying "the identical cell" on dst. Defaults to
+        the cascade keys — right whenever src and dst share cascades.
+        When they live in DIFFERENT cascades (group keys differ),
+        pass the sub-target/cell columns only. Every drawn cell must
+        find exactly one dst row; misses raise naming the cells.
+
+    Returns
+    -------
+    (edited_df, report) — report has one row per matched cell:
+    match_on values, moved, src_before/after, dst_before/after,
+    exact (verified against the edited frame).
+    """
+    from b2b_revenue_forecasting.batch import _cascade_key_context
+
+    required = {"node_id", "parent", "base_quota", "cascaded_quota"}
+    missing = required - set(quotas_long.columns)
+    if missing:
+        raise ValueError(f"quotas_long is missing required columns "
+                         f"{sorted(missing)}.")
+    if (amount is None) == (to_total is None):
+        raise ValueError("transfer: pass exactly one of amount= or "
+                         "to_total=.")
+    if src == dst:
+        raise ValueError("transfer: src and dst are the same node.")
+
+    df = quotas_long.copy()
+    df.attrs = dict(quotas_long.attrs)
+    keys, key_of, row_ix, child_ix = _cascade_key_context(
+        df, row_keys, exclude_cols=[], caller="transfer")
+    ratio, ratio_derived = _row_ratios(df, key_of, child_ix)
+    node_pos = df.groupby("node_id").indices
+    for n in (src, dst):
+        if n not in node_pos:
+            raise ValueError(f"transfer: node '{n}' not in "
+                             f"quotas_long.")
+
+    s_rows = df.iloc[node_pos[src]]
+    for col, val in (scope or {}).items():
+        if col not in df.columns:
+            raise ValueError(f"transfer: scope column '{col}' not in "
+                             f"quotas_long.")
+        if isinstance(val, (list, tuple, set, frozenset)):
+            s_rows = s_rows[s_rows[col].isin(list(val))]
+        else:
+            s_rows = s_rows[s_rows[col] == val]
+    if not len(s_rows):
+        raise ValueError(f"transfer: scope {scope} matches no rows of "
+                         f"'{src}'.")
+    eligible_total = float(s_rows["base_quota"].sum())
+    if to_total is not None:
+        amount = eligible_total - float(to_total)
+    amount = float(amount)
+
+    rep_cols = (match_on if match_on is not None else list(keys))
+    if abs(amount) < 0.005:
+        return df, pd.DataFrame(
+            columns=list(rep_cols) + ["moved", "src_before",
+                                      "src_after", "dst_before",
+                                      "dst_after", "exact"])
+    if amount < 0:
+        return transfer(quotas_long, dst, src, amount=-amount,
+                        scope=scope, match_on=match_on,
+                        row_keys=row_keys)
+    if eligible_total <= 0:
+        raise ValueError(
+            f"transfer: '{src}' holds $0 across the eligible cells — "
+            f"nothing to draw proportionally.")
+    if amount - eligible_total > 0.005:
+        raise ValueError(
+            f"transfer: amount {amount:,.2f} exceeds '{src}'s "
+            f"eligible total {eligible_total:,.2f} — cells would go "
+            f"negative.")
+
+    mcols = list(match_on) if match_on is not None else list(keys)
+    for c in mcols:
+        if c not in df.columns:
+            raise ValueError(f"transfer: match_on column '{c}' not "
+                             f"in quotas_long.")
+
+    def _cell(idx):
+        return tuple(None if pd.isna(df.at[idx, c]) else df.at[idx, c]
+                     for c in mcols)
+
+    d_ix: Dict[Any, Any] = {}
+    for idx in df.iloc[node_pos[dst]].index:
+        kk = _cell(idx)
+        if kk in d_ix:
+            raise ValueError(
+                f"transfer: dst '{dst}' has multiple rows for cell "
+                f"{dict(zip(mcols, kk))} — add columns to match_on.")
+        d_ix[kk] = idx
+
+    deltas: Dict[Any, float] = {}
+    report_rows: List[Dict[str, Any]] = []
+    unmatched: List[Dict[str, Any]] = []
+    for idx in s_rows.index:
+        cell_val = float(df.at[idx, "base_quota"])
+        if cell_val <= 0:
+            continue                       # empty cells draw nothing
+        d = amount * cell_val / eligible_total
+        kk = _cell(idx)
+        didx = d_ix.get(kk)
+        if didx is None:
+            unmatched.append(dict(zip(mcols, kk)))
+            continue
+        deltas[idx] = deltas.get(idx, 0.0) - d
+        deltas[didx] = deltas.get(didx, 0.0) + d
+        report_rows.append({
+            **dict(zip(mcols, kk)), "moved": round(d, 2),
+            "src_before": round(cell_val, 2),
+            "src_after": round(cell_val - d, 2),
+            "dst_before": round(float(df.at[didx, "base_quota"]), 2),
+            "dst_after": round(float(df.at[didx, "base_quota"]) + d,
+                               2)})
+    if unmatched:
+        raise ValueError(
+            f"transfer: dst '{dst}' has no row for {len(unmatched)} "
+            f"drawn cell(s), e.g. {unmatched[:3]} — widen match_on "
+            f"(or the destination doesn't carry these cells).")
+
+    # Ancestor chains: each touched leaf row's delta rolls up its own
+    # combo's parent chain (shared ancestors net to zero).
+    anc: Dict[Any, float] = {}
+    for idx, d in list(deltas.items()):
+        k = key_of.at[idx]
+        p, seen = df.at[idx, "parent"], set()
+        while (p is not None and pd.notna(p) and (k, p) in row_ix
+               and p not in seen):
+            pidx = row_ix[(k, p)]
+            anc[pidx] = anc.get(pidx, 0.0) + d
+            seen.add(p)
+            p = df.at[pidx, "parent"]
+    for idx, d in anc.items():
+        deltas[idx] = deltas.get(idx, 0.0) + d
+
+    derived_used: Dict[Any, str] = {}
+    for idx, d in deltas.items():
+        if abs(d) < 0.005:
+            continue
+        nb = float(df.at[idx, "base_quota"]) + d
+        if -0.01 < nb < 0:
+            nb = 0.0
+        if idx in ratio_derived and abs(nb) > 0.005:
+            derived_used[idx] = ratio_derived[idx]
+        df.at[idx, "base_quota"] = round(nb, 2)
+        df.at[idx, "cascaded_quota"] = round(nb * ratio[idx], 2)
+    _warn_derived_used(derived_used, df, "transfer")
+
+    # share_of_parent stays truthful (same recompute as adjust_many)
+    if "share_of_parent" in df.columns:
+        for idx in df.index:
+            k = key_of.at[idx]
+            p_ = df.at[idx, "parent"]
+            if pd.isna(p_) or (k, p_) not in row_ix:
+                df.at[idx, "share_of_parent"] = 1.0
+                continue
+            pb = float(df.at[row_ix[(k, p_)], "base_quota"])
+            nb = float(df.at[idx, "base_quota"])
+            df.at[idx, "share_of_parent"] = (round(nb / pb, 6)
+                                             if pb != 0
+                                             else float("nan"))
+
+    report = pd.DataFrame(report_rows)
+    if len(report):
+        # verify against the edited frame — exact is checked, not assumed
+        exact = []
+        for r_ in report_rows:
+            kk = tuple(r_[c] for c in mcols)
+            sidx = next(i for i in s_rows.index if _cell(i) == kk)
+            exact.append(
+                abs(float(df.at[sidx, "base_quota"]) - r_["src_after"])
+                <= 0.05
+                and abs(float(df.at[d_ix[kk], "base_quota"])
+                        - r_["dst_after"]) <= 0.05)
+        report["exact"] = exact
+    return df, report
+
+
 def validate_pins(
     quotas_long: pd.DataFrame,
     pins: List[Pin],

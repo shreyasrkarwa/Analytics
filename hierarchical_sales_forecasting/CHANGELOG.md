@@ -3,6 +3,42 @@
 All notable changes to `b2b_revenue_forecasting` are documented here.
 This project loosely follows [Semantic Versioning](https://semver.org/).
 
+## [0.45.0] — 2026-08
+
+Closes [issue #68](https://github.com/shreyasrkarwa/Analytics/issues/68)
+— confirmed exactly as filed, with receipts: reallocate refuses
+cross-parent recipients, and it does NOT cell-match (a DC-heavy draw
+from one rep landed in the recipient's Cloud-heavy mix — the pair's
+DC total leaked 300K -> 233K in our repro). The filer's table of why
+redistribute/reallocate/concentrate don't fit is right on all three
+rows.
+
+### Added
+- **`transfer(quotas_long, src, dst, amount= | to_total=, scope=,
+  match_on=)`** (#68): the fourth member of the move family — exact
+  dollars, node to node (cross-parent fine), every matched cell
+  conserved across the pair. Design note: transfer is NOT pin sugar.
+  Pins let siblings absorb deltas; a transfer must move money along
+  BOTH ancestor chains — src's parents drop by the amount, dst's
+  rise, netting to zero at any shared ancestor. So it edits cells
+  directly: the amount draws across src's eligible cells
+  proportional to what's there (BASE layer), the IDENTICAL per-cell
+  amount lands on dst's matched rows, ancestor rows adjust per
+  combo, and every touched row re-derives cascaded from its OWN
+  hedge ratio (zero-baseline dst cells get the v0.40.0 derived
+  ratio). reconcile() clean by construction — pinned by test, along
+  with a hand-built per-cell-algebra equivalence anchor.
+- `to_total=` — the post-move total of src's eligible cells (the
+  form stakeholders actually hand over); negative `amount` runs the
+  move in reverse. `scope` accepts collections
+  ({'base_product_r4f': DC_PRODUCTS} with a list works). `match_on`
+  defaults to the cascade keys; pass cell columns when src/dst live
+  in different cascades. Unmatched drawn cells and over-draws raise
+  naming the cells; share_of_parent recomputed.
+- Report: one row per matched cell — moved, src/dst before/after,
+  `exact` verified against the edited frame.
+- Tests: `tests/test_transfer.py`.
+
 ## [0.44.0] — 2026-08
 
 Closes [issue #65](https://github.com/shreyasrkarwa/Analytics/issues/65).

@@ -1104,6 +1104,20 @@ print(f"Frozen rep untouched: {frozen_same} · "
 # unpinned teams at baseline proportions (add Pin(parent, total) to fix
 # the envelope too). No remainder-team computation needed.
 
+# NEW in v0.45.0 (#68): transfer() — exact-dollar, CELL-MATCHED moves
+# between any two nodes (cross-parent fine): money drawn from src's
+# cells lands in dst's IDENTICAL cells, both ancestor chains adjust
+# (net zero at shared ancestors), reconcile clean by construction.
+print(f"\n--- transfer(): cell-matched move (v0.45.0) ---")
+from b2b_revenue_forecasting import transfer
+_src45, _dst45 = gov_recipients[0], gov_recipients[1]
+_t45, _rep45 = transfer(quotas_long, _src45, _dst45, amount=100_000.0)
+_d45 = (_t45[_t45.node_id == _dst45]['base_quota'].sum()
+        - quotas_long[quotas_long.node_id == _dst45]['base_quota'].sum())
+print(f"moved $100K {_src45} -> {_dst45} across "
+      f"{len(_rep45)} cells; dst delta ${_d45:,.0f}; per-cell exact: "
+      f"{_rep45['exact'].all()}")
+
 # NEW in v0.44.0 (#65): validate_pins — pre-flight "can these pins
 # possibly fit?" in milliseconds, before any run. Per-(parent, combo)
 # capacity/slack ledger; basis_hint names the x-hedge mistake.
