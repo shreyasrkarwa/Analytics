@@ -511,6 +511,8 @@ def cascade_many(
             _gated_union: set = set()
             _relaxed_any = False
             _unallocated_total = 0.0
+            _zero_events: List[Dict[str, Any]] = []    # issue #66
+            _carveouts: set = set()
             for trow, row_metrics, row_gates, _src in row_plans:
                 target = float(trow[target_col])
                 quotas = cascader.cascade_quota(
@@ -540,6 +542,10 @@ def cascade_many(
                 _relaxed_any = _relaxed_any or bool(
                     cascader.gate_relaxed_nodes)
                 _unallocated_total += float(cascader.unallocated or 0.0)
+                _zero_events.extend(getattr(cascader, "zero_metric_events",
+                                            []) or [])
+                _carveouts |= set(getattr(cascader, "carveout_nodes",
+                                          set()) or set())
 
             combo_records.append({
                 **combo_dict,
@@ -552,6 +558,13 @@ def cascade_many(
                 "weights_source": weights_source,
                 "direction_mismatches": combo_report_flags[0],
                 "degenerate_fallback": combo_report_flags[1],
+                # issue #66: zero-signal sibling sets + carve-outs are
+                # DATA in the report, never an invisible basis change.
+                "zero_metric_parents": sorted(
+                    {e["parent"] for e in _zero_events}),
+                "zero_metric_fallbacks": sorted(
+                    {e["fallback_used"] for e in _zero_events}),
+                "carveout_nodes": sorted(_carveouts),
             })
 
         except Exception as exc:  # noqa: BLE001 — reported per policy
@@ -823,6 +836,15 @@ def cascade_levels(
         agg = (pair_df.groupby([parent_col, child_col], sort=False)
                .sum(numeric_only=True).reset_index())
 
+        # issue #66: the brand-new-IC carve-out is an IC concept. In a
+        # level transition the "leaves" are TEAMS/DIRECTORS — a team
+        # with zero metric for a slice is not a new hire, and the
+        # carve-out was silently granting it a full equal share. Non-
+        # final transitions default the rule OFF (level_kwargs can
+        # still opt back in per transition).
+        _kw_i = dict(level_kwargs[i])
+        if i < n_transitions - 1 and "new_ic_rule" not in _kw_i:
+            _kw_i["new_ic_rule"] = "none"
         step = cascade_many(
             agg, targets,
             group_keys=[parent_col],
@@ -830,7 +852,7 @@ def cascade_levels(
             taxonomy=[parent_col, child_col],
             on_error=on_error,
             return_dropped=True,
-            **level_kwargs[i],
+            **_kw_i,
         )
         quotas_i, weights_i, dropped_i = step
         # Diagnostics parity (issue #56): every artifact cascade_many

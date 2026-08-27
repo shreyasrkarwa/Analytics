@@ -178,6 +178,8 @@ class QuotaCascader:
         self.unallocated = 0.0
         self.unallocated_nodes = {}
         self.gate_relaxed_nodes = set()
+        self.zero_metric_events = []               # issue #66
+        self.carveout_nodes = set()                # issue #66
         # Overrides exceeding a parent's pool (issue #28): conservation is
         # mathematically impossible there, so the excess is reported
         # loudly instead of producing negative sibling quotas.
@@ -648,6 +650,8 @@ class QuotaCascader:
         gate_fallback: str = "redistribute",
         override_basis: str = "base",
         verbose: bool = True,
+        on_zero_metric: str = "equal",
+        metric_fallback: Optional[List[str]] = None,
     ) -> Dict[str, float]:
         """
         Distributes the macro_target from the root_node down to all descendants.
@@ -855,11 +859,23 @@ class QuotaCascader:
 
         # Resolve the effective rule for the case where no explicit path is used
         effective_rule = new_ic_rule if new_ic_rule is not None else "all_metrics_zero"
-        if effective_rule not in ("all_metrics_zero", "primary_metric_zero"):
+        if effective_rule not in ("all_metrics_zero", "primary_metric_zero",
+                                  "none"):
             raise ValueError(
-                f"new_ic_rule must be 'all_metrics_zero' or "
-                f"'primary_metric_zero', got '{effective_rule}'."
+                f"new_ic_rule must be 'all_metrics_zero', "
+                f"'primary_metric_zero' or 'none', got '{effective_rule}'."
             )
+        if on_zero_metric not in ("equal", "error", "fallback"):
+            raise ValueError(
+                f"on_zero_metric must be 'equal', 'error' or 'fallback', "
+                f"got '{on_zero_metric}'.")
+        if on_zero_metric == "fallback" and not (
+                metric_fallback
+                and all(isinstance(c, str) for c in metric_fallback)):
+            raise ValueError(
+                "on_zero_metric='fallback' needs metric_fallback=[...] — "
+                "column names tried in order, optionally ending in "
+                "'equal'.")
 
         if gate_fallback not in _GATE_FALLBACKS:
             raise ValueError(
@@ -955,24 +971,56 @@ class QuotaCascader:
                   f"({', '.join(g.name for g in gate_metrics)}); "
                   f"{len(self.gated_nodes)} nodes gated (will receive $0)")
 
-        def child_weights(children: List[str]) -> Dict[str, float]:
+        def _zero_metric_split(children, parent, track):
+            """issue #66: a sibling set with NO metric signal. Policy:
+            'error' raises naming the parent; 'fallback' tries the
+            metric_fallback chain (first column with signal, 'equal'
+            short-circuits); 'equal' (default) splits evenly. Every
+            engagement is recorded (self.zero_metric_events) so the
+            allocation basis is never invisible in the output."""
+            if on_zero_metric == "error":
+                raise GateAllocationError(
+                    f"No metric signal among the children of '{parent}' "
+                    f"— every child is 0 for the active slate. Use "
+                    f"on_zero_metric='equal' (even split) or 'fallback' "
+                    f"with metric_fallback=[...] to proceed.")
+            shares, used = None, "equal"
+            if on_zero_metric == "fallback":
+                for col in metric_fallback:
+                    if col == "equal":
+                        break
+                    spec = MetricSpec(col, direction="proportional",
+                                      weight=1.0, columns=[col])
+                    got = self._compute_composite_shares(children, [spec])
+                    if got:
+                        shares, used = got, col
+                        break
+            if shares is None:
+                shares = {c: 1.0 / len(children) for c in children}
+            if track:
+                self.zero_metric_events.append(
+                    {"parent": parent, "fallback_used": used})
+            return shares
+
+        def child_weights(children: List[str], _parent=None,
+                          _track=False) -> Dict[str, float]:
             """
             Compute a normalized share dict for the given children using the
-            currently-selected engine. Falls back to an even split if the
-            engine returns no usable signal.
+            currently-selected engine. A sibling set with no usable signal
+            goes through the on_zero_metric policy (issue #66).
             """
             if use_metrics:
                 shares = self._compute_composite_shares(children, metrics)
                 if shares:
                     return shares
-                return {c: 1.0 / len(children) for c in children}
+                return _zero_metric_split(children, _parent, _track)
 
             # Legacy path: capacity = sum of all _Attainment columns
             caps = {c: self._calculate_node_historical_capacity(c) for c in children}
             total = sum(caps.values())
             if total > 0:
                 return {c: caps[c] / total for c in children}
-            return {c: 1.0 / len(children) for c in children}
+            return _zero_metric_split(children, _parent, _track)
 
         def is_new_ic(node_id: str) -> bool:
             """True if this leaf should get the equal-share carve-out."""
@@ -985,6 +1033,11 @@ class QuotaCascader:
                 if explicit_path_used:
                     # Explicit identification was in play; rule is intentionally
                     # NOT consulted (the user opted into the explicit path).
+                    return False
+                if effective_rule == "none":
+                    # issue #66: the rule misfires on per-combo zero-metric
+                    # slices (a rep with no dc_seats for Migration is not a
+                    # new hire) — 'none' turns the rule off entirely.
                     return False
                 return self._is_brand_new_by_rule(node_id, metrics, effective_rule)
             # Legacy path: capacity == 0
@@ -1010,6 +1063,8 @@ class QuotaCascader:
                 self.gate_relaxed_nodes = set()
                 self.overpinned = 0.0
                 self.overpinned_nodes = {}
+                self.zero_metric_events = []       # issue #66
+                self.carveout_nodes = set()        # issue #66
 
             # The root is NEVER gated to $0 — a fully-gated tree is handled
             # per gate_fallback below, not by silently dropping the target.
@@ -1150,6 +1205,8 @@ class QuotaCascader:
                     new_ics = [c for c in unpinned if is_new_ic(c)]
                     experienced_ics = [c for c in unpinned if c not in new_ics]
 
+                    if new_ics and track_diagnostics:
+                        self.carveout_nodes.update(new_ics)
                     if new_ics:
                         # Equal share for brand-new ICs — historically a
                         # share of the TOTAL pool (len(children) incl.
@@ -1168,17 +1225,17 @@ class QuotaCascader:
 
                         remaining = pool_left - equal_share * len(new_ics)
                         if experienced_ics:
-                            weights = child_weights(experienced_ics)
+                            weights = child_weights(experienced_ics, node, track_diagnostics)
                             for ic in experienced_ics:
                                 quotas[ic] = remaining * weights[ic]
                     else:
-                        weights = child_weights(unpinned)
+                        weights = child_weights(unpinned, node, track_diagnostics)
                         for ic in unpinned:
                             quotas[ic] = pool_left * weights[ic]
                 else:
                     # Standard proportional distribution among unpinned
                     # children (weights renormalize automatically).
-                    weights = child_weights(unpinned)
+                    weights = child_weights(unpinned, node, track_diagnostics)
                     for child in unpinned:
                         quotas[child] = pool_left * weights[child]
 

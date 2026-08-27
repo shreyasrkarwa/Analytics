@@ -3,6 +3,49 @@
 All notable changes to `b2b_revenue_forecasting` are documented here.
 This project loosely follows [Semantic Versioning](https://semver.org/).
 
+## [0.43.0] — 2026-08
+
+Closes [issue #66](https://github.com/shreyasrkarwa/Analytics/issues/66)
+— headline corrected, a worse behavior found underneath it. "Money
+silently disappears when a sibling set has zero metric" is DISPROVEN
+with receipts: the engine equal-splits such sets, depth-0 lands at
+exactly Σ targets, reconcile() is clean, and the whole-tree #6
+warning fires (pinned as tests, including reconcile(targets=) from
+v0.39.0 proving no dropped combos). What the review DID find: the
+brand-new-IC carve-out (rule 'all_metrics_zero') misfires on
+zero-metric slices — a rep with zero dc_seats for Migration is not a
+new hire, yet got a FULL equal share, out-earning reps WITH signal;
+and in cascade_levels the "leaves" of a transition are TEAMS, so a
+zero-metric team took 50% of a region (500/500 where the data said
+1M/0). Conserved, but badly misplaced — very plausibly the filer's
+real ~0.69% mix drift, with 65% of their MM_AMER rows at zero seats.
+
+### Fixed / Changed
+- **cascade_levels: non-final transitions default new_ic_rule to
+  'none'** (BREAKING where zero-metric intermediate nodes exist —
+  deliberately: 1M/0 is what the data says, 500/500 was the bug).
+  Opt back in per transition via level_kwargs.
+
+### Added
+- **`new_ic_rule='none'`**: explicit off-switch for the brand-new
+  carve-out — for cascades where zero metric means "no business
+  here", not "new hire". At leaf level the carve-out fires BEFORE
+  the split policy, so combine 'none' with on_zero_metric when zero
+  rows should get $0 (documented).
+- **`on_zero_metric='equal'|'error'|'fallback'`** +
+  **`metric_fallback=[...]`** on cascade_quota / cascade_many /
+  cascade_levels: policy for a sibling set with NO signal. 'equal'
+  is the (unchanged) default, now explicit; 'error' raises naming
+  the parent (surfacing per combo via on_error/combo_report);
+  'fallback' tries the chain in order — first column with signal
+  wins, 'equal' terminates — the COALESCE the filer hand-wrote in
+  SQL, but recorded.
+- **combo_report accounting**: `zero_metric_parents`,
+  `zero_metric_fallbacks`, `carveout_nodes` — the allocation basis
+  is never invisible in the output again (the filer's valid
+  complaint, fixed).
+- Tests: `tests/test_zero_metric_policy.py`.
+
 ## [0.42.0] — 2026-08
 
 Closes [issue #64](https://github.com/shreyasrkarwa/Analytics/issues/64)

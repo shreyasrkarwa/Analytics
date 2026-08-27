@@ -20,7 +20,7 @@ from b2b_revenue_forecasting.batch import (
 )
 from b2b_revenue_forecasting.pins import Pin, apply_pins, redistribute, concentrate, enforce_identities, reallocate, resplit_by_metric
 
-__version__ = "0.42.0"
+__version__ = "0.43.0"
 
 __all__ = [
     "SalesHierarchy",

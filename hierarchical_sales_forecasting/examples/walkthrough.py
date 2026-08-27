@@ -1104,6 +1104,34 @@ print(f"Frozen rep untouched: {frozen_same} · "
 # unpinned teams at baseline proportions (add Pin(parent, total) to fix
 # the envelope too). No remainder-team computation needed.
 
+# NEW in v0.43.0 (#66): zero-metric policy + carve-out off-switch —
+# a sibling set with NO metric signal goes through on_zero_metric
+# ('equal' default | 'error' | 'fallback' with a metric_fallback
+# chain), new_ic_rule='none' stops zero-metric slices being treated
+# as "new hires", and every engagement lands in combo_report
+# (zero_metric_parents / zero_metric_fallbacks / carveout_nodes).
+print(f"\n--- Zero-metric policy (v0.43.0) ---")
+_z43 = pd.DataFrame([dict(Region='NA', team='T', rep=f'zr{i+1}',
+                          cloud=0.0, kworkers=[5, 15, 0, 0][i])
+                     for i in range(4)])
+_t43 = pd.DataFrame([dict(Region='NA', q_target=1_000_000.0)])
+with _warnings.catch_warnings():
+    _warnings.simplefilter('ignore')
+    _q43, _ = cascade_many(
+        _z43, _t43, group_keys=['Region'], target_col='q_target',
+        taxonomy=['Region', 'team', 'rep'],
+        metrics=[MetricSpec('cloud', direction='proportional',
+                            weight=1.0, columns=['cloud'])],
+        on_zero_metric='fallback', metric_fallback=['kworkers', 'equal'],
+        new_ic_rule='none')
+_i43 = _q43.set_index('node_id')
+_cr43 = pd.DataFrame(_q43.attrs['combo_report']).iloc[0]
+print(f"cloud all-zero -> split on kworkers: zr1 "
+      f"${_i43.loc['zr1','base_quota']:,.0f} / zr2 "
+      f"${_i43.loc['zr2','base_quota']:,.0f}; recorded: "
+      f"fallbacks={_cr43['zero_metric_fallbacks']}, "
+      f"carveouts={_cr43['carveout_nodes']}")
+
 # NEW in v0.42.0 (#64): subset= fast path — confine apply_pins /
 # enforce_identities to seed nodes' subtrees; the library computes the
 # closure (pin absorption domains), stitches back preserving index,
