@@ -1104,6 +1104,26 @@ print(f"Frozen rep untouched: {frozen_same} · "
 # unpinned teams at baseline proportions (add Pin(parent, total) to fix
 # the envelope too). No remainder-team computation needed.
 
+# NEW in v0.44.0 (#65): validate_pins — pre-flight "can these pins
+# possibly fit?" in milliseconds, before any run. Per-(parent, combo)
+# capacity/slack ledger; basis_hint names the x-hedge mistake.
+print(f"\n--- validate_pins dry run (v0.44.0) ---")
+from b2b_revenue_forecasting import validate_pins
+_par44 = quotas_long[quotas_long.node_id == gov_recipients[0]][
+    'parent'].iloc[0]
+_sibs44 = sorted(quotas_long[quotas_long.parent == _par44][
+    'node_id'].unique())
+_cap44 = quotas_long[quotas_long.node_id == _par44]['base_quota'].sum()
+# the field mistake: BASE dollars, basis='cascaded' (missing the x1.155)
+_bad_pins = [Pin(s, _cap44 / len(_sibs44), basis='cascaded')
+             for s in _sibs44]
+_v44 = validate_pins(quotas_long, _bad_pins)
+_r44 = _v44.iloc[0]
+print(f"all {len(_sibs44)} reps pinned: slack ${_r44['slack']:,.0f}, "
+      f"feasible={_r44['feasible']}, free_children="
+      f"{_r44['free_children']}")
+print(f"hint: {_r44['basis_hint']}")
+
 # NEW in v0.43.0 (#66): zero-metric policy + carve-out off-switch —
 # a sibling set with NO metric signal goes through on_zero_metric
 # ('equal' default | 'error' | 'fallback' with a metric_fallback

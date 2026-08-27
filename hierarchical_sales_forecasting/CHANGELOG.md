@@ -3,6 +3,39 @@
 All notable changes to `b2b_revenue_forecasting` are documented here.
 This project loosely follows [Semantic Versioning](https://semver.org/).
 
+## [0.44.0] — 2026-08
+
+Closes [issue #65](https://github.com/shreyasrkarwa/Analytics/issues/65).
+One correction first: the four incidents are no longer silent
+post-hoc — on current versions apply_pins' #55 envelope check flags
+them (the gap column is signed; undershoots are recorded too), the
+pins report feasible=False, and reconcile() fails. What WAS missing:
+the pre-flight answer — "can these pins possibly fit?" — before
+committing to a pipeline run, plus a diagnosis of the x-hedge
+mistake, which nothing named.
+
+### Added
+- **`validate_pins(quotas_long, pins, targets=, target_col=,
+  hedge=, freeze_nodes=, tolerance=)`** (#65): pure report, runs in
+  milliseconds, mutates nothing. One row per (parent x combo) with
+  pinned children: parent_capacity + capacity_source ('pin' /
+  'target' for root rows / 'frame'), pinned_children_total (BASE
+  layer, allocated per combo exactly as apply_pins would — same
+  mix-proportional allocation, same ratio machinery incl. v0.40.0's
+  zero-baseline derivation), free_children / free_capacity, slack,
+  feasible (slack >= 0 and (slack == 0 or free absorbers exist)).
+- **`basis_hint`**: when the miss factor matches the children's
+  cumulative hedge or the level's hedge (or an inverse) within 0.2%,
+  the row names the actual mistake — "totals look like BASE dollars
+  pinned with basis='cascaded'; multiply by the hedge or switch
+  basis". Catches the STRATEGIC_APAC and SPEC_FINANCE class
+  instantly; honest tiny-drift misses get exact slack and NO hint.
+- **`conflict` column**: the #63 same-node overlap detection, run
+  read-only — one dry run surfaces both failure classes.
+- Ground-truth anchor test: validate_pins' verdict matches
+  apply_pins + reconcile on feasible AND infeasible sets.
+- Tests: `tests/test_validate_pins.py`.
+
 ## [0.43.0] — 2026-08
 
 Closes [issue #66](https://github.com/shreyasrkarwa/Analytics/issues/66)

@@ -1809,6 +1809,222 @@ def enforce_identities(
     return df, report
 
 
+def validate_pins(
+    quotas_long: pd.DataFrame,
+    pins: List[Pin],
+    targets: Optional[pd.DataFrame] = None,
+    target_col: Optional[str] = None,
+    hedge: Any = None,
+    row_keys: Optional[List[str]] = None,
+    freeze_nodes: Optional[List[str]] = None,
+    tolerance: float = 0.05,
+) -> pd.DataFrame:
+    """
+    Pre-flight arithmetic feasibility for a pin batch (issue #65):
+    "can these pins possibly fit?" answered in milliseconds, BEFORE
+    any cascade or edit runs. Pure report — nothing is mutated.
+
+    One row per (parent x cascade combo) that has pinned children
+    (plus root-pin rows checked against `targets` when given):
+
+      parent_capacity / capacity_source — what the parent can supply
+        on the BASE layer: its own pin's per-combo allocation ('pin'),
+        the input target for root rows ('target', when targets= is
+        given), else its current frame value ('frame').
+      pinned_children / pinned_children_total — each pinned child's
+        per-combo allocation exactly as apply_pins would compute it
+        (proportional to its baseline mix, cascaded-basis totals
+        converted through each row's own hedge ratio — including the
+        v0.40.0 zero-baseline derivation, steerable via hedge=).
+      free_children / free_capacity — who can absorb, and how much
+        (unpinned, unfrozen siblings' base).
+      slack — parent_capacity − pinned_children_total.
+      feasible — slack >= 0 AND (slack == 0 or free_children > 0),
+        within `tolerance` dollars.
+      basis_hint — the x-hedge mistake, named: when the miss factor
+        matches the level's hedge ratio (or its inverse) within 0.2%,
+        the row says which basis the totals were actually in and how
+        to fix it. This alone catches "pins summed to target but
+        applied on the cascaded layer" instantly.
+      conflict — same-node overlapping pins (issue #63's detection,
+        run read-only) touching this parent's children.
+
+    validate_pins passing does NOT guarantee downstream perfection
+    (protected-subtree shortfalls and cross-parent interactions are
+    apply_pins' business) — it guarantees the ARITHMETIC can work,
+    which is what the field keeps shipping broken.
+    """
+    from b2b_revenue_forecasting.batch import _cascade_key_context
+
+    required = {"node_id", "parent", "base_quota", "cascaded_quota"}
+    missing = required - set(quotas_long.columns)
+    if missing:
+        raise ValueError(f"quotas_long is missing required columns "
+                         f"{sorted(missing)}.")
+    if targets is not None and (target_col is None
+                                or target_col not in targets.columns):
+        raise ValueError(
+            f"targets= needs target_col= naming a column of the "
+            f"targets frame (got {target_col!r}).")
+
+    df = quotas_long
+    keys, key_of, row_ix, child_ix = _cascade_key_context(
+        df, row_keys, exclude_cols=[], caller="validate_pins")
+    ratio, _ = _row_ratios(df, key_of, child_ix, hedge=hedge)
+    frozen = set(freeze_nodes or [])
+    node_pos = df.groupby("node_id").indices
+
+    # Per-row BASE allocation per pin, exactly as apply_pins would.
+    alloc_base: Dict[Any, float] = {}
+    pin_rows: Dict[int, List[Any]] = {}
+    for i, pin in enumerate(pins):
+        for col in pin.scope:
+            if col not in df.columns:
+                raise ValueError(f"Pin scope column '{col}' not in "
+                                 f"quotas_long.")
+        pos = node_pos.get(pin.node)
+        if pos is None:
+            continue
+        sel = df.iloc[pos]
+        for col, val in pin.scope.items():
+            sel = sel[sel[col] == val]
+        if not len(sel):
+            continue
+        basis_col = ("base_quota" if pin.basis == "base"
+                     else "cascaded_quota")
+        bt = float(sel[basis_col].sum())
+        for idx in sel.index:
+            share = (float(df.at[idx, basis_col]) / bt if bt > 0
+                     else 1.0 / len(sel))
+            amt = pin.total * share
+            alloc_base[idx] = alloc_base.get(idx, 0.0) + (
+                amt if pin.basis == "base" else amt / ratio[idx])
+        pin_rows[i] = list(sel.index)
+
+    # Read-only overlap detection (issue #63)
+    seen: Dict[Any, int] = {}
+    conflict_nodes: Dict[str, set] = {}
+    for i, rows_ in pin_rows.items():
+        for idx in rows_:
+            if idx in seen:
+                conflict_nodes.setdefault(
+                    str(df.at[idx, "node_id"]),
+                    set()).update({seen[idx], i})
+            else:
+                seen[idx] = i
+
+    # Targets per combo (projection onto the columns targets carries)
+    tcols = ([c for c in keys if c in targets.columns]
+             if targets is not None else [])
+    tsums: Dict[Any, float] = {}
+    if targets is not None:
+        for _, trow in targets.iterrows():
+            proj = tuple(
+                None if pd.isna(trow[c]) else trow[c] for c in tcols)
+            tsums[proj] = tsums.get(proj, 0.0) + float(trow[target_col])
+
+    def _target_for(k):
+        if targets is None:
+            return None
+        proj = tuple(v for c, v in zip(keys, k) if c in tcols)
+        return tsums.get(proj)
+
+    groups: Dict[Tuple[Any, Any], List[Any]] = {}
+    for idx in alloc_base:
+        k = key_of.at[idx]
+        p = df.at[idx, "parent"]
+        groups.setdefault((k, None if pd.isna(p) else p),
+                          []).append(idx)
+
+    rows_out: List[Dict[str, Any]] = []
+    for (k, p), idxs in sorted(groups.items(),
+                               key=lambda kv: str(kv[0])):
+        kd = dict(zip(keys, k)) if keys else {}
+        pinned_children = sorted({str(df.at[i_, "node_id"])
+                                  for i_ in idxs})
+        pinned_total = sum(alloc_base[i_] for i_ in idxs)
+        if p is None:
+            tgt = _target_for(k)
+            if tgt is None:
+                continue                    # root pin, nothing to check
+            capacity, src = float(tgt), "target"
+            kids: List[Any] = []
+        else:
+            pidx = row_ix.get((k, p))
+            if pidx is None:
+                continue
+            if pidx in alloc_base:
+                capacity, src = alloc_base[pidx], "pin"
+            elif targets is not None and (
+                    pd.isna(df.at[pidx, "parent"])
+                    or (k, df.at[pidx, "parent"]) not in row_ix):
+                tgt = _target_for(k)
+                capacity, src = ((float(tgt), "target")
+                                 if tgt is not None else
+                                 (float(df.at[pidx, "base_quota"]),
+                                  "frame"))
+            else:
+                capacity, src = float(df.at[pidx, "base_quota"]), "frame"
+            kids = child_ix.get((k, p), [])
+        free = [c for c in kids
+                if c not in alloc_base
+                and df.at[c, "node_id"] not in frozen]
+        free_cap = sum(float(df.at[c, "base_quota"]) for c in free)
+        slack = capacity - pinned_total
+        feasible = (slack >= -tolerance
+                    and (abs(slack) <= tolerance or len(free) > 0))
+        hint = None
+        if abs(slack) > tolerance and pinned_total > 0 and capacity > 0:
+            factor = pinned_total / capacity
+            cands: List[Tuple[float, str]] = []
+            if kids and p is not None:
+                pidx = row_ix[(k, p)]
+                rc = sum(ratio[c] for c in kids) / len(kids)
+                if rc > 0 and abs(rc - 1.0) > 1e-6:
+                    cands.append((rc, "the children's cumulative "
+                                      "hedge"))
+                if ratio[pidx]:
+                    lvl = rc / ratio[pidx]
+                    if lvl > 0 and abs(lvl - 1.0) > 1e-6:
+                        cands.append((lvl, "the level's hedge"))
+            for r_, desc in cands:
+                if abs(factor - r_) <= max(1e-3, 0.002 * r_):
+                    hint = (f"pinned children sum to parent x "
+                            f"{r_:.4f} ({desc}) — the totals look "
+                            f"like CASCADED dollars pinned with "
+                            f"basis='base'; use basis='cascaded' or "
+                            f"divide by the hedge.")
+                    break
+                if abs(factor - 1.0 / r_) <= max(1e-3, 0.002 / r_):
+                    hint = (f"pinned children sum to parent / "
+                            f"{r_:.4f} ({desc}) — the totals look "
+                            f"like BASE dollars pinned with "
+                            f"basis='cascaded'; use basis='base' or "
+                            f"multiply totals by the hedge.")
+                    break
+        conflict = "; ".join(
+            f"{n}: pins {sorted(v)}"
+            for n, v in sorted(conflict_nodes.items())
+            if n in pinned_children) or None
+        rows_out.append({
+            **kd, "parent": p,
+            "depth": (int(df.at[row_ix[(k, p)], "depth"])
+                      if p is not None and "depth" in df.columns
+                      else 0),
+            "parent_capacity": round(capacity, 2),
+            "capacity_source": src,
+            "pinned_children": pinned_children,
+            "pinned_children_total": round(pinned_total, 2),
+            "free_children": len(free),
+            "free_capacity": round(free_cap, 2),
+            "slack": round(slack, 2),
+            "feasible": feasible,
+            "basis_hint": hint,
+            "conflict": conflict,
+        })
+    return pd.DataFrame(rows_out)
+
+
 def reallocate(
     quotas_long: pd.DataFrame,
     sources: Union[str, List[str]],

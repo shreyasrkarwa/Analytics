@@ -52,6 +52,7 @@ Battle-tested: hardened against 60 field-filed issues from production deployment
 
 | Surface | Purpose |
 |--------|---------|
+| **`validate_pins`** | Pre-flight pin-batch feasibility: per-(parent × combo) capacity/slack ledger with `basis_hint` naming ×hedge mistakes and read-only conflict annotation — milliseconds, before any run |
 | **`reconcile`** | One-call post-run/post-edit validator: per-parent conservation + per-node hedge identities against a float / `{depth: ratio}` dict / `HedgeByDepth` spec (resolved with the engine's own resolution — nothing to drift) — plus depth-aggregate ledger rows, `targets=` depth-0-vs-input-plan drift detection, and `on_fail='raise'`. Tolerance is absolute dollars (5¢ default) |
 | **`rollup_metrics` / `attach_metrics`** | `<metric>_subtree` columns — each node's descendant-leaf aggregate, the "why" behind every quota; coverage analysis in one line |
 | **`share_of_parent` + `weights_long` + `attrs['combo_report']`** | The full decomposition: effective share at every sibling split, the authoritative per-combo weights record (blend + gate slates, provenance, fallback flags), and a per-combination audit trail (skips, gating, unallocated, weight sources) |
@@ -63,6 +64,10 @@ Battle-tested: hardened against 60 field-filed issues from production deployment
 |--------|---------|
 | **`CommitReconciler`** | Detect sandbagging and "happy ears" bias via historical Bias Quotients, then auto-correct forecasts |
 | **`PipelineAdjuster` / `adjust_many`** | Pipeline coverage bands with ancestor-inherited thresholds and zero-sum IC redistribution — single-cascade or batch-native on any `cascade_many` output |
+
+### What's New in v0.44.0 — can these pins possibly fit? ([#65](https://github.com/shreyasrkarwa/Analytics/issues/65))
+
+`reconcile` answers "did it conserve?" after a run; `validate_pins(quotas_long, pins, targets=target_df, target_col=...)` answers "can it possibly conserve?" in milliseconds, before — one row per (parent × combo): capacity (parent pin / input target / frame), pinned-children total allocated exactly as `apply_pins` would, free absorbers and their capacity, slack, and a verdict. The star column is `basis_hint`: when pins miss by the hedge ratio, the row says so — "totals look like BASE dollars pinned with `basis='cascaded'`; multiply by the hedge or switch basis" — the ×1.10 mistake the field made twice, named instantly. Overlapping pins (#63) are annotated read-only in the same report. And the verdict is anchored: tests prove it matches `apply_pins` + `reconcile` ground truth on both feasible and infeasible sets.
 
 ### What's New in v0.43.0 — zero metric ≠ new hire ([#66](https://github.com/shreyasrkarwa/Analytics/issues/66))
 
