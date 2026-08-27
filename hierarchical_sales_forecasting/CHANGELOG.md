@@ -3,6 +3,42 @@
 All notable changes to `b2b_revenue_forecasting` are documented here.
 This project loosely follows [Semantic Versioning](https://semver.org/).
 
+## [0.46.0] — 2026-08
+
+Closes [issue #69](https://github.com/shreyasrkarwa/Analytics/issues/69)
+— and with it, the entire #62–#69 field wave. One part was already
+fixed: "no signal that the second pin set silently invalidated the
+first" ended with v0.41.0 — the two cuts intersect row sets, so raw
+pins now RAISE (pinned as a receipt). The remaining gap was real:
+nothing could SATISFY both cuts. The filer's IPF instinct was right —
+their exact EAST2_1 numbers converge in 7 sweeps.
+
+### Added
+- **`fit_constraints(quotas_long, node, constraints, tolerance=,
+  max_iter=, freeze_nodes=)`** (#69): several overlapping totals on
+  one node at once — per-sales_type row totals AND a product-group
+  total, jointly. Iterative proportional fitting on the node's cell
+  matrix: cyclically rescale each constraint's cell set to its total
+  until every constraint holds within tolerance. Money moves between
+  cuts only where they cross (DC <-> Cloud WITHIN each sales type),
+  baseline mix is preserved inside every intersection, $0 cells stay
+  $0 (support-preserving). Scope values accept collections;
+  constraints may overlap arbitrarily.
+- **Applied through the pin engine**: the fitted cells become
+  per-cell scoped pins fed to apply_pins — disjoint (no conflicts),
+  siblings absorb per combo, subtrees rescale protection-aware,
+  frozen nodes hold, hedged values re-derive per row. reconcile()
+  clean by construction; single-cut fit proven bit-identical to a
+  plain scoped pin.
+- **Loud infeasibility** (the issue's second ask): contradictory
+  cuts raise after max_iter listing every constraint's achieved vs
+  requested residual; a constraint whose matched cells hold $0
+  baseline raises immediately ("nothing to scale — seed first").
+- Report: per-cell before/fitted/achieved/exact (read back from the
+  edited frame) + attrs['fit_report'] with the per-constraint
+  summary and sweep count.
+- Tests: `tests/test_fit_constraints.py`.
+
 ## [0.45.0] — 2026-08
 
 Closes [issue #68](https://github.com/shreyasrkarwa/Analytics/issues/68)

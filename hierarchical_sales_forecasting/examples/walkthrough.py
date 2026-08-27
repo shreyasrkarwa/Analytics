@@ -1104,6 +1104,45 @@ print(f"Frozen rep untouched: {frozen_same} · "
 # unpinned teams at baseline proportions (add Pin(parent, total) to fix
 # the envelope too). No remainder-team computation needed.
 
+# NEW in v0.46.0 (#69): fit_constraints() — several overlapping
+# totals on ONE node at once (sales-type rows + a product-group cut),
+# solved by iterative proportional fitting, applied through the pin
+# engine; contradictory cuts raise with per-constraint residuals.
+print(f"\n--- fit_constraints(): two cuts at once (v0.46.0) ---")
+from b2b_revenue_forecasting import fit_constraints
+# mini EAST2_1: cells = sales_type x product; row totals + a DC cut
+_h46 = pd.DataFrame([dict(Region='EAST', team='E2', rep=r, kw=100)
+                     for r in ('EAST2_1', 'EAST2_2')])
+_t46 = pd.DataFrame([dict(Region='EAST', st=st, product=p,
+                          q_target=1_500_000.0)
+                     for st in ('Exp', 'Mig', 'New')
+                     for p in ('JiraDC', 'JiraCloud', 'ConfDC',
+                               'ConfCloud')])
+with _warnings.catch_warnings():
+    _warnings.simplefilter('ignore')
+    _q46, _ = cascade_many(_h46, _t46, group_keys=['Region'],
+                           target_col='q_target',
+                           taxonomy=['Region', 'team', 'rep'],
+                           metrics=[MetricSpec('kw',
+                                    direction='proportional',
+                                    weight=1.0, columns=['kw'])],
+                           hedge_multiplier=1.1)
+    _e46, _cells46 = fit_constraints(_q46, 'EAST2_1', [
+        {'scope': {'st': 'Exp'}, 'total': 2_451_246.0},
+        {'scope': {'st': 'Mig'}, 'total': 200_000.0},
+        {'scope': {'st': 'New'}, 'total': 1_818_789.0},
+        {'scope': {'product': ['JiraDC', 'ConfDC']},
+         'total': 163_779.42},
+    ])
+_fr46 = _e46.attrs['fit_report']
+_r46 = _e46[_e46.node_id == 'EAST2_1']
+print(f"4 overlapping cuts (3 sales-type rows + 1 DC group): "
+      f"{_fr46['n_sweeps']} sweeps, all exact: "
+      f"{all(c['exact'] for c in _fr46['constraints'])}")
+print(f"Exp ${_r46[_r46.st == 'Exp']['base_quota'].sum():,.0f} / "
+      f"DC ${_r46[_r46['product'].isin(['JiraDC', 'ConfDC'])]['base_quota'].sum():,.2f} "
+      f"— both cuts hold at once")
+
 # NEW in v0.45.0 (#68): transfer() — exact-dollar, CELL-MATCHED moves
 # between any two nodes (cross-parent fine): money drawn from src's
 # cells lands in dst's IDENTICAL cells, both ancestor chains adjust

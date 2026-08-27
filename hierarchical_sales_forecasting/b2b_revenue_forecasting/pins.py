@@ -1809,6 +1809,184 @@ def enforce_identities(
     return df, report
 
 
+def fit_constraints(
+    quotas_long: pd.DataFrame,
+    node: str,
+    constraints: List[Dict[str, Any]],
+    tolerance: float = 0.05,
+    max_iter: int = 200,
+    freeze_nodes: Optional[List[str]] = None,
+    row_keys: Optional[List[str]] = None,
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Satisfy SEVERAL overlapping totals on one node at once (issue
+    #69): per-sales_type totals AND a product-group total — two
+    different cuts of the same cell matrix, jointly:
+
+        edited, cells = fit_constraints(q, 'EAST2_1', [
+            {'scope': {'st1_sales_type': 'Expansion/Upgrade'},
+             'total': 2_451_246},
+            {'scope': {'st1_sales_type': 'Migration'},
+             'total': 200_000},
+            {'scope': {'st1_sales_type': 'New'}, 'total': 1_818_789},
+            {'scope': {'base_product_r4f': DC_PRODUCTS},
+             'total': 163_779.42},
+        ])
+
+    Mechanics: iterative proportional fitting (IPF / RAS) on the
+    node's cells — cyclically rescale each constraint's cell set to
+    its total until every constraint holds within `tolerance`
+    dollars. The fit moves money BETWEEN cuts only where they cross
+    (DC <-> Cloud within each sales type), preserves the baseline
+    mix inside every intersection, and keeps zero-baseline cells at
+    zero (support-preserving). Scope values may be scalars or
+    collections; constraints may overlap arbitrarily — that's the
+    point.
+
+    The fitted cells are then applied as per-cell scoped pins through
+    apply_pins, so every pin-engine guarantee is inherited: siblings
+    absorb per combo, subtrees rescale protection-aware, frozen nodes
+    hold, each row's hedged value re-derives from its own ratio —
+    reconcile() stays clean.
+
+    Infeasibility is LOUD (the issue's second ask): if the residual
+    exceeds `tolerance` after `max_iter` sweeps, a ValueError lists
+    every constraint's achieved vs requested — "the DC total exceeds
+    what the sales-type totals can supply" becomes explicit
+    arithmetic. A constraint whose matched cells hold $0 baseline
+    also raises (nothing to scale — seed the cells first).
+
+    Returns
+    -------
+    (edited_df, cells) — cells has one row per fitted cell (cascade
+    keys, before, fitted, achieved, exact — achieved read back from
+    the edited frame). edited_df.attrs['fit_report'] carries the
+    per-constraint summary (scope, requested, achieved, exact) plus
+    n_sweeps.
+    """
+    from b2b_revenue_forecasting.batch import _cascade_key_context
+
+    required = {"node_id", "parent", "base_quota", "cascaded_quota"}
+    missing = required - set(quotas_long.columns)
+    if missing:
+        raise ValueError(f"quotas_long is missing required columns "
+                         f"{sorted(missing)}.")
+    if not constraints or not all(
+            isinstance(c, dict) and isinstance(c.get("scope"), dict)
+            and isinstance(c.get("total"), (int, float))
+            for c in constraints):
+        raise ValueError(
+            "constraints must be a non-empty list of "
+            "{'scope': {col: value-or-list}, 'total': dollars} dicts.")
+
+    df = quotas_long
+    keys, key_of, row_ix, child_ix = _cascade_key_context(
+        df, row_keys, exclude_cols=[], caller="fit_constraints")
+    node_pos = df.groupby("node_id").indices
+    if node not in node_pos:
+        raise ValueError(f"fit_constraints: node '{node}' not in "
+                         f"quotas_long.")
+    n_rows = df.iloc[node_pos[node]]
+
+    masks: List[pd.Series] = []
+    for ci, c in enumerate(constraints):
+        m = pd.Series(True, index=n_rows.index)
+        for col, val in c["scope"].items():
+            if col not in df.columns:
+                raise ValueError(f"fit_constraints: scope column "
+                                 f"'{col}' not in quotas_long.")
+            if isinstance(val, (list, tuple, set, frozenset)):
+                m &= n_rows[col].isin(list(val))
+            else:
+                m &= n_rows[col] == val
+        if not m.any():
+            raise ValueError(
+                f"fit_constraints: constraint {ci} "
+                f"({c['scope']}) matches no rows of '{node}'.")
+        if (float(n_rows.loc[m, "base_quota"].sum()) <= 0
+                and float(c["total"]) > tolerance):
+            raise ValueError(
+                f"fit_constraints: constraint {ci} ({c['scope']}) "
+                f"matches only $0-baseline cells — IPF preserves "
+                f"support, so there is nothing to scale. Seed those "
+                f"cells first (e.g. a small scoped pin).")
+        masks.append(m)
+
+    # ---- IPF: cyclic proportional scaling ---------------------------
+    x = n_rows["base_quota"].astype(float).copy()
+    worst = float("inf")
+    for sweep in range(1, max_iter + 1):
+        for m, c in zip(masks, constraints):
+            s = float(x[m].sum())
+            if s > 0:
+                x[m] *= float(c["total"]) / s
+        worst = max(abs(float(x[m].sum()) - float(c["total"]))
+                    for m, c in zip(masks, constraints))
+        if worst <= tolerance:
+            break
+    if worst > tolerance:
+        lines = [
+            f"  {c['scope']}: achieved {float(x[m].sum()):,.2f} vs "
+            f"requested {float(c['total']):,.2f} "
+            f"(residual {float(x[m].sum()) - float(c['total']):+,.2f})"
+            for m, c in zip(masks, constraints)]
+        raise ValueError(
+            f"fit_constraints: constraints on '{node}' are NOT "
+            f"jointly satisfiable within ${tolerance:,.2f} after "
+            f"{max_iter} sweeps:\n" + "\n".join(lines)
+            + "\n  -> the cuts contradict each other (e.g. a group "
+              "total exceeding what the row totals can supply).")
+
+    # ---- Apply as per-cell scoped pins (disjoint -> no conflicts) ----
+    union = pd.Series(False, index=n_rows.index)
+    for m in masks:
+        union |= m
+    pins: List[Pin] = []
+    cell_rows: List[Dict[str, Any]] = []
+    for idx in n_rows.index[union]:
+        cell_scope = {}
+        for c_ in keys:
+            v = df.at[idx, c_]
+            if pd.isna(v):
+                raise ValueError(
+                    f"fit_constraints: cascade key '{c_}' is NaN on a "
+                    f"cell of '{node}' — pass row_keys= naming "
+                    f"non-null identity columns.")
+            cell_scope[c_] = v
+        pins.append(Pin(node, float(x.at[idx]), scope=cell_scope))
+        cell_rows.append({**cell_scope,
+                          "before": round(float(
+                              df.at[idx, "base_quota"]), 2),
+                          "fitted": round(float(x.at[idx]), 2)})
+    edited, _ = apply_pins(df, pins, freeze_nodes=freeze_nodes,
+                           row_keys=row_keys)
+
+    # verify from the edited frame — achieved is read, not assumed
+    e_rows = edited[edited["node_id"] == node]
+    cells = pd.DataFrame(cell_rows)
+    achieved = []
+    for r_ in cell_rows:
+        m = pd.Series(True, index=e_rows.index)
+        for c_ in keys:
+            m &= e_rows[c_] == r_[c_]
+        achieved.append(round(float(
+            e_rows.loc[m, "base_quota"].sum()), 2))
+    cells["achieved"] = achieved
+    cells["exact"] = (cells["achieved"] - cells["fitted"]).abs() <= 0.05
+
+    fit_report = []
+    for m, c in zip(masks, constraints):
+        got = float(x[m].sum())
+        fit_report.append({"scope": c["scope"],
+                           "requested": round(float(c["total"]), 2),
+                           "achieved": round(got, 2),
+                           "exact": abs(got - float(c["total"]))
+                           <= tolerance})
+    edited.attrs["fit_report"] = {"constraints": fit_report,
+                                  "n_sweeps": sweep}
+    return edited, cells
+
+
 def transfer(
     quotas_long: pd.DataFrame,
     src: str,

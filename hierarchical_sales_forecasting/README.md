@@ -47,6 +47,7 @@ Battle-tested: hardened against 60 field-filed issues from production deployment
 | **`redistribute` / `concentrate`** | Move one node's scoped quota out to siblings (proportional/equal/weighted) — or collapse many siblings onto one — reshaping every depth, parents conserved, bystanders verified untouched |
 | **`reallocate` / `resplit_by_metric`** | Partial-fraction multi-source moves with explicit splits ("75% of these reps, 60/40 to those two") and metric-proportional re-splits of a team's children ("re-split Migration by dc_seats") |
 | **`transfer`** | Exact-dollar, cell-matched moves between any two nodes (cross-parent fine): every sales-type × product cell conserved across the pair, ancestor chains adjusted, `to_total=` for post-move targets |
+| **`fit_constraints`** | Several overlapping totals on one node at once (sales-type rows + a product-group cut) solved by IPF, applied through the pin engine, with loud per-constraint infeasibility |
 | **`enforce_identities`** | `reconcile()`'s fixing twin: force every parent-child identity top-down — pins held, free rows stretched, overshooting pins scaled down by policy |
 
 ### Explainability & validation
@@ -65,6 +66,10 @@ Battle-tested: hardened against 60 field-filed issues from production deployment
 |--------|---------|
 | **`CommitReconciler`** | Detect sandbagging and "happy ears" bias via historical Bias Quotients, then auto-correct forecasts |
 | **`PipelineAdjuster` / `adjust_many`** | Pipeline coverage bands with ancestor-inherited thresholds and zero-sum IC redistribution — single-cascade or batch-native on any `cascade_many` output |
+
+### What's New in v0.46.0 — two cuts, one node, both exact ([#69](https://github.com/shreyasrkarwa/Analytics/issues/69))
+
+Sales-type totals and a DC-product-group total constrain two different cuts of the same rep's cell matrix — expressible only one at a time before (and since v0.41.0, raw overlapping pins refuse loudly rather than letting the second silently break the first). `fit_constraints(q, 'EAST2_1', [...])` solves both jointly by iterative proportional fitting — the filer's own instinct, and the right tool: their exact numbers converge in 7 sweeps, moving DC↔Cloud *within* each sales type while every row total holds. The fitted cells apply through `apply_pins` (all pin-engine guarantees inherited; single-cut fit is bit-identical to a plain scoped pin — pinned by test), and contradictory cuts raise with a per-constraint achieved-vs-requested residual table. This closes the #62–#69 wave.
 
 ### What's New in v0.45.0 — move the money without leaving the cell ([#68](https://github.com/shreyasrkarwa/Analytics/issues/68))
 
