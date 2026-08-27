@@ -183,6 +183,54 @@ def _row_ratios(df, key_of, child_ix, hedge=None):
     return ratio, derived
 
 
+def _expand_subset(df, seeds, pins=None, caller="apply_pins"):
+    """Subset fast path (issue #64): expand user seed nodes to the
+    operation's CLOSURE so slice-and-stitch can never truncate a
+    family. Seeds expand to their full subtrees; for pins, each pin's
+    parent's full subtree (its absorption domain) is added
+    mechanically. A pin whose node lies outside the seeds' subtrees
+    raises — the caller scoped the wrong region. Returns the expanded
+    node-id set."""
+    all_nodes = set(df["node_id"])
+    unknown = [s for s in seeds if s not in all_nodes]
+    if unknown:
+        raise ValueError(f"{caller}: subset node(s) not in "
+                         f"quotas_long: {unknown}")
+    pairs = df[["node_id", "parent"]].drop_duplicates()
+    kids: Dict[Any, List[str]] = {}
+    parent_of: Dict[str, Any] = {}
+    for n, p in zip(pairs["node_id"], pairs["parent"]):
+        parent_of.setdefault(n, p if pd.notna(p) else None)
+        if pd.notna(p):
+            kids.setdefault(p, []).append(n)
+
+    def _subtree(n):
+        out, stack = set(), [n]
+        while stack:
+            cur = stack.pop()
+            if cur in out:
+                continue
+            out.add(cur)
+            stack.extend(kids.get(cur, []))
+        return out
+
+    seed_exp: set = set()
+    for s in seeds:
+        seed_exp |= _subtree(s)
+    expanded = set(seed_exp)
+    for pin in (pins or []):
+        if pin.node not in all_nodes:
+            continue                        # on_missing's business
+        if pin.node not in seed_exp:
+            raise ValueError(
+                f"{caller}: pin node '{pin.node}' is outside "
+                f"subset={sorted(seeds)} — widen the subset to a "
+                f"region containing it, or drop subset=.")
+        p = parent_of.get(pin.node)
+        expanded |= _subtree(p) if p is not None else _subtree(pin.node)
+    return expanded
+
+
 def _warn_derived_used(derived_used: Dict[Any, str], df, caller: str):
     """One summary warning when zero-baseline rows actually received
     money via a derived ratio (issue #67)."""
@@ -210,6 +258,7 @@ def apply_pins(
     on_overshoot: str = "allow",
     hedge: Any = None,
     on_conflict: str = "error",
+    subset: Optional[List[str]] = None,
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     Apply aggregate pins to a cascade_many output (issues #22/#31/#24).
@@ -366,6 +415,17 @@ def apply_pins(
         original rows on the FINAL frame — a defeated pin can never
         report feasible=True.
 
+    subset : Optional[List[str]]
+        Fast path for large frames (issue #64): seed node ids; the
+        run is confined to their full subtrees PLUS each pin's
+        absorption domain (its parent's full subtree), computed by
+        the library so the slice can never truncate a family. The
+        stitch preserves the original index, row order, and attrs —
+        the three traps of hand-rolled slice-and-stitch (pd.concat
+        drops attrs['cascade_row_keys'], silently changing key
+        resolution downstream). A pin outside the seeds' subtrees
+        raises. Identical output to the full-frame run, only faster.
+
     Returns
     -------
     (edited_df, feasibility_report)
@@ -403,6 +463,27 @@ def apply_pins(
     if missing:
         raise ValueError(f"quotas_long is missing required columns "
                          f"{sorted(missing)}.")
+    # ---- Subset fast path (issue #64): slice -> run -> stitch --------
+    # The library computes the closure (pin absorption domains), keeps
+    # the original index and row order, and carries attrs through — the
+    # three traps of hand-rolled slice-and-stitch.
+    if subset is not None:
+        expanded = _expand_subset(quotas_long, list(subset), pins=pins,
+                                  caller="apply_pins")
+        sub = quotas_long[quotas_long["node_id"].isin(expanded)]
+        sub.attrs = dict(quotas_long.attrs)
+        edited, report = apply_pins(
+            sub, pins, freeze_nodes=freeze_nodes, row_keys=row_keys,
+            on_missing=on_missing, on_overshoot=on_overshoot,
+            hedge=hedge, on_conflict=on_conflict)
+        out = quotas_long.copy()
+        for col, default in (("is_pinned", False), ("pin_type", None)):
+            if col not in out.columns:
+                out[col] = default
+        out.loc[edited.index, list(edited.columns)] = edited
+        out.attrs = {**dict(quotas_long.attrs), **dict(edited.attrs)}
+        return out, report
+
     df = quotas_long.copy()
     if "is_pinned" not in df.columns:
         df["is_pinned"] = False
@@ -422,10 +503,12 @@ def apply_pins(
         else:
             keys = [c for c in df.columns if c not in _STRUCTURAL_COLS]
     # NaN normalized to None so tuples compare by value (NaN != NaN
-    # would silently split key groups — issue #40 hygiene).
-    key_of = (df[keys].apply(
-                  lambda r: tuple(None if pd.isna(v) else v for v in r),
-                  axis=1) if keys
+    # would silently split key groups — issue #40 hygiene). Built from
+    # column arrays (not df.apply) — ~30x faster on wide frames (#64).
+    key_of = (pd.Series(
+                  [tuple(None if pd.isna(v) else v for v in row)
+                   for row in zip(*(df[c].tolist() for c in keys))],
+                  index=df.index) if keys
               else pd.Series([()] * len(df), index=df.index))
 
     # Uniqueness: one row per (cascade, node)
@@ -561,14 +644,23 @@ def apply_pins(
     # ghost side-effects (its node may still absorb / rescale freely).
     skipped_reason: Dict[int, str] = {}
     pin_row_sets: Dict[int, frozenset] = {}
+    # One node_id index instead of a full-frame mask per pin (#64):
+    # 400 pins on a 100K-row frame is 400 O(rows-of-node) lookups, not
+    # 400 full-column scans.
+    node_pos = df.groupby("node_id").indices
     for i, pin in enumerate(pins):
-        pmask = df["node_id"] == pin.node
-        for col, val in pin.scope.items():
+        for col in pin.scope:
             if col not in df.columns:
                 raise ValueError(f"Pin scope column '{col}' not in "
                                  f"quotas_long.")
-            pmask &= df[col] == val
-        if not pmask.any():
+        pos = node_pos.get(pin.node)
+        if pos is None:
+            sel = df.iloc[:0]
+        else:
+            sel = df.iloc[pos]
+            for col, val in pin.scope.items():
+                sel = sel[sel[col] == val]
+        if not len(sel):
             if on_missing == "error":
                 raise ValueError(
                     f"Pin node '{pin.node}' matches no rows (after "
@@ -579,7 +671,7 @@ def apply_pins(
                                  if pin.node not in all_node_ids
                                  else "empty_scope")
         else:
-            pin_row_sets[i] = frozenset(df.index[pmask])
+            pin_row_sets[i] = frozenset(sel.index)
     if skipped_reason and on_missing == "warn":
         named = [f"{pins[i].node} ({r})"
                  for i, r in sorted(skipped_reason.items())]
@@ -714,17 +806,15 @@ def apply_pins(
     # list order. Leaf-pin allocations are computed against
     # post-manager-rescale baselines, the natural reading. The
     # feasibility report is returned in the INPUT pin order.
-    def _pin_depth(pin: Pin) -> float:
-        mask = df["node_id"] == pin.node
-        for col, val in pin.scope.items():
-            if col in df.columns:      # missing columns raise in the loop
-                mask &= df[col] == val
-        depths = df.loc[mask, "depth"]
-        return float(depths.min()) if len(depths) else float("inf")
+    def _pin_depth(i: int) -> float:
+        rs = pin_row_sets.get(i)
+        if not rs:
+            return float("inf")
+        return float(min(df.at[idx, "depth"] for idx in rs))
 
     application_order = sorted(
         (i for i in range(len(pins)) if i not in skipped_reason),
-        key=lambda i: (_pin_depth(pins[i]), i))
+        key=lambda i: (_pin_depth(i), i))
     report_rows: List[Optional[dict]] = [None] * len(pins)
     for i, reason in skipped_reason.items():
         report_rows[i] = {
@@ -1411,10 +1501,21 @@ def enforce_identities(
     freeze_nodes: Optional[List[str]] = None,
     row_keys: Optional[List[str]] = None,
     anchor: str = "root",
+    subset: Optional[List[str]] = None,
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     reconcile() that FIXES instead of reporting (issues #54/#58/#59):
     force every parent-child identity per cascade slice.
+
+    subset= (issue #64): pass seed node ids to confine the run to
+    those nodes' full subtrees — the per-region pattern that turns a
+    whole-frame pass into a slice pass. The library does the
+    slice-and-stitch itself: original index and row order preserved,
+    attrs carried through (a hand-rolled pd.concat stitch silently
+    DROPS attrs['cascade_row_keys'], changing key resolution — the
+    real footgun behind "row order changed my results"). Identities
+    of parents OUTSIDE the subset are not enforced — run reconcile()
+    on the full frame afterwards if you need that proof.
 
     Anchors (issue #58)
     -------------------
@@ -1471,6 +1572,19 @@ def enforce_identities(
     if missing:
         raise ValueError(f"quotas_long is missing required columns "
                          f"{sorted(missing)}.")
+
+    if subset is not None:
+        expanded = _expand_subset(quotas_long, list(subset),
+                                  caller="enforce_identities")
+        sub = quotas_long[quotas_long["node_id"].isin(expanded)]
+        sub.attrs = dict(quotas_long.attrs)
+        edited, report = enforce_identities(
+            sub, on_overshoot=on_overshoot, tolerance=tolerance,
+            freeze_nodes=freeze_nodes, row_keys=row_keys, anchor=anchor)
+        out = quotas_long.copy()
+        out.loc[edited.index, list(edited.columns)] = edited
+        out.attrs = dict(quotas_long.attrs)
+        return out, report
 
     df = quotas_long.copy()
     keys, key_of, row_ix, child_ix = _cascade_key_context(

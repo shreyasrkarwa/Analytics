@@ -1304,9 +1304,10 @@ def _cascade_key_context(df, row_keys, exclude_cols, caller):
                     if c not in _STRUCTURAL_COLS
                     and c not in (exclude_cols or [])
                     and not c.endswith("_subtree")]
-    key_of = (df[keys].apply(
-                  lambda r: tuple(None if pd.isna(v) else v for v in r),
-                  axis=1) if keys
+    key_of = (pd.Series(
+                  [tuple(None if pd.isna(v) else v for v in row)
+                   for row in zip(*(df[c].tolist() for c in keys))],
+                  index=df.index) if keys
               else pd.Series([()] * len(df), index=df.index))
 
     row_ix, child_ix = {}, {}

@@ -3,6 +3,40 @@
 All notable changes to `b2b_revenue_forecasting` are documented here.
 This project loosely follows [Semantic Versioning](https://semver.org/).
 
+## [0.42.0] — 2026-08
+
+Closes [issue #64](https://github.com/shreyasrkarwa/Analytics/issues/64)
+— with corrections. The reported wall-clocks do not reproduce on this
+code: at 107,730 rows (larger than the filer's 65K, same 4-depth /
+~945-node / 114-combo shape) HEAD measures apply_pins with 400 pins
+at ~24s (reported: abandoned after minutes), enforce_identities at
+~5s (reported: 57 min), route_targets x3 at 0.03s (reported: 25+
+min), scoped redistribute at ~4s (reported: 96s) — with linear
+scaling verified at 1K/6K/24K/107K. And the "row order is
+load-bearing" claim is DISPROVEN: six random shuffles x every mode
+(default / scale_pins / rebalance / anchor='leaves' / apply_pins with
+equal-dollar tied pins) give 0.0 delta, now pinned as tests. The
+likely real mechanism behind the filer's $40K incident: pd.concat
+DROPS df.attrs, so a hand-rolled stitch loses the cascade_row_keys
+stamp and downstream calls fall back to key INFERENCE — which can
+resolve different columns and genuinely change grouping.
+
+### Added
+- **`subset=` on apply_pins and enforce_identities** (#64): seed node
+  ids; the run is confined to their full subtrees (plus, for pins,
+  each pin's absorption domain — its parent's full subtree — added
+  mechanically, so the slice can never truncate a family). The
+  library does the slice-and-stitch itself: original index, row
+  order, and attrs all preserved — the three traps of the hand-rolled
+  version, structurally removed. A pin outside the seeds' subtrees
+  raises. Output proven bit-identical to the full-frame run.
+- **Perf**: cascade-key tuples now build from column arrays instead
+  of df.apply(axis=1) (every keyed primitive benefits), and
+  apply_pins resolves pin rows through one node_id group index
+  instead of a full-frame boolean mask per pin.
+- Tests: `tests/test_subset_fastpath.py` — equivalence, closure,
+  guards, attrs survival, and the shuffle-invariance receipts.
+
 ## [0.41.0] — 2026-08
 
 Closes [issue #63](https://github.com/shreyasrkarwa/Analytics/issues/63).

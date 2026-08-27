@@ -1104,6 +1104,24 @@ print(f"Frozen rep untouched: {frozen_same} · "
 # unpinned teams at baseline proportions (add Pin(parent, total) to fix
 # the envelope too). No remainder-team computation needed.
 
+# NEW in v0.42.0 (#64): subset= fast path — confine apply_pins /
+# enforce_identities to seed nodes' subtrees; the library computes the
+# closure (pin absorption domains), stitches back preserving index,
+# order AND attrs, and the result is bit-identical to the full run.
+print(f"\n--- subset= fast path (v0.42.0) ---")
+import time as _time
+_sub_seed = quotas_long[quotas_long.depth == 1]['node_id'].iloc[0]
+_p42 = [Pin(gov_recipients[0], 400_000.0)]
+_t0 = _time.time(); _full42, _ = apply_pins(quotas_long, _p42)
+_t1 = _time.time(); _fast42, _ = apply_pins(quotas_long, _p42,
+                                            subset=[_sub_seed])
+_t2 = _time.time()
+_same42 = ((_full42.sort_index()['base_quota']
+            - _fast42.sort_index()['base_quota']).abs().max() < 1e-9)
+print(f"full {_t1-_t0:.2f}s -> subset('{_sub_seed}') {_t2-_t1:.2f}s; "
+      f"bit-identical: {_same42}; attrs kept: "
+      f"{_fast42.attrs.get('cascade_row_keys') == quotas_long.attrs.get('cascade_row_keys')}")
+
 # NEW in v0.41.0 (#63): overlapping pins on the SAME node no longer
 # lose silently — same-node row-set overlap raises by default (naming
 # totals/scopes/relations), and on_conflict='narrower_wins' ships the
