@@ -81,6 +81,125 @@ class Pin:
                 f"basis={self.basis!r})")
 
 
+def _row_ratios(df, key_of, child_ix, hedge=None):
+    """Per-row cascaded/base hedge ratio (the #21 contract's carrier).
+
+    Rows whose base is 0 cannot supply a ratio; before v0.40.0 they
+    silently got 1.0, so a pin landing on a zeroed slice set
+    base = cascaded, breaking the depth's hedge identity three levels
+    away from the cause (issue #67). Now the ratio is DERIVED:
+      1. explicit `hedge=` (float | {depth: cum_ratio} | HedgeByDepth,
+         resolved like reconcile) — authoritative when given,
+      2. else the mean ratio of same-(cascade, parent) siblings with
+         base > 0,
+      3. else the mean ratio of same-(cascade, depth) rows,
+      4. else 1.0.
+    Returns (ratio_dict, derived_dict) — derived_dict maps row index
+    -> source string for rows whose ratio was derived, so callers can
+    warn when such a row actually receives money."""
+    ratio, zero_rows = {}, []
+    for idx in df.index:
+        b = df.at[idx, "base_quota"]
+        if pd.notna(b) and float(b) != 0.0:
+            ratio[idx] = float(df.at[idx, "cascaded_quota"]) / float(b)
+        else:
+            zero_rows.append(idx)
+    derived: Dict[Any, str] = {}
+    if not zero_rows:
+        return ratio, derived
+
+    has_depth = "depth" in df.columns
+    expected = None
+    if hedge is not None:
+        from b2b_revenue_forecasting.quota_cascader import HedgeByDepth
+        if isinstance(hedge, HedgeByDepth):
+            import networkx as nx
+            expected = {}
+            groups: Dict[Any, List[Any]] = {}
+            for idx in df.index:
+                groups.setdefault(key_of.at[idx], []).append(idx)
+            for k, idxs in groups.items():
+                g = nx.DiGraph()
+                node_of = {df.at[i, "node_id"]: i for i in idxs}
+                g.add_nodes_from(node_of)
+                for i in idxs:
+                    p_ = df.at[i, "parent"]
+                    if pd.notna(p_) and p_ in node_of:
+                        g.add_edge(p_, df.at[i, "node_id"])
+                mult = hedge.resolve(g)
+                cum: Dict[str, float] = {}
+
+                def _cum(n):
+                    if n in cum:
+                        return cum[n]
+                    p_ = df.at[node_of[n], "parent"]
+                    if pd.isna(p_) or p_ not in node_of:
+                        cum[n] = 1.0
+                    else:
+                        cum[n] = _cum(p_) * float(mult.get(p_, 1.0))
+                    return cum[n]
+                for i in idxs:
+                    expected[i] = _cum(df.at[i, "node_id"])
+        elif isinstance(hedge, dict):
+            expected = {idx: float(hedge.get(
+                int(df.at[idx, "depth"]) if has_depth else 0, 1.0))
+                for idx in zero_rows}
+        elif isinstance(hedge, (int, float)):
+            expected = {idx: float(hedge) ** (
+                int(df.at[idx, "depth"]) if has_depth else 0)
+                for idx in zero_rows}
+        else:
+            raise ValueError("hedge must be a float, a {depth: "
+                             "cum_ratio} dict, or a HedgeByDepth spec.")
+
+    depth_pool: Dict[Tuple[Any, int], List[Any]] = {}
+    if has_depth:
+        for idx in df.index:
+            if idx in ratio:
+                depth_pool.setdefault(
+                    (key_of.at[idx], int(df.at[idx, "depth"])),
+                    []).append(idx)
+    for idx in zero_rows:
+        if expected is not None and idx in expected:
+            ratio[idx] = expected[idx]
+            derived[idx] = "hedge"
+            continue
+        k = key_of.at[idx]
+        sibs = [s for s in child_ix.get((k, df.at[idx, "parent"]), [])
+                if s in ratio]
+        if sibs:
+            ratio[idx] = sum(ratio[s] for s in sibs) / len(sibs)
+            derived[idx] = "siblings"
+            continue
+        pool = (depth_pool.get((k, int(df.at[idx, "depth"])), [])
+                if has_depth else [])
+        if pool:
+            ratio[idx] = sum(ratio[s] for s in pool) / len(pool)
+            derived[idx] = "same-depth rows"
+        else:
+            ratio[idx] = 1.0
+            derived[idx] = "none (1.0)"
+    return ratio, derived
+
+
+def _warn_derived_used(derived_used: Dict[Any, str], df, caller: str):
+    """One summary warning when zero-baseline rows actually received
+    money via a derived ratio (issue #67)."""
+    if not derived_used:
+        return
+    by_src: Dict[str, List[str]] = {}
+    for idx, src in derived_used.items():
+        by_src.setdefault(src, []).append(str(df.at[idx, "node_id"]))
+    bits = "; ".join(
+        f"{len(nodes)} row(s) from {src} (e.g. {sorted(set(nodes))[:3]})"
+        for src, nodes in by_src.items())
+    warnings.warn(
+        f"{caller}: zero-baseline row(s) received money — base/cascaded "
+        f"derived via inferred hedge ratio: {bits}. Pass hedge= to "
+        f"apply_pins to make the ratio authoritative.",
+        UserWarning, stacklevel=3)
+
+
 def apply_pins(
     quotas_long: pd.DataFrame,
     pins: List[Pin],
@@ -88,6 +207,7 @@ def apply_pins(
     row_keys: Optional[List[str]] = None,
     on_missing: str = "error",
     on_overshoot: str = "allow",
+    hedge: Any = None,
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     Apply aggregate pins to a cascade_many output (issues #22/#31/#24).
@@ -207,6 +327,20 @@ def apply_pins(
         recomputed achieved_total in the feasibility report.
         'error': raise, naming the offending (parent, cascade) slices.
 
+    hedge : float | dict | HedgeByDepth, optional
+        Authoritative hedge spec for ZERO-BASELINE rows (issue #67).
+        A row with base==0 cannot supply its own cascaded/base ratio;
+        before v0.40.0 it silently got 1.0, so pinning a zeroed slice
+        set base = cascaded and broke the depth's hedge identity.
+        Now the ratio is DERIVED — from `hedge=` when given (resolved
+        exactly like reconcile: float compounds per depth, dict is
+        {depth: cumulative_ratio}, HedgeByDepth resolves per cascade),
+        else inferred from same-(cascade, parent) siblings with
+        base > 0, else same-depth rows, else 1.0. Whenever such a row
+        actually receives money, ONE summary warning names the rows
+        and the ratio source. Rows with base > 0 always use their own
+        ratio — hedge= never re-hedges existing rows.
+
     Returns
     -------
     (edited_df, feasibility_report)
@@ -274,13 +408,6 @@ def apply_pins(
             "that identify one cascade (group keys + e.g. fiscal_quarter)."
         )
 
-    # Original hedge ratio per row index (edits preserve it)
-    ratio = {}
-    for idx in df.index:
-        b = df.at[idx, "base_quota"]
-        ratio[idx] = (float(df.at[idx, "cascaded_quota"]) / float(b)
-                      if pd.notna(b) and float(b) != 0.0 else 1.0)
-
     # Row lookup: (key, node_id) -> index ; children: (key, parent) -> [idx]
     row_ix: Dict[Tuple[Any, str], Any] = {}
     child_ix: Dict[Tuple[Any, Any], List[Any]] = {}
@@ -288,6 +415,11 @@ def apply_pins(
         k = key_of.at[idx]
         row_ix[(k, df.at[idx, "node_id"])] = idx
         child_ix.setdefault((k, df.at[idx, "parent"]), []).append(idx)
+
+    # Original hedge ratio per row index (edits preserve it). Rows with
+    # base==0 get a DERIVED ratio (#67): hedge= > siblings > same-depth.
+    ratio, ratio_derived = _row_ratios(df, key_of, child_ix, hedge=hedge)
+    derived_used: Dict[Any, str] = {}
 
     def _descendants(k, node_id) -> List[Any]:
         out, stack = [], [node_id]
@@ -298,6 +430,8 @@ def apply_pins(
         return out
 
     def _set_base(idx, new_base: float) -> None:
+        if idx in ratio_derived and abs(new_base) > 0.005:
+            derived_used[idx] = ratio_derived[idx]
         df.at[idx, "base_quota"] = round(new_base, 2)
         df.at[idx, "cascaded_quota"] = round(new_base * ratio[idx], 2)
 
@@ -640,6 +774,8 @@ def apply_pins(
                 f"See feasibility report column 'subtree_shortfall'.",
                 UserWarning, stacklevel=2,
             )
+
+    _warn_derived_used(derived_used, df, "apply_pins")
 
     # ---- Cross-pin envelope check (issue #55) -----------------------
     # Individually-valid pins can collectively break a parent-child
@@ -1179,15 +1315,14 @@ def enforce_identities(
             return True
         return bool(has_pin_col and df.at[idx, "is_pinned"] == True)  # noqa: E712
 
-    ratio = {}
-    for idx in df.index:
-        b = df.at[idx, "base_quota"]
-        ratio[idx] = (float(df.at[idx, "cascaded_quota"]) / float(b)
-                      if pd.notna(b) and float(b) != 0.0 else 1.0)
+    ratio, ratio_derived = _row_ratios(df, key_of, child_ix)
+    derived_used: Dict[Any, str] = {}
 
     def _set_base(idx, new_base: float) -> None:
         if abs(new_base - float(df.at[idx, "base_quota"])) < 0.005:
             return
+        if idx in ratio_derived and abs(new_base) > 0.005:
+            derived_used[idx] = ratio_derived[idx]
         df.at[idx, "base_quota"] = round(new_base, 2)
         df.at[idx, "cascaded_quota"] = round(new_base * ratio[idx], 2)
 
@@ -1386,6 +1521,7 @@ def enforce_identities(
             f"unresolved ({left}) — no free children to adjust (or "
             f"on_overshoot='allow').",
             UserWarning, stacklevel=2)
+    _warn_derived_used(derived_used, df, "enforce_identities")
     return df, report
 
 
@@ -1619,15 +1755,14 @@ def resplit_by_metric(
         caller="resplit_by_metric")
     frozen = set(freeze_nodes or [])
 
-    ratio = {}
-    for idx in df.index:
-        b = df.at[idx, "base_quota"]
-        ratio[idx] = (float(df.at[idx, "cascaded_quota"]) / float(b)
-                      if pd.notna(b) and float(b) != 0.0 else 1.0)
+    ratio, ratio_derived = _row_ratios(df, key_of, child_ix)
+    derived_used: Dict[Any, str] = {}
 
     def _set_base(idx, new_base):
         if abs(new_base - float(df.at[idx, "base_quota"])) < 0.005:
             return
+        if idx in ratio_derived and abs(new_base) > 0.005:
+            derived_used[idx] = ratio_derived[idx]
         df.at[idx, "base_quota"] = round(new_base, 2)
         df.at[idx, "cascaded_quota"] = round(new_base * ratio[idx], 2)
 
@@ -1738,4 +1873,5 @@ def resplit_by_metric(
         report["achieved_base"] = achieved
         report["exact"] = (report["achieved_base"]
                            - report["new_base"]).abs() <= 0.05
+    _warn_derived_used(derived_used, df, "resplit_by_metric")
     return df, report

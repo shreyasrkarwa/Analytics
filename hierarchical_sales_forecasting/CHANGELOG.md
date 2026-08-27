@@ -3,6 +3,46 @@
 All notable changes to `b2b_revenue_forecasting` are documented here.
 This project loosely follows [Semantic Versioning](https://semver.org/).
 
+## [0.40.0] — 2026-08
+
+Closes [issue #67](https://github.com/shreyasrkarwa/Analytics/issues/67)
+and [issue #62](https://github.com/shreyasrkarwa/Analytics/issues/62)
+(the latter disproven with receipts).
+
+### Fixed
+- **Zero-baseline hedge-ratio poisoning (#67)**: a row with base==0
+  cannot supply a cascaded/base ratio; every editing primitive
+  silently fell back to 1.0, so pinning a zeroed slice set
+  base = cascaded (or cascaded = base), breaking the depth's hedge
+  identity — and enforce_identities(anchor='leaves') then propagated
+  the wrong base into the parent, an error three levels from its
+  cause (reproduced: $37K on one team). Now the ratio is DERIVED at
+  the shared choke point used by apply_pins, enforce_identities and
+  resplit_by_metric (and therefore every helper built on them):
+  explicit `hedge=` wins, else the mean ratio of same-(cascade,
+  parent) siblings with base>0, else same-(cascade, depth) rows,
+  else 1.0. One summary warning fires only when such a row actually
+  RECEIVES money, naming the rows and the ratio source; gated 0/0
+  rows that stay 0 are silent.
+
+### Added
+- **`apply_pins(..., hedge=float | {depth: cum_ratio} | HedgeByDepth)`**
+  (#67): authoritative ratio source for zero-baseline rows, resolved
+  exactly like reconcile (HedgeByDepth per cascade via the real
+  resolve()). Never re-hedges rows with base>0. All four sources
+  proven equivalent on depth-uniform hedges in tests.
+- **#62 receipts pinned as tests**: unscoped `Pin(node, total)` was
+  claimed to re-partition a node to a stale "baseline shape". It does
+  not, and never did on this code: allocation is
+  row × (total / current_total) — the uniform multiplier the issue
+  requests as `distribute='scale'` — read from the CURRENT frame
+  (70/30 → 770/330, their own "want" line). Their observed production
+  drift reproduces exactly as OVERLAPPING-pin composition (#63): a
+  grand-total pin listed before a scoped zero under-delivers by the
+  removed slice. Mix preservation is now a pinned regression test so
+  the claim can never silently become true.
+- Tests: `tests/test_zero_baseline_ratio.py`.
+
 ## [0.39.0] — 2026-07
 
 Closes [issue #60](https://github.com/shreyasrkarwa/Analytics/issues/60).

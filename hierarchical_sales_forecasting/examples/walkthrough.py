@@ -1104,6 +1104,26 @@ print(f"Frozen rep untouched: {frozen_same} · "
 # unpinned teams at baseline proportions (add Pin(parent, total) to fix
 # the envelope too). No remainder-team computation needed.
 
+# NEW in v0.40.0 (#67): zero-baseline rows now DERIVE their hedge
+# ratio (hedge= > siblings > same-depth) instead of silently using
+# 1.0 — pinning money onto a zeroed slice no longer sets
+# base = cascaded (which used to poison leaves-anchored rollups three
+# levels away). Warned only when such a row actually receives money.
+print(f"\n--- Zero-baseline ratio derivation (v0.40.0) ---")
+zero_ic = gov_recipients[2]
+with _warnings.catch_warnings():
+    _warnings.simplefilter('ignore')
+    z40, _ = apply_pins(quotas_long, [Pin(zero_ic, 0.0)])
+    r40, _ = apply_pins(z40, [Pin(zero_ic, 400_000.0,
+                                  basis='cascaded')])
+_row = r40[(r40.node_id == zero_ic)].iloc[0]
+_sib = r40[(r40.parent == _row['parent'])
+           & (r40.node_id != zero_ic) & (r40.base_quota > 0)].iloc[0]
+print(f"{zero_ic}: zeroed, then pinned $400K cascaded -> ratio "
+      f"{_row['cascaded_quota']/_row['base_quota']:.3f} (siblings: "
+      f"{_sib['cascaded_quota']/_sib['base_quota']:.3f}) — derived, "
+      f"not 1.0")
+
 # NEW in v0.23.0 (issue #43): redistribute() — move a node's scoped
 # quota to its siblings, reshaping BOTH subtrees at every depth.
 # Thin sugar over apply_pins: it writes the pins for you.
